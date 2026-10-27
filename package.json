@@ -1,0 +1,40 @@
+{
+  "name": "estimetry",
+  "version": "0.0.0",
+  "description": "Compares work estimates with actual effort in AI-agent development and reuses that experience in the next estimate",
+  "license": "MIT",
+  "author": "Aleksei Shvets",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aleksei-shvets/estimetry.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "bin": {
+    "estimetry": "dist/bootstrap/main.js",
+    "emt": "dist/bootstrap/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "npm run build && vitest run"
+  },
+  "dependencies": {
+    "commander": "^14.0.3",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.19.43",
+    "eslint": "^10.13.0",
+    "typescript": "5.9",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^4.1.12"
+  }
+}
