@@ -1,4 +1,5 @@
 import { InvalidValue } from '../shared/domain-error.js';
+import { kebabCase } from '../shared/kebab-case.js';
 
 const PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -15,13 +16,7 @@ export class ProjectId {
 
   /** Builds an id from an arbitrary directory name. */
   static fromName(name: string): ProjectId {
-    const slug = name
-      .normalize('NFKD')
-      .replace(/[̀-ͯ]/g, '')
-      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
+    const slug = kebabCase(name);
     return new ProjectId(slug === '' ? 'project' : slug);
   }
 

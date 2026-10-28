@@ -1,8 +1,30 @@
+import { Estimate, type EstimateData } from '../estimate/estimate.js';
+import { Extra, type ExtraData } from '../measurement/extra.js';
+import { ManualTime, type ManualTimeData } from '../measurement/manual-time.js';
+import type { ParallelModeChange, ParallelPeriod } from '../measurement/parallel-mode.js';
 import { InvalidValue } from '../shared/domain-error.js';
 import type { EventMeta } from '../shared/event-envelope.js';
+import { Timestamp } from '../shared/timestamp.js';
 import { ProjectId } from '../project/project-id.js';
-import { InvalidTransition } from './task-errors.js';
-import { taskEvent, type TaskAttached, type TaskCreated, type TaskEvent, type TaskStarted } from './task-events.js';
+import {
+  EstimateLocked,
+  InvalidTransition,
+  ParallelModeConflict,
+  TaskNotStarted,
+  UnknownEstimatePart,
+} from './task-errors.js';
+import {
+  taskEvent,
+  type TaskAttached,
+  type TaskCreated,
+  type TaskEstimated,
+  type TaskEvent,
+  type TaskExtraRecorded,
+  type TaskManualTimeRecorded,
+  type TaskParallelModeDisabled,
+  type TaskParallelModeEnabled,
+  type TaskStarted,
+} from './task-events.js';
 import { TaskId } from './task-id.js';
 import { STARTABLE_STATUSES, type TaskStatus } from './task-status.js';
 import { TaskType } from './task-type.js';
@@ -24,6 +46,10 @@ export interface TaskSnapshot {
   readonly author: string;
   readonly createdAt: string;
   readonly startedAt?: string;
+  readonly estimate?: EstimateData;
+  readonly manualTime: readonly ManualTimeData[];
+  readonly extras: readonly ExtraData[];
+  readonly parallelMode: readonly ParallelPeriod[];
   readonly version: number;
   readonly lastEventId: string;
 }
@@ -39,6 +65,10 @@ interface TaskState {
   author: string;
   createdAt: string;
   startedAt: string | undefined;
+  estimate: EstimateData | undefined;
+  manualTime: ManualTimeData[];
+  extras: ExtraData[];
+  parallelMode: ParallelPeriod[];
 }
 
 /**
@@ -111,6 +141,10 @@ export class Task {
         author: snapshot.author,
         createdAt: snapshot.createdAt,
         startedAt: snapshot.startedAt,
+        estimate: snapshot.estimate,
+        manualTime: [...snapshot.manualTime],
+        extras: [...snapshot.extras],
+        parallelMode: [...snapshot.parallelMode],
       },
       snapshot.version,
       snapshot.lastEventId,
@@ -143,6 +177,35 @@ export class Task {
     return this.appliedCount;
   }
 
+  get title(): string {
+    return this.state.title;
+  }
+
+  /** When work started; absent before `start`. */
+  get startedAt(): Timestamp | undefined {
+    return this.state.startedAt === undefined ? undefined : Timestamp.parse(this.state.startedAt);
+  }
+
+  get estimate(): Estimate | undefined {
+    return this.state.estimate === undefined ? undefined : Estimate.fromData(this.state.estimate);
+  }
+
+  get manualTime(): ManualTime[] {
+    return this.state.manualTime.map((data) => ManualTime.fromData(data));
+  }
+
+  get extras(): Extra[] {
+    return this.state.extras.map((data) => Extra.fromData(data));
+  }
+
+  get parallelMode(): readonly ParallelPeriod[] {
+    return this.state.parallelMode;
+  }
+
+  get isParallel(): boolean {
+    return this.state.parallelMode.at(-1)?.disabledAt === undefined && this.state.parallelMode.length > 0;
+  }
+
   isStartable(): boolean {
     return STARTABLE_STATUSES.includes(this.state.status);
   }
@@ -151,12 +214,105 @@ export class Task {
     return this.state.projects.includes(project.value);
   }
 
-  start(project: ProjectId, meta: EventMeta): void {
+  /** `at` backdates the start for work begun before the task was recorded; it may precede creation. */
+  start(project: ProjectId, meta: EventMeta, at?: Timestamp): void {
     if (!this.isStartable()) {
       throw new InvalidTransition(this.state.id.toString(), this.state.status, 'start');
     }
+    if (at !== undefined && at.toMillis() > meta.at.toMillis()) {
+      throw new InvalidValue(`start time must not be in the future (${at.toISOString()})`);
+    }
     this.record(
-      taskEvent<TaskStarted>('task.started', this.state.id, project.value, { estimated: this.state.estimated }, meta),
+      taskEvent<TaskStarted>(
+        'task.started',
+        this.state.id,
+        project.value,
+        { estimated: this.state.estimated, ...(at === undefined ? {} : { at: at.toISOString() }) },
+        meta,
+      ),
+    );
+  }
+
+  /**
+   * Makes `estimate` the plan of the task. Re-estimating is allowed until work
+   * starts; after that the estimate is what the fact is compared with.
+   * `type` is the estimate's task type, already checked against the catalog.
+   */
+  saveEstimate(estimate: Estimate, type: TaskType | undefined, meta: EventMeta): void {
+    if (!this.isStartable()) {
+      throw new EstimateLocked(this.state.id.toString(), this.state.status);
+    }
+    this.record(
+      taskEvent<TaskEstimated>(
+        'task.estimated',
+        this.state.id,
+        this.homeProject.value,
+        { estimate: estimate.toData(), ...(type === undefined ? {} : { taskType: type.value }) },
+        meta,
+      ),
+    );
+  }
+
+  recordManualTime(manual: ManualTime, meta: EventMeta): void {
+    const startedAt = this.requireInProgress();
+    if (manual.at !== undefined) {
+      if (manual.at.toMillis() > meta.at.toMillis()) {
+        throw new InvalidValue(`manual time cannot end in the future (${manual.at.toISOString()})`);
+      }
+      // Time before the start is not the task's, so a record must fit after it.
+      const begins = Timestamp.fromMillis(manual.at.toMillis() - manual.duration.millis);
+      if (begins.toMillis() < startedAt.toMillis()) {
+        throw new InvalidValue(
+          `manual time must lie after the task started (${startedAt.toISOString()}), but ${manual.duration.minutes}m ending ${manual.at.toISOString()} starts at ${begins.toISOString()}`,
+        );
+      }
+    }
+    this.record(
+      taskEvent<TaskManualTimeRecorded>(
+        'task.manual-time-recorded',
+        this.state.id,
+        this.homeProject.value,
+        manual.toData(),
+        meta,
+      ),
+    );
+  }
+
+  recordExtra(extra: Extra, meta: EventMeta): void {
+    this.requireInProgress();
+    this.record(
+      taskEvent<TaskExtraRecorded>('task.extra-recorded', this.state.id, this.homeProject.value, extra.toData(), meta),
+    );
+  }
+
+  enableParallelMode(change: ParallelModeChange, meta: EventMeta): void {
+    this.requireInProgress();
+    if (this.isParallel) {
+      throw new ParallelModeConflict(this.state.id.toString(), true);
+    }
+    const known = this.state.estimate?.parts.map((part) => part.id) ?? [];
+    const unknown = change.parts.filter((part) => !known.includes(part));
+    if (unknown.length > 0) {
+      throw new UnknownEstimatePart(unknown, known);
+    }
+    this.record(
+      taskEvent<TaskParallelModeEnabled>(
+        'task.parallel-mode-enabled',
+        this.state.id,
+        this.homeProject.value,
+        change.toData(),
+        meta,
+      ),
+    );
+  }
+
+  disableParallelMode(meta: EventMeta): void {
+    this.requireInProgress();
+    if (!this.isParallel) {
+      throw new ParallelModeConflict(this.state.id.toString(), false);
+    }
+    this.record(
+      taskEvent<TaskParallelModeDisabled>('task.parallel-mode-disabled', this.state.id, this.homeProject.value, {}, meta),
     );
   }
 
@@ -192,9 +348,21 @@ export class Task {
       author: s.author,
       createdAt: s.createdAt,
       ...(s.startedAt === undefined ? {} : { startedAt: s.startedAt }),
+      ...(s.estimate === undefined ? {} : { estimate: s.estimate }),
+      manualTime: [...s.manualTime],
+      extras: [...s.extras],
+      parallelMode: [...s.parallelMode],
       version: this.appliedCount,
       lastEventId: this.lastId,
     };
+  }
+
+  private requireInProgress(): Timestamp {
+    const startedAt = this.startedAt;
+    if (this.state.status !== 'in-progress' || startedAt === undefined) {
+      throw new TaskNotStarted(this.state.id.toString(), this.state.status);
+    }
+    return startedAt;
   }
 
   private record(event: TaskEvent): void {
@@ -208,8 +376,32 @@ export class Task {
         throw new InvalidValue(`task ${this.state.id.toString()} is created twice`);
       case 'task.started':
         this.state.status = 'in-progress';
-        this.state.startedAt = event.ts;
+        this.state.startedAt = event.data.at ?? event.ts;
         break;
+      case 'task.estimated':
+        this.state.status = 'estimated';
+        this.state.estimated = true;
+        this.state.estimate = event.data.estimate;
+        if (event.data.taskType !== undefined) {
+          this.state.type = TaskType.restore(event.data.taskType);
+        }
+        break;
+      case 'task.manual-time-recorded':
+        this.state.manualTime.push(event.data);
+        break;
+      case 'task.extra-recorded':
+        this.state.extras.push(event.data);
+        break;
+      case 'task.parallel-mode-enabled':
+        this.state.parallelMode.push({ enabledAt: event.ts, change: event.data });
+        break;
+      case 'task.parallel-mode-disabled': {
+        const last = this.state.parallelMode.at(-1);
+        if (last) {
+          this.state.parallelMode[this.state.parallelMode.length - 1] = { ...last, disabledAt: event.ts };
+        }
+        break;
+      }
       case 'task.attached':
         if (event.project !== undefined && !this.state.projects.includes(event.project)) {
           this.state.projects.push(event.project);
@@ -232,6 +424,10 @@ export class Task {
       author: event.author,
       createdAt: event.ts,
       startedAt: undefined,
+      estimate: undefined,
+      manualTime: [],
+      extras: [],
+      parallelMode: [],
     };
   }
 }
