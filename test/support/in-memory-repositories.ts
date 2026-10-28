@@ -1,3 +1,5 @@
+import type { EventJournal } from '../../src/application/ports/event-journal.js';
+import { parseActivityEvent, type ActivityEvent } from '../../src/domain/measurement/activity-events.js';
 import type { Project } from '../../src/domain/project/project.js';
 import type { ProjectId } from '../../src/domain/project/project-id.js';
 import { ProjectIdTaken, type ProjectRepository } from '../../src/domain/project/project-repository.js';
@@ -73,5 +75,19 @@ export class InMemoryProjectRepository implements ProjectRepository {
     }
     this.projects.push(project);
     return project;
+  }
+}
+
+/** Activity events per task, validated on append like the JSONL journal. */
+export class InMemoryEventJournal implements EventJournal {
+  readonly events = new Map<string, ActivityEvent[]>();
+
+  append(event: ActivityEvent): void {
+    const valid = parseActivityEvent(event);
+    this.events.set(valid.task, [...(this.events.get(valid.task) ?? []), valid]);
+  }
+
+  readActivity(task: TaskId): ActivityEvent[] {
+    return [...(this.events.get(task.toString()) ?? [])];
   }
 }

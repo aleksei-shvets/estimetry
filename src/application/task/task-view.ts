@@ -14,7 +14,22 @@ export interface TaskView {
   readonly startedAt?: string;
 }
 
+/**
+ * Fields are listed one by one, so a new snapshot field does not change the JSON of
+ * `task list/show` by accident. Records of the task are shown by `status`, not here.
+ */
 export function toTaskView(task: Task): TaskView {
-  const { schemaVersion: _schemaVersion, version: _version, lastEventId: _lastEventId, ...view } = task.toSnapshot();
-  return view;
+  const s = task.toSnapshot();
+  return {
+    id: s.id,
+    title: s.title,
+    type: s.type,
+    ...(s.ticket === undefined ? {} : { ticket: s.ticket }),
+    status: s.status,
+    estimated: s.estimated,
+    projects: s.projects,
+    author: s.author,
+    createdAt: s.createdAt,
+    ...(s.startedAt === undefined ? {} : { startedAt: s.startedAt }),
+  };
 }

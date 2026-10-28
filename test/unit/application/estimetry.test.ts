@@ -11,10 +11,12 @@ import {
   FakeAuthorProvider,
   FakeWorkspaceLocator,
   FixedClock,
+  FixedMeasurementSettings,
+  InMemoryEstimateReader,
   InMemoryTaskTypeCatalog,
   SequentialIdGenerator,
 } from '../../support/fakes.js';
-import { InMemoryProjectRepository, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
+import { InMemoryEventJournal, InMemoryProjectRepository, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
 
 let tasks: InMemoryTaskRepository;
 let projects: InMemoryProjectRepository;
@@ -37,6 +39,9 @@ beforeEach(() => {
     taskTypes: new InMemoryTaskTypeCatalog([...['feature', 'integration'], 'spike']),
     clock: new FixedClock(),
     ids: new SequentialIdGenerator(),
+    journal: new InMemoryEventJournal(),
+    measurement: new FixedMeasurementSettings(),
+    estimates: new InMemoryEstimateReader(),
   });
 });
 
