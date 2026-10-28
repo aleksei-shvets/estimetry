@@ -39,6 +39,8 @@ async function buildApp(layout: StorageLayout, cwd: string): Promise<Estimetry> 
     { GitCli },
     { FileTaskRepository },
     { FileProjectRepository },
+    { JsonlEventJournal },
+    { YamlEstimateReader },
     { YamlConfigStore },
     { SystemClock },
     { RandomIdGenerator },
@@ -47,6 +49,8 @@ async function buildApp(layout: StorageLayout, cwd: string): Promise<Estimetry> 
     import('../infrastructure/git/git-cli.js'),
     import('../infrastructure/persistence/file-task-repository.js'),
     import('../infrastructure/persistence/file-project-repository.js'),
+    import('../infrastructure/persistence/jsonl-event-journal.js'),
+    import('../infrastructure/persistence/yaml-estimate-reader.js'),
     import('../infrastructure/persistence/yaml-config-store.js'),
     import('../infrastructure/system/system-clock.js'),
     import('../infrastructure/system/random-id-generator.js'),
@@ -61,5 +65,8 @@ async function buildApp(layout: StorageLayout, cwd: string): Promise<Estimetry> 
     taskTypes: config,
     clock: new SystemClock(),
     ids: new RandomIdGenerator(),
+    journal: new JsonlEventJournal(layout),
+    measurement: config,
+    estimates: new YamlEstimateReader(cwd),
   });
 }

@@ -2,7 +2,12 @@ import { Command } from 'commander';
 import type { ErrorReporter } from '../../application/ports/error-reporter.js';
 import type { CliContext } from './cli-context.js';
 import { registerAttachCommand } from './commands/attach-command.js';
+import { registerEstimateCommand } from './commands/estimate-command.js';
+import { registerExtraCommand } from './commands/extra-command.js';
+import { registerManualCommand } from './commands/manual-command.js';
+import { registerParallelCommand } from './commands/parallel-command.js';
 import { registerStartCommand } from './commands/start-command.js';
+import { registerStatusCommand } from './commands/status-command.js';
 import { registerTaskCommands } from './commands/task-commands.js';
 import { ExitCode, toExitCode } from './exit-codes.js';
 
@@ -30,6 +35,11 @@ export async function runCli(args: readonly string[], options: CliOptions): Prom
   registerTaskCommands(program, options);
   registerStartCommand(program, options);
   registerAttachCommand(program, options);
+  registerEstimateCommand(program, options);
+  registerManualCommand(program, options);
+  registerExtraCommand(program, options);
+  registerParallelCommand(program, options);
+  registerStatusCommand(program, options);
 
   try {
     await program.parseAsync([...args], { from: 'user' });

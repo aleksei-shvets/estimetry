@@ -33,7 +33,7 @@ describe('binaries', () => {
   it('prints help with the commands', async () => {
     const help = await cli.run(['--help'], api);
     expect(help.code).toBe(0);
-    for (const command of ['task', 'start', 'attach']) {
+    for (const command of ['task', 'start', 'attach', 'estimate', 'manual', 'extra', 'parallel', 'status']) {
       expect(help.stdout).toContain(command);
     }
   });
