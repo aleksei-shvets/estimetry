@@ -4,6 +4,8 @@ import type { CliContext } from './cli-context.js';
 import { registerAttachCommand } from './commands/attach-command.js';
 import { registerEstimateCommand } from './commands/estimate-command.js';
 import { registerExtraCommand } from './commands/extra-command.js';
+import { registerHookCommand } from './commands/hook-command.js';
+import { registerInitCommand } from './commands/init-command.js';
 import { registerManualCommand } from './commands/manual-command.js';
 import { registerParallelCommand } from './commands/parallel-command.js';
 import { registerStartCommand } from './commands/start-command.js';
@@ -32,6 +34,7 @@ export async function runCli(args: readonly string[], options: CliOptions): Prom
       outputError: (text, write) => write(text.replace(/^error: /, 'estimetry: ')),
     });
 
+  registerInitCommand(program, options);
   registerTaskCommands(program, options);
   registerStartCommand(program, options);
   registerAttachCommand(program, options);
@@ -40,6 +43,7 @@ export async function runCli(args: readonly string[], options: CliOptions): Prom
   registerExtraCommand(program, options);
   registerParallelCommand(program, options);
   registerStatusCommand(program, options);
+  registerHookCommand(program, options);
 
   try {
     await program.parseAsync([...args], { from: 'user' });

@@ -1,3 +1,4 @@
+import type { InitReport } from '../../../application/project/init-project.js';
 import type { AttachTaskResult } from '../../../application/task/attach-task.js';
 import type { ParallelModeChanged } from '../../../application/task/change-parallel-mode.js';
 import type { ExtraRecorded } from '../../../application/task/record-extra.js';
@@ -18,4 +19,5 @@ export interface Presenter {
   extraRecorded(result: ExtraRecorded): string;
   parallelModeChanged(result: ParallelModeChanged): string;
   status(view: StatusView): string;
+  initReport(report: InitReport): string;
 }

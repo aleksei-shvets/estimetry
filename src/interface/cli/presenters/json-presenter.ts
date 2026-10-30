@@ -14,4 +14,5 @@ export const jsonPresenter: Presenter = {
   extraRecorded: json,
   parallelModeChanged: json,
   status: json,
+  initReport: json,
 };

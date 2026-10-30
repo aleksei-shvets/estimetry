@@ -1,13 +1,24 @@
+import type { HookCall } from '../../application/hooks/receive-hook.js';
 import type { Estimetry } from '../../application/estimetry.js';
 import type { CliOutput } from './cli-output.js';
 import { jsonPresenter } from './presenters/json-presenter.js';
 import type { Presenter } from './presenters/presenter.js';
 import { textPresenter } from './presenters/text-presenter.js';
 
+/** The streams of the process; `interactive` when both ends are a terminal and not in CI. */
+export interface Terminal {
+  readonly interactive: boolean;
+  readonly input: NodeJS.ReadableStream & { readonly isTTY?: boolean };
+  readonly output: NodeJS.WritableStream;
+}
+
 /** What every command gets: the application facade (built on demand) and the output. */
 export interface CliContext {
   readonly app: () => Promise<Estimetry>;
+  /** The hook receiver alone: hooks run on every tool call and must not load storage or git. */
+  readonly hooks: () => Promise<{ receive(call: HookCall): void }>;
   readonly out: CliOutput;
+  readonly terminal: Terminal;
 }
 
 export function presenterFor(options: { readonly json?: boolean }): Presenter {

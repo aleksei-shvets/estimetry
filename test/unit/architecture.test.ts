@@ -18,6 +18,9 @@ describe('layer boundaries', () => {
     ['src/application/task/create-task.ts', "import { readFileSync } from 'node:fs';"],
     ['src/infrastructure/fs/jsonl.ts', "import { x } from '../../interface/cli/program.js';"],
     ['src/integrations/tools/registry.ts', "import { x } from '../../infrastructure/fs/jsonl.js';"],
+    ['src/integrations/tools/claude-code/claude-code-adapter.ts', "import { x } from '../../flows/openspec/openspec-flow.js';"],
+    ['src/integrations/flows/openspec/openspec-flow.ts', "import { x } from '../../stack/node-detector.js';"],
+    ['src/integrations/stack/node-detector.ts', "import { x } from '../tools/registry.js';"],
     ['src/interface/cli/program.ts', "import { x } from '../../infrastructure/fs/jsonl.js';"],
     ['src/interface/cli/program.ts', "import { x } from '../../bootstrap/container.js';"],
   ])('%s rejects: %s', async (filePath, code) => {
@@ -30,6 +33,8 @@ describe('layer boundaries', () => {
     ['src/infrastructure/fs/jsonl.ts', "import { x } from '../../application/ports/clock.js';"],
     ['src/interface/cli/program.ts', "import { x } from '../../application/estimetry.js';"],
     ['src/bootstrap/container.ts', "import { x } from '../infrastructure/fs/jsonl.js';"],
+    ['src/integrations/tools/claude-code/claude-code-adapter.ts', "import { x } from '../../../application/contracts/flow.js';"],
+    ['src/integrations/tools/claude-code/claude-code-adapter.ts', "import { x } from '../content/commands.js';"],
   ])('%s allows: %s', async (filePath, code) => {
     expect(await violations(filePath, `${code}\nexport { x };`)).not.toContain('no-restricted-imports');
   });

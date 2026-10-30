@@ -1,3 +1,4 @@
+import type { InitReport } from '../../../application/project/init-project.js';
 import type { StatusView } from '../../../application/task/show-status.js';
 import type { TaskView } from '../../../application/task/task-view.js';
 import type { Presenter } from './presenter.js';
@@ -64,6 +65,8 @@ export const textPresenter: Presenter = {
       : `Parallel mode off for ${task.id}`,
 
   status: (view) => statusText(view),
+
+  initReport: (report) => initText(report),
 };
 
 /** `1h 40m`, `9h`, `25m`; zero is `0m`. */
@@ -122,6 +125,17 @@ export function localTime(iso: string): string {
   const date = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function initText(report: InitReport): string {
+  const lines = [
+    `Initialized estimetry in project ${report.project} (flow ${report.flow}, tools ${report.tools.join(', ')})`,
+    `stack: ${report.stack.length === 0 ? '(nothing detected)' : report.stack.join(', ')}`,
+    table(report.files.map((file) => [`  ${file.status}`, file.reason === undefined ? file.path : `${file.path}: ${file.reason}`])),
+    ...report.warnings.map((warning) => `warning: ${warning}`),
+    'Next: ask the agent for an estimate (/emt-estimate) or create a task with `emt task new "<title>"`.',
+  ];
+  return lines.filter((line) => line !== '').join('\n');
 }
 
 /** Warning shown when work starts without an estimate. */

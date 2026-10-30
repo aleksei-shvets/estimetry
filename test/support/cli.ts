@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, symlinkSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { tempDir } from './temp-dir.js';
@@ -16,8 +16,13 @@ export interface CliResult {
 
 export interface CliSandbox {
   readonly home: string;
+  /** HOME of the child processes: Claude Code's personal directory and git's global config live here, not in yours. */
+  readonly userHome: string;
+  readonly claudeDir: string;
+  readonly bin: string;
   /** Runs `emt <args>` in `cwd` against this sandbox's ESTIMETRY_HOME. */
-  run(args: readonly string[], cwd: string, bin?: 'emt' | 'estimetry'): Promise<CliResult>;
+  run(args: readonly string[], cwd: string, bin?: 'emt' | 'estimetry', env?: NodeJS.ProcessEnv): Promise<CliResult>;
+  readonly env: NodeJS.ProcessEnv;
   repo(name: string): string;
 }
 
@@ -34,14 +39,31 @@ export function cliSandbox(): CliSandbox {
   mkdirSync(bin);
   symlinkSync(MAIN, join(bin, 'emt'));
   symlinkSync(MAIN, join(bin, 'estimetry'));
+  const userHome = join(root, 'user');
+  const claudeDir = join(userHome, '.claude');
+  mkdirSync(userHome);
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ESTIMETRY_HOME: home,
+    HOME: userHome,
+    CLAUDE_CONFIG_DIR: claudeDir,
+    XDG_CONFIG_HOME: join(userHome, '.config'),
+    GIT_CONFIG_GLOBAL: join(userHome, '.gitconfig'),
+    PATH: `${bin}${delimiter}${process.env['PATH'] ?? ''}`,
+  };
+  delete env['CI'];
 
   return {
     home,
-    async run(args, cwd, name = 'emt') {
+    userHome,
+    claudeDir,
+    bin,
+    env,
+    async run(args, cwd, name = 'emt', extraEnv = {}) {
       try {
         const { stdout, stderr } = await run(process.execPath, [join(bin, name), ...args], {
           cwd,
-          env: { ...process.env, ESTIMETRY_HOME: home },
+          env: { ...env, ...extraEnv },
         });
         return { code: 0, stdout, stderr };
       } catch (error) {

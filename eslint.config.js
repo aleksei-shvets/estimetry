@@ -60,7 +60,21 @@ export default tseslint.config(
     })),
   ),
   boundary('src/infrastructure/**', [layerImports(['integrations', 'interface', 'bootstrap'])]),
-  boundary('src/integrations/**', [layerImports(['infrastructure', 'interface', 'bootstrap'])]),
+  // Integrations also stay apart from each other: a tool adapter knows no flow, a flow no stack detector.
+  ...[
+    ['tools', ['flows', 'stack']],
+    ['flows', ['tools', 'stack']],
+    ['stack', ['tools', 'flows']],
+  ].map(([own, others]) =>
+    boundary(`src/integrations/${own}/**`, [
+      layerImports(['infrastructure', 'interface', 'bootstrap']),
+      {
+        regex: `(^|/)(${others.join('|')})/`,
+        message: `Integrations boundary: integrations/${own} must not import ${others.join(', ')} (see CLAUDE.md, "Architecture").`,
+      },
+    ]),
+  ),
+  boundary('src/integrations/*.ts', [layerImports(['infrastructure', 'interface', 'bootstrap'])]),
   boundary('src/interface/**', [layerImports(['infrastructure', 'integrations', 'bootstrap'])]),
 
   {
