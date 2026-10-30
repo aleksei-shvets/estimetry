@@ -7,8 +7,10 @@ import type { EstimateReader } from './ports/estimate-reader.js';
 import type { EventJournal } from './ports/event-journal.js';
 import type { IdGenerator } from './ports/id-generator.js';
 import type { MeasurementSettings } from './ports/measurement-settings.js';
+import type { ProjectConfigFile } from './ports/project-config-file.js';
 import type { TaskTypeCatalog } from './ports/task-type-catalog.js';
 import type { WorkspaceLocator } from './ports/workspace-locator.js';
+import { InitProject, type InitChoices, type InitInput, type InitReport, type InstallDependencies } from './project/init-project.js';
 import { ResolveCurrentProject } from './project/resolve-current-project.js';
 import { EventMetaSource } from './shared/event-meta-source.js';
 import { AttachTask, type AttachTaskResult } from './task/attach-task.js';
@@ -37,6 +39,8 @@ export interface EstimetryDependencies {
   readonly journal: EventJournal;
   readonly measurement: MeasurementSettings;
   readonly estimates: EstimateReader;
+  readonly projectConfig: ProjectConfigFile;
+  readonly install: InstallDependencies;
 }
 
 /**
@@ -54,11 +58,13 @@ export interface Estimetry {
   recordExtra(input: RecordExtraInput): ExtraRecorded;
   changeParallelMode(input: ChangeParallelModeInput): ParallelModeChanged;
   showStatus(input: { readonly task?: TaskId }): StatusView;
+  initChoices(): InitChoices;
+  initProject(input: InitInput): InitReport;
 }
 
 export function createEstimetry(deps: EstimetryDependencies): Estimetry {
   const meta = new EventMetaSource(deps.clock, deps.ids, deps.authors);
-  const currentProject = new ResolveCurrentProject(deps.workspace, deps.projects, deps.authors, deps.clock);
+  const currentProject = new ResolveCurrentProject(deps.workspace, deps.projects, deps.projectConfig, deps.authors, deps.clock);
 
   const createTask = new CreateTask(deps.tasks, currentProject, deps.taskTypes, meta);
   const activeTask = new ResolveActiveTask(deps.tasks, currentProject);
@@ -73,6 +79,7 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
   const recordExtra = new RecordExtra(deps.tasks, activeTask, meta);
   const changeParallelMode = new ChangeParallelMode(deps.tasks, activeTask, measurement, meta);
   const showStatus = new ShowStatus(activeTask, measurement);
+  const initProject = new InitProject(deps.workspace, currentProject, deps.projects, deps.projectConfig, deps.install);
 
   return {
     createTask: (input) => createTask.execute(input),
@@ -85,5 +92,7 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
     recordExtra: (input) => recordExtra.execute(input),
     changeParallelMode: (input) => changeParallelMode.execute(input),
     showStatus: (input) => showStatus.execute(input),
+    initChoices: () => initProject.choices(),
+    initProject: (input) => initProject.execute(input),
   };
 }

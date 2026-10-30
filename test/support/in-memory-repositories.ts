@@ -2,7 +2,7 @@ import type { EventJournal } from '../../src/application/ports/event-journal.js'
 import { parseActivityEvent, type ActivityEvent } from '../../src/domain/measurement/activity-events.js';
 import type { Project } from '../../src/domain/project/project.js';
 import type { ProjectId } from '../../src/domain/project/project-id.js';
-import { ProjectIdTaken, type ProjectRepository } from '../../src/domain/project/project-repository.js';
+import { ProjectIdTaken, ProjectNotFound, type ProjectRepository } from '../../src/domain/project/project-repository.js';
 import { Task } from '../../src/domain/task/task.js';
 import { ConcurrencyConflict, TaskNotFound } from '../../src/domain/task/task-errors.js';
 import type { TaskEvent } from '../../src/domain/task/task-events.js';
@@ -75,6 +75,21 @@ export class InMemoryProjectRepository implements ProjectRepository {
     }
     this.projects.push(project);
     return project;
+  }
+
+  findById(id: ProjectId): Project | undefined {
+    return this.projects.find((project) => project.id.equals(id));
+  }
+
+  update(id: ProjectId, change: (project: Project) => Project): Project {
+    const index = this.projects.findIndex((project) => project.id.equals(id));
+    const current = this.projects[index];
+    if (!current) {
+      throw new ProjectNotFound(id.value);
+    }
+    const changed = change(current);
+    this.projects[index] = changed;
+    return changed;
   }
 }
 

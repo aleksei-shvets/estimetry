@@ -17,6 +17,7 @@ import {
   SequentialIdGenerator,
 } from '../../support/fakes.js';
 import { InMemoryEventJournal, InMemoryProjectRepository, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
+import { fakeInstallDependencies, InMemoryProjectConfigFile, InMemoryProjectFiles } from '../../support/in-memory-files.js';
 
 let tasks: InMemoryTaskRepository;
 let projects: InMemoryProjectRepository;
@@ -26,7 +27,10 @@ let app: Estimetry;
 
 const T = (id: string) => TaskId.parse(id);
 
+let projectFiles: InMemoryProjectFiles;
+
 beforeEach(() => {
+  projectFiles = new InMemoryProjectFiles();
   tasks = new InMemoryTaskRepository();
   projects = new InMemoryProjectRepository();
   workspace = new FakeWorkspaceLocator('/work/api');
@@ -42,6 +46,8 @@ beforeEach(() => {
     journal: new InMemoryEventJournal(),
     measurement: new FixedMeasurementSettings(),
     estimates: new InMemoryEstimateReader(),
+    projectConfig: new InMemoryProjectConfigFile(projectFiles),
+    install: fakeInstallDependencies(projectFiles),
   });
 });
 

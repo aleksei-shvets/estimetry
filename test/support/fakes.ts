@@ -43,10 +43,17 @@ export class SequentialIdGenerator implements IdGenerator {
 }
 
 export class FakeWorkspaceLocator implements WorkspaceLocator {
-  constructor(public root = '/work/api') {}
+  constructor(
+    public root = '/work/api',
+    public repository: string | undefined = undefined,
+  ) {}
 
   currentRoot(): string {
     return this.root;
+  }
+
+  fingerprint(): string | undefined {
+    return this.repository;
   }
 }
 

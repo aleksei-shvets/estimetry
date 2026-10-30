@@ -31,6 +31,7 @@ import {
   InMemoryProjectRepository,
   InMemoryTaskRepository,
 } from '../../support/in-memory-repositories.js';
+import { fakeInstallDependencies, InMemoryProjectConfigFile, InMemoryProjectFiles } from '../../support/in-memory-files.js';
 
 let tasks: InMemoryTaskRepository;
 let journal: InMemoryEventJournal;
@@ -64,7 +65,10 @@ function startedTask(likely = 10): void {
   app.startTask({ at: time('09:00') });
 }
 
+let projectFiles: InMemoryProjectFiles;
+
 beforeEach(() => {
+  projectFiles = new InMemoryProjectFiles();
   tasks = new InMemoryTaskRepository();
   journal = new InMemoryEventJournal();
   estimates = new InMemoryEstimateReader();
@@ -81,6 +85,8 @@ beforeEach(() => {
     journal,
     measurement: settings,
     estimates,
+    projectConfig: new InMemoryProjectConfigFile(projectFiles),
+    install: fakeInstallDependencies(projectFiles),
   });
 });
 
