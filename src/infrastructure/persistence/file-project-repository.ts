@@ -1,5 +1,6 @@
 import { Project } from '../../domain/project/project.js';
-import { ProjectIdTaken, type ProjectRepository } from '../../domain/project/project-repository.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
+import { ProjectIdTaken, ProjectNotFound, type ProjectRepository } from '../../domain/project/project-repository.js';
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import { withFileLock } from '../fs/file-lock.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
@@ -29,11 +30,34 @@ export class FileProjectRepository implements ProjectRepository {
       if (all.some((existing) => existing.id.equals(project.id))) {
         throw new ProjectIdTaken(project.id.value);
       }
-      writeYamlAtomic(this.layout.projectsFile, {
-        schemaVersion: PROJECTS_FILE_SCHEMA_VERSION,
-        projects: [...all, project].map((p) => p.toSnapshot()),
-      });
+      this.writeAll([...all, project]);
       return project;
+    });
+  }
+
+  findById(id: ProjectId): Project | undefined {
+    return this.readAll().find((project) => project.id.equals(id));
+  }
+
+  update(id: ProjectId, change: (project: Project) => Project): Project {
+    return withFileLock(this.layout.projectsLock, () => {
+      const all = this.readAll();
+      const index = all.findIndex((project) => project.id.equals(id));
+      const current = all[index];
+      if (!current) {
+        throw new ProjectNotFound(id.value);
+      }
+      const changed = change(current);
+      all[index] = changed;
+      this.writeAll(all);
+      return changed;
+    });
+  }
+
+  private writeAll(projects: readonly Project[]): void {
+    writeYamlAtomic(this.layout.projectsFile, {
+      schemaVersion: PROJECTS_FILE_SCHEMA_VERSION,
+      projects: projects.map((p) => p.toSnapshot()),
     });
   }
 

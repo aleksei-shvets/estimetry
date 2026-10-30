@@ -1,9 +1,10 @@
 import { appendFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { Project } from '../../src/domain/project/project.js';
 import { ProjectId } from '../../src/domain/project/project-id.js';
-import { ProjectIdTaken } from '../../src/domain/project/project-repository.js';
+import { ProjectIdTaken, ProjectNotFound } from '../../src/domain/project/project-repository.js';
 import { Author } from '../../src/domain/shared/author.js';
 import type { EventMeta } from '../../src/domain/shared/event-envelope.js';
 import { Timestamp } from '../../src/domain/shared/timestamp.js';
@@ -16,6 +17,7 @@ import { appendJsonLine } from '../../src/infrastructure/fs/jsonl.js';
 import { StorageLayout } from '../../src/infrastructure/fs/storage-layout.js';
 import { FileProjectRepository } from '../../src/infrastructure/persistence/file-project-repository.js';
 import { FileTaskRepository } from '../../src/infrastructure/persistence/file-task-repository.js';
+import { ROOT, spawnNode } from '../support/cli.js';
 import { tempDir } from '../support/temp-dir.js';
 
 let n = 0;
@@ -117,5 +119,50 @@ describe('FileProjectRepository', () => {
     repo.addIfAbsent(register('my-app', '/a/my-app'));
     expect(repo.addIfAbsent(register('other', '/a/my-app')).id.value).toBe('my-app');
     expect(() => repo.addIfAbsent(register('my-app', '/b/my-app'))).toThrow(ProjectIdTaken);
+  });
+
+  it('updates a project in place and refuses an unknown id', () => {
+    const repo = new FileProjectRepository(new StorageLayout(join(tempDir(), 'home')));
+    repo.addIfAbsent(register('my-app', '/a/my-app'));
+    repo.addIfAbsent(register('notes', '/a/notes'));
+    repo.update(ProjectId.parse('my-app'), (p) => p.withStack(['go']).withPath('/b/my-app'));
+    expect(repo.findById(ProjectId.parse('my-app'))?.toSnapshot()).toMatchObject({ stack: ['go'], paths: ['/a/my-app', '/b/my-app'] });
+    expect(repo.findByPath('/b/my-app')?.id.value).toBe('my-app');
+    expect(repo.findById(ProjectId.parse('notes'))).toBeDefined();
+    expect(() => repo.update(ProjectId.parse('nope'), (p) => p)).toThrow(ProjectNotFound);
+  });
+
+  it('reads a registry written before fingerprints existed', () => {
+    const layout = new StorageLayout(join(tempDir(), 'home'));
+    const repo = new FileProjectRepository(layout);
+    repo.addIfAbsent(register('my-app', '/a/my-app'));
+    expect(repo.findById(ProjectId.parse('my-app'))?.fingerprint).toBeUndefined();
+  });
+
+  it('loses no project when stack updates and registrations run in parallel processes', async () => {
+    const home = join(tempDir(), 'home');
+    const layout = new StorageLayout(home);
+    new FileProjectRepository(layout).addIfAbsent(register('my-app', '/a/my-app'));
+    const dist = (path: string) => JSON.stringify(pathToFileURL(join(ROOT, 'dist', path)).href);
+    const script = `
+      const { FileProjectRepository } = await import(${dist('infrastructure/persistence/file-project-repository.js')});
+      const { StorageLayout } = await import(${dist('infrastructure/fs/storage-layout.js')});
+      const { Project } = await import(${dist('domain/project/project.js')});
+      const { ProjectId } = await import(${dist('domain/project/project-id.js')});
+      const { Author } = await import(${dist('domain/shared/author.js')});
+      const { Timestamp } = await import(${dist('domain/shared/timestamp.js')});
+      const repo = new FileProjectRepository(new StorageLayout(${JSON.stringify(home)}));
+      const n = Number(process.argv[1]);
+      if (n % 2 === 0) {
+        repo.update(ProjectId.parse('my-app'), (p) => p.withStack([...p.stack, 'tag-' + n]));
+      } else {
+        repo.addIfAbsent(Project.register({ id: ProjectId.parse('p-' + n), name: 'p', path: '/p/' + n }, Author.of('a'), Timestamp.fromMillis(0)));
+      }
+    `;
+    const codes = await Promise.all(Array.from({ length: 10 }, (_, n) => spawnNode(['--input-type=module', '-e', script, String(n)])));
+    expect(codes).toEqual(Array(10).fill(0));
+    const repo = new FileProjectRepository(layout);
+    expect([...repo.ids()].sort()).toEqual(['my-app', 'p-1', 'p-3', 'p-5', 'p-7', 'p-9']);
+    expect(repo.findById(ProjectId.parse('my-app'))?.stack).toEqual(['tag-0', 'tag-2', 'tag-4', 'tag-6', 'tag-8']);
   });
 });

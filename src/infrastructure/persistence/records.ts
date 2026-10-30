@@ -225,7 +225,8 @@ export function parseProjectSnapshot(value: unknown): ProjectSnapshot | undefine
     !isStringArray(value['paths']) ||
     !isStringArray(value['stack']) ||
     !isString(value['author']) ||
-    !isString(value['createdAt'])
+    !isString(value['createdAt']) ||
+    !(value['fingerprint'] === undefined || isString(value['fingerprint']))
   ) {
     return undefined;
   }

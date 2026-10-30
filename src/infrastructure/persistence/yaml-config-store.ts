@@ -1,5 +1,6 @@
 import type { AuthorProvider } from '../../application/ports/author-provider.js';
 import type { MeasurementSettings } from '../../application/ports/measurement-settings.js';
+import { isShareMode, type ShareMode, type SharingPreference } from '../../application/ports/sharing-preference.js';
 import type { TaskTypeCatalog } from '../../application/ports/task-type-catalog.js';
 import { IdlePolicy } from '../../domain/measurement/idle-policy.js';
 import { Author } from '../../domain/shared/author.js';
@@ -17,7 +18,7 @@ export const CONFIG_SCHEMA_VERSION = 1;
  * The profile is detected once and then kept, so it stays stable across machines
  * even if the detection source changes.
  */
-export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, MeasurementSettings {
+export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, MeasurementSettings, SharingPreference {
   private author: Author | undefined;
 
   constructor(
@@ -47,6 +48,25 @@ export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, Measure
     } catch (error) {
       throw new InvalidValue(`${this.layout.configFile}: measurement.idleMinutes: ${(error as Error).message}`);
     }
+  }
+
+  /** `sharing.mode`; an unknown value counts as not chosen. */
+  mode(): ShareMode | undefined {
+    const sharing = this.read()['sharing'];
+    const mode = typeof sharing === 'object' && sharing !== null ? (sharing as Record<string, unknown>)['mode'] : undefined;
+    return typeof mode === 'string' && isShareMode(mode) ? mode : undefined;
+  }
+
+  save(mode: ShareMode): void {
+    withFileLock(this.layout.configLock, () => {
+      const config = this.read();
+      const sharing = typeof config['sharing'] === 'object' && config['sharing'] !== null ? config['sharing'] : {};
+      writeYamlAtomic(this.layout.configFile, {
+        ...config,
+        schemaVersion: config.schemaVersion ?? CONFIG_SCHEMA_VERSION,
+        sharing: { ...sharing, mode },
+      });
+    });
   }
 
   private loadOrCreateAuthor(): Author {

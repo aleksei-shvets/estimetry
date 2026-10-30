@@ -13,15 +13,20 @@ export class GitCli implements WorkspaceLocator {
     return this.root;
   }
 
+  fingerprint(): string | undefined {
+    const roots = this.run(['rev-list', '--max-parents=0', 'HEAD'], this.currentRoot());
+    return roots?.split('\n').map((line) => line.trim()).filter((line) => line !== '').sort()[0];
+  }
+
   userEmail(): string | undefined {
     return this.run(['config', 'user.email']);
   }
 
   /** Output of a git command, or undefined if git is missing or the command fails. */
-  private run(args: readonly string[]): string | undefined {
+  private run(args: readonly string[], cwd = this.cwd): string | undefined {
     try {
       const output = execFileSync('git', args, {
-        cwd: this.cwd,
+        cwd,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
