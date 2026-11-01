@@ -1,4 +1,5 @@
 import { measureEffort } from '../../domain/measurement/effort-calculator.js';
+import type { ActivityEvent } from '../../domain/measurement/activity-events.js';
 import type { EffortReport } from '../../domain/measurement/effort-report.js';
 import type { Task } from '../../domain/task/task.js';
 import type { Clock } from '../ports/clock.js';
@@ -13,11 +14,12 @@ export class TaskMeasurement {
     private readonly clock: Clock,
   ) {}
 
-  measure(task: Task): EffortReport {
+  /** `activity` is the task's journal when the caller has already read it. */
+  measure(task: Task, activity?: readonly ActivityEvent[]): EffortReport {
     const now = this.clock.now();
     const startedAt = task.startedAt;
     return measureEffort({
-      activity: startedAt ? this.journal.readActivity(task.id) : [],
+      activity: startedAt ? (activity ?? this.journal.readActivity(task.id)) : [],
       startedAt: startedAt ?? now,
       manual: task.manualTime,
       parallel: task.parallelMode,

@@ -1,3 +1,4 @@
+import { CalendarDate } from '../shared/calendar-date.js';
 import { DomainError } from '../shared/domain-error.js';
 import type { EventEnvelope } from '../shared/event-envelope.js';
 
@@ -27,6 +28,8 @@ export interface FileList {
 export interface ChangeProgress {
   readonly change: string;
   readonly archived: boolean;
+  /** `YYYY-MM-DD` from the name of the archive directory; absent for active changes and in older checkpoints. */
+  readonly archivedOn?: string;
   readonly done: number;
   readonly total: number;
 }
@@ -56,8 +59,39 @@ export type CommitRecorded = EventEnvelope<
   }
 >;
 
-export type ProgressRecord = CheckpointRecorded | CommitRecorded;
-export const PROGRESS_RECORD_TYPES: readonly ProgressRecord['type'][] = ['checkpoint.recorded', 'commit.recorded'];
+/**
+ * A change of the task's plan appeared in the archive. `directory` is the key:
+ * a change created again and archived again is a new completion.
+ */
+export type ChangeCompleted = EventEnvelope<
+  'change.completed',
+  {
+    readonly source: string;
+    readonly project: string;
+    readonly change: string;
+    readonly directory: string;
+    readonly flow: string;
+    /** When the directory was moved into the archive (its ctime), or its date when that is unknown. */
+    readonly completedAt: string;
+    readonly detectedAt: string;
+    /** True when the moment is not the move itself: a first run on a task, or a ctime older than the start. */
+    readonly approximate: boolean;
+  }
+>;
+
+/** Archive directories that existed before the task, noted on the first run so they never count as completions. */
+export type PlanBaseline = EventEnvelope<
+  'plan.baseline',
+  { readonly source: string; readonly project: string; readonly directories: readonly string[] }
+>;
+
+export type ProgressRecord = CheckpointRecorded | CommitRecorded | ChangeCompleted | PlanBaseline;
+export const PROGRESS_RECORD_TYPES: readonly ProgressRecord['type'][] = [
+  'checkpoint.recorded',
+  'commit.recorded',
+  'change.completed',
+  'plan.baseline',
+];
 
 export function isProgressRecordType(type: unknown): type is ProgressRecord['type'] {
   return typeof type === 'string' && (PROGRESS_RECORD_TYPES as readonly string[]).includes(type);
@@ -118,6 +152,25 @@ export function parseProgressRecord(value: unknown, options: { readonly withoutT
       const tree = files(data['workingTree'], 'data.workingTree');
       count(tree, 'untracked', 'data.workingTree.');
     }
+  } else if (type === 'change.completed') {
+    for (const key of ['project', 'change', 'directory', 'flow']) {
+      text(data, key, 'data.');
+    }
+    for (const key of ['completedAt', 'detectedAt']) {
+      if (Number.isNaN(Date.parse(text(data, key, 'data.')))) {
+        throw new InvalidProgressRecord(`data.${key}`, 'must be an ISO 8601 time');
+      }
+    }
+    if (typeof data['approximate'] !== 'boolean') {
+      throw new InvalidProgressRecord('data.approximate', 'must be true or false');
+    }
+  } else if (type === 'plan.baseline') {
+    text(data, 'project', 'data.');
+    list(data['directories'], 'data.directories').forEach((directory, i) => {
+      if (typeof directory !== 'string') {
+        throw new InvalidProgressRecord(`data.directories[${i}]`, 'must be a string');
+      }
+    });
   } else {
     text(data, 'sha', 'data.');
     list(data['parents'], 'data.parents').forEach((parent, i) => {
@@ -140,6 +193,13 @@ function change(value: unknown, path: string): void {
   text(item, 'change', `${path}.`);
   if (typeof item['archived'] !== 'boolean') {
     throw new InvalidProgressRecord(`${path}.archived`, 'must be true or false');
+  }
+  if (item['archivedOn'] !== undefined) {
+    try {
+      CalendarDate.parse(String(item['archivedOn']));
+    } catch {
+      throw new InvalidProgressRecord(`${path}.archivedOn`, 'must be a date YYYY-MM-DD');
+    }
   }
   count(item, 'done', `${path}.`);
   count(item, 'total', `${path}.`);

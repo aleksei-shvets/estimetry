@@ -6,4 +6,5 @@ export const noneFlow: Flow = {
   title: 'No SDD',
   detect: () => false,
   plan: () => [],
+  archived: () => [],
 };

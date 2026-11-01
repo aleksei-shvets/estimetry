@@ -59,10 +59,16 @@ export const textPresenter: Presenter = {
     return `Recorded extra work for ${task.id} (${details.join(', ')}): ${extra.description}`;
   },
 
-  parallelModeChanged: ({ task, enabled, budgetShare }) =>
-    enabled
-      ? `Parallel mode on for ${task.id}${budgetShare === undefined ? '' : ` (${percent(budgetShare)} of the budget spent)`}`
-      : `Parallel mode off for ${task.id}`,
+  parallelModeChanged: ({ task, enabled, budgetShare, planShare }) => {
+    if (!enabled) {
+      return `Parallel mode off for ${task.id}`;
+    }
+    const shares = [
+      ...(budgetShare === undefined ? [] : [`${percent(budgetShare)} of the budget spent`]),
+      ...(planShare === undefined ? [] : [`plan ${percent(planShare)} done`]),
+    ];
+    return `Parallel mode on for ${task.id}${shares.length === 0 ? '' : ` (${shares.join(', ')})`}`;
+  },
 
   status: (view) => statusText(view),
 
@@ -116,8 +122,56 @@ function statusText(view: StatusView): string {
     'records',
     `${view.records.manual} manual, ${view.records.extras} extra${extras.length === 0 ? '' : ` (${extras.join(', ')})`}`,
   ]);
+  rows.push(...planRows(view));
   const since = view.task.startedAt === undefined ? '' : ` since ${localTime(view.task.startedAt)}`;
   return [`${view.task.id} "${view.task.title}" ${view.task.status}${since}`, table(rows)].join('\n');
+}
+
+function untrackedText(project: StatusView['untrackedProjects'][number]): string {
+  switch (project.reason) {
+    case 'flow-none':
+      return "the project's flow has no plan";
+    case 'unknown-flow':
+      return `unknown flow "${project.flow ?? ''}" in .estimetry/config.yaml`;
+    case 'no-config':
+      return 'the project has no .estimetry/config.yaml';
+    case 'not-on-this-machine':
+      return 'the project is not on this machine';
+  }
+}
+
+function planRows(view: StatusView): [string, string][] {
+  const plan = view.plan;
+  if (plan === null) {
+    const first = view.untrackedProjects[0];
+    return view.planUnavailable === null || first === undefined ? [] : [['plan', `not tracked: ${untrackedText(first)}`]];
+  }
+  const rows: [string, string][] = [
+    [
+      'plan',
+      plan.mode === 'changes'
+        ? `${plan.done}% done by changes (${formatMinutes((plan.groupedHours ?? 0) * 60)} of ${formatMinutes((plan.estimateHours ?? 0) * 60)} in groups)`
+        : `${plan.done}% done by checkboxes (not linked to the estimate)`,
+    ],
+  ];
+  if (plan.notStarted.length > 0) {
+    rows.push(['  not started', plan.notStarted.join(', ')]);
+  }
+  if (plan.possibleTypos.length > 0) {
+    rows.push(['  possible typo', plan.possibleTypos.map(({ group, similar }) => `${group} (${similar}?)`).join(', ')]);
+  }
+  if (plan.archivedBeforeStart.length > 0) {
+    rows.push(['  archived before start', plan.archivedBeforeStart.join(', ')]);
+  }
+  if (view.untrackedProjects.length > 0) {
+    rows.push(['  not tracked', view.untrackedProjects.map((project) => `${project.project} (${untrackedText(project)})`).join(', ')]);
+  }
+  const last = view.completedChanges.at(-1);
+  if (last !== undefined) {
+    const moment = last.approximate ? `${last.completedAt.slice(0, 10)} (approx.)` : localTime(last.completedAt);
+    rows.push(['changes', `${view.completedChanges.length} done, last ${last.change} ${moment}`]);
+  }
+  return rows;
 }
 
 /** A moment in local time, in the same `YYYY-MM-DD HH:MM` form that `--at` accepts. */

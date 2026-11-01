@@ -42,6 +42,26 @@ export class NodeProjectFiles implements ProjectFiles {
     }
   }
 
+  list(dir: string): string[] {
+    try {
+      // The type comes with the entry on common file systems: no stat per directory.
+      return readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+    } catch {
+      return []; // no such directory: an empty archive, not an error
+    }
+  }
+
+  changedAt(path: string): number | undefined {
+    try {
+      return statSync(path).ctimeMs;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** Temp file, fsync, rename: readers see the old or the new content in full. */
   write(path: string, content: string, options: { readonly executable?: boolean } = {}): void {
     const dir = dirname(path);

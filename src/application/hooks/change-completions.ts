@@ -1,0 +1,176 @@
+import type { ChangeCompleted, PlanBaseline, ProgressRecord } from '../../domain/progress/progress-records.js';
+import { CalendarDate } from '../../domain/shared/calendar-date.js';
+import { Timestamp } from '../../domain/shared/timestamp.js';
+import { TaskId } from '../../domain/task/task-id.js';
+import type { ArchivedChange } from '../contracts/flow.js';
+import type { AuthorProvider } from '../ports/author-provider.js';
+import type { ErrorReporter } from '../ports/error-reporter.js';
+import type { EventJournal } from '../ports/event-journal.js';
+import type { IdGenerator } from '../ports/id-generator.js';
+import type { ProgressSeen, ProgressState } from '../ports/progress-state.js';
+import type { ProjectFiles } from '../ports/project-files.js';
+import type { ProjectPlanReading, ProjectPlans } from '../ports/project-plans.js';
+import type { TaskStatusReader, TaskSummary } from '../ports/task-status-reader.js';
+import { journalEntry } from './journal-entry.js';
+
+const SOURCE = 'estimetry';
+
+/**
+ * Notices changes of a task moved into the archive (plan-progress spec): one
+ * listing of each project's archive per hook call, no `tasks.md`, no git.
+ * The journal is the source of truth; the cache only spares reading it.
+ */
+export class ChangeCompletions {
+  constructor(
+    private readonly plans: Pick<ProjectPlans, 'archives'>,
+    private readonly files: Pick<ProjectFiles, 'changedAt'>,
+    private readonly state: ProgressState,
+    private readonly journal: EventJournal,
+    private readonly tasks: Pick<TaskStatusReader, 'inProgress'>,
+    private readonly ids: IdGenerator,
+    private readonly authors: AuthorProvider,
+    private readonly errors: ErrorReporter,
+  ) {}
+
+  /** Never throws: a failed check is repeated on the next call. `near` is the working copy of the session. */
+  check(task: TaskSummary, now: Timestamp, near?: string): void {
+    try {
+      this.run(task, now, near);
+    } catch (error) {
+      this.errors.report('change completions', error);
+    }
+  }
+
+  private run(task: TaskSummary, now: Timestamp, near: string | undefined): void {
+    if (task.startedAt === undefined) {
+      return;
+    }
+    const readings = this.plans
+      .archives(task.projects, near === undefined ? {} : { near })
+      .filter((reading) => reading.archived !== undefined);
+    if (readings.length === 0) {
+      return;
+    }
+    const cached = this.state.read(task.id);
+    const seen = cached ?? fromRecords(this.journal.readRecords(TaskId.parse(task.id)));
+    const startedAt = Timestamp.parse(task.startedAt);
+    const records: ProgressRecord[] = [];
+    const directories: Record<string, readonly string[]> = { ...seen.directories };
+    let changed = cached === undefined;
+    for (const reading of readings) {
+      const firstRun = seen.directories[reading.project] === undefined;
+      const unseen = (reading.archived ?? []).filter((dir) => !seenIn(seen, reading.project, dir.directory));
+      if (!firstRun && unseen.length === 0) {
+        continue;
+      }
+      const checked = this.checkProject(task, reading, unseen, firstRun, startedAt, now);
+      records.push(...checked.records);
+      if (firstRun || checked.settled.length > 0) {
+        directories[reading.project] = [...(seen.directories[reading.project] ?? []), ...checked.settled];
+        changed = true;
+      }
+    }
+    // Journal first, then the cache: a crash in between repeats a record, it never loses one.
+    for (const record of records) {
+      this.journal.appendRecord(record);
+    }
+    if (changed) {
+      this.state.write(task.id, { directories });
+    }
+  }
+
+  /**
+   * Records for the unseen directories of one project and the ones settled by
+   * them. A directory of another task is not settled: it is looked at again,
+   * so the decision never depends on whether the cache survived.
+   */
+  private checkProject(
+    task: TaskSummary,
+    reading: ProjectPlanReading,
+    unseen: readonly ArchivedChange[],
+    firstRun: boolean,
+    startedAt: Timestamp,
+    now: Timestamp,
+  ): { records: ProgressRecord[]; settled: string[] } {
+    const windowStart = CalendarDate.of(startedAt).minusDays(1);
+    const records: ProgressRecord[] = [];
+    const settled: string[] = [];
+    const baseline: string[] = [];
+    let ours: ((change: string) => boolean) | undefined;
+    for (const dir of unseen) {
+      if (dir.archivedOn.isBefore(windowStart)) {
+        settled.push(dir.directory);
+        if (firstRun) {
+          baseline.push(dir.directory);
+        }
+        continue;
+      }
+      ours ??= this.belongs(task, reading.project);
+      if (!ours(dir.change)) {
+        continue;
+      }
+      // Only now a stat: a ctime older than the start means the directory was recreated (a clone), not moved.
+      const changedAt = firstRun ? undefined : this.files.changedAt(dir.path);
+      const exact = changedAt !== undefined && changedAt >= startedAt.toMillis();
+      const completedAt = exact ? Timestamp.fromMillis(Math.round(changedAt)) : Timestamp.parse(`${dir.archivedOn.value}T00:00:00.000Z`);
+      settled.push(dir.directory);
+      records.push(
+        journalEntry<ChangeCompleted>(
+          'change.completed',
+          {
+            source: SOURCE,
+            project: reading.project,
+            change: dir.change,
+            directory: dir.directory,
+            flow: reading.flow ?? 'unknown',
+            completedAt: completedAt.toISOString(),
+            detectedAt: now.toISOString(),
+            approximate: !exact,
+          },
+          this.meta(task, reading.project, now),
+        ),
+      );
+    }
+    if (firstRun) {
+      records.unshift(
+        journalEntry<PlanBaseline>(
+          'plan.baseline',
+          { source: SOURCE, project: reading.project, directories: baseline },
+          this.meta(task, reading.project, now),
+        ),
+      );
+    }
+    return { records, settled };
+  }
+  /** The changes of the task's groups; a task without groups owns a change only as the one task in progress there. */
+  private belongs(task: TaskSummary, project: string): (change: string) => boolean {
+    const groups = task.groups ?? [];
+    if (groups.length > 0) {
+      return (change) => groups.includes(change);
+    }
+    const inProgress = this.tasks.inProgress(project);
+    const alone = inProgress.length === 1 && inProgress[0]?.id === task.id;
+    return () => alone;
+  }
+
+  private meta(task: TaskSummary, project: string, now: Timestamp) {
+    return { id: this.ids.next(), at: now, author: this.authors.current(), project, task: task.id };
+  }
+}
+
+/** The cache rebuilt from the journal: directories of completions and baselines, by project. */
+function fromRecords(records: readonly ProgressRecord[]): ProgressSeen {
+  const directories: Record<string, string[]> = {};
+  for (const record of records) {
+    if (record.type === 'plan.baseline') {
+      (directories[record.data.project] ??= []).push(...record.data.directories);
+    } else if (record.type === 'change.completed') {
+      (directories[record.data.project] ??= []).push(record.data.directory);
+    }
+  }
+  return { directories };
+}
+
+function seenIn(seen: ProgressSeen, project: string, directory: string): boolean {
+  return seen.directories[project]?.includes(directory) ?? false;
+}

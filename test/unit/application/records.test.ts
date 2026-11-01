@@ -32,7 +32,7 @@ import {
   InMemoryTaskRepository,
 } from '../../support/in-memory-repositories.js';
 import { fakeInstallDependencies, InMemoryProjectConfigFile, InMemoryProjectFiles } from '../../support/in-memory-files.js';
-import { InMemorySessionBindings, RepositoryTaskStatusReader } from '../../support/hook-fakes.js';
+import { FakeProjectPlans, InMemorySessionBindings, RepositoryTaskStatusReader } from '../../support/hook-fakes.js';
 
 let tasks: InMemoryTaskRepository;
 let journal: InMemoryEventJournal;
@@ -40,6 +40,7 @@ let estimates: InMemoryEstimateReader;
 let clock: FixedClock;
 let settings: FixedMeasurementSettings;
 let app: Estimetry;
+let plans: FakeProjectPlans;
 
 const T = (id: string) => TaskId.parse(id);
 const time = (hhmm: string) => Timestamp.parse(`2026-10-27T${hhmm}:00.000Z`);
@@ -75,6 +76,7 @@ beforeEach(() => {
   estimates = new InMemoryEstimateReader();
   clock = new FixedClock('2026-10-27T10:00:00.000Z');
   settings = new FixedMeasurementSettings();
+  plans = new FakeProjectPlans();
   app = createEstimetry({
     tasks,
     projects: new InMemoryProjectRepository(),
@@ -89,6 +91,7 @@ beforeEach(() => {
     projectConfig: new InMemoryProjectConfigFile(projectFiles),
     install: fakeInstallDependencies(projectFiles),
     sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(tasks) },
+    plans,
   });
 });
 
@@ -209,6 +212,13 @@ describe('changeParallelMode', () => {
     expect(app.showStatus({}).parallel).toEqual({ used: true, maxAgents: 3, sequentialEquivalent: 360 });
   });
 
+  it('records the share of the plan done when the plan can be counted', () => {
+    startedTask(10);
+    plans.readings = [{ project: 'api', changes: [{ change: 'x', archived: false, done: 1, total: 4 }], archived: [] }];
+    expect(app.changeParallelMode({ enabled: true })).toMatchObject({ planShare: 0.25 });
+    expect(JSON.stringify(tasks.journals.get('T-1'))).toContain('"planShare":0.25');
+  });
+
   it('has no budget share without an estimate', () => {
     app.createTask({ title: 'X' });
     app.startTask({});
@@ -217,6 +227,29 @@ describe('changeParallelMode', () => {
 });
 
 describe('showStatus', () => {
+  it('reads the journal once for the fact and the completions', () => {
+    startedTask(10);
+    const reads: string[] = [];
+    journal.readActivity = () => (reads.push('activity'), []);
+    journal.readRecords = () => (reads.push('records'), []);
+    const readAll = journal.readAll.bind(journal);
+    journal.readAll = (task) => (reads.push('all'), readAll(task));
+    plans.readings = [{ project: 'api', changes: [], archived: [] }];
+    app.showStatus({});
+    // The in-memory readAll goes through the two reads; nothing reads them besides it.
+    expect(reads).toEqual(['all', 'activity', 'records']);
+  });
+
+  it('shows the plan by checkboxes without groups, and why it is missing otherwise', () => {
+    startedTask(10);
+    expect(app.showStatus({})).toMatchObject({ plan: null, planUnavailable: 'not-on-this-machine', completedChanges: [] });
+    plans.readings = [{ project: 'api', changes: [{ change: 'x', archived: false, done: 1, total: 4 }], archived: [] }];
+    expect(app.showStatus({})).toMatchObject({
+      plan: { done: 25, mode: 'checkboxes', groupedHours: null, estimateHours: null, notStarted: [] },
+      planUnavailable: null,
+    });
+  });
+
   it('computes the fact from the journal with the configured threshold', () => {
     startedTask(1);
     journal.append(activity('turn.started', '09:00', { origin: 'user' }));

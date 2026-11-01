@@ -15,6 +15,7 @@ import type { MeasurementSettings } from '../ports/measurement-settings.js';
 import type { ProjectLocator } from '../ports/project-locator.js';
 import type { SessionBindings } from '../ports/session-bindings.js';
 import type { TaskStatusReader } from '../ports/task-status-reader.js';
+import type { ChangeCompletions } from './change-completions.js';
 import type { Checkpoints } from './checkpoints.js';
 import { cut, EXTRA_REMINDER, sessionStartContext, type TaskFact } from './hook-context.js';
 import { journalEntry } from './journal-entry.js';
@@ -37,7 +38,8 @@ export interface HookCall {
 
 /** Fact of a task for the status line; loaded only for the session start, where it is needed. */
 export interface TaskFacts {
-  fact(task: string): TaskFact | undefined;
+  /** `near` is the working copy of the session. */
+  fact(task: string, near?: string): TaskFact | undefined;
 }
 
 export interface HookDependencies {
@@ -45,6 +47,7 @@ export interface HookDependencies {
   readonly locator: ProjectLocator;
   readonly sessionTask: SessionTask;
   readonly checkpoints: Checkpoints;
+  readonly completions: Pick<ChangeCompletions, 'check'>;
   readonly journal: EventJournal;
   readonly tasks: TaskStatusReader;
   readonly bindings: SessionBindings;
@@ -109,9 +112,12 @@ export class ReceiveHook {
       now,
       resolved.task === undefined ? undefined : { id: resolved.task.id, project: resolved.project },
     );
+    if (resolved.task !== undefined) {
+      this.deps.completions.check(resolved.task, now, resolved.project.root);
+    }
 
     if (translation.kind === 'session-start') {
-      const fact = resolved.task === undefined ? undefined : (await this.deps.facts()).fact(resolved.task.id);
+      const fact = resolved.task === undefined ? undefined : (await this.deps.facts()).fact(resolved.task.id, resolved.project.root);
       const reminder = this.deps.checkpoints.takeReminder(translation.session);
       const text = sessionStartContext({
         session: translation.session,

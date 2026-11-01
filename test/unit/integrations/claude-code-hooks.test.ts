@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InvalidValue } from '../../../src/domain/shared/domain-error.js';
-import { countCheckboxes, openSpecPlan } from '../../../src/integrations/flows/openspec/openspec-plan.js';
+import { CalendarDate } from '../../../src/domain/shared/calendar-date.js';
+import { countCheckboxes, openSpecArchived, openSpecPlan } from '../../../src/integrations/flows/openspec/openspec-plan.js';
 import { withHooks } from '../../../src/integrations/tools/claude-code/hook-settings.js';
 import { SYNCHRONOUS_HOOK_EVENTS, CLAUDE_CODE_HOOK_EVENTS } from '../../../src/integrations/tools/claude-code/hook-events.js';
 import { claudeCodeHooks } from '../../../src/integrations/tools/claude-code/hook-translation.js';
@@ -130,7 +131,7 @@ describe('OpenSpec plan', () => {
     expect(countCheckboxes('- [x] a\n  - [ ] b\n* [X] c\n```\n- [ ] example\n```\n- not a box\n')).toEqual({ done: 2, total: 3 });
   });
 
-  it('reads active and archived changes, an active one wins, a broken tasks.md is skipped', () => {
+  it('reads active and archived changes, an active one wins, an unreadable tasks.md counts as none', () => {
     const root = '/p';
     const files = new InMemoryProjectFiles({
       '/p/openspec/changes/hooks-and-flows/tasks.md': '- [x] a\n- [ ] b\n',
@@ -139,13 +140,60 @@ describe('OpenSpec plan', () => {
       '/p/openspec/changes/archive/not-a-date/tasks.md': '- [x] x\n',
     });
     expect(openSpecPlan(root, files)).toEqual([
-      { change: 'claude-code-init', archived: true, done: 2, total: 2 },
+      { change: 'claude-code-init', archived: true, archivedOn: '2026-10-30', done: 2, total: 2 },
       { change: 'hooks-and-flows', archived: false, done: 1, total: 2 },
     ]);
     const broken = new InMemoryProjectFiles({ '/p/openspec/changes/x/tasks.md': '- [x] a\n' });
     broken.read = () => {
       throw new Error('EACCES');
     };
-    expect(openSpecPlan(root, broken)).toEqual([]);
+    expect(openSpecPlan(root, broken)).toEqual([{ change: 'x', archived: false, done: 0, total: 0 }]);
+  });
+
+  it('takes the latest of duplicate archives and keeps active changes without tasks.md', () => {
+    const files = new InMemoryProjectFiles({
+      '/p/openspec/changes/new-one/proposal.md': '# new\n',
+      '/p/openspec/changes/archive/2026-10-27-auth/tasks.md': '- [ ] a\n',
+      '/p/openspec/changes/archive/2026-10-30-auth/tasks.md': '- [x] a\n- [x] b\n',
+    });
+    expect(openSpecPlan('/p', files)).toEqual([
+      { change: 'auth', archived: true, archivedOn: '2026-10-30', done: 2, total: 2 },
+      { change: 'new-one', archived: false, done: 0, total: 0 },
+    ]);
+  });
+
+  it('does not read tasks of archives before the cut-off, keeping their name and date', () => {
+    const files = new InMemoryProjectFiles({
+      '/p/openspec/changes/archive/2026-09-01-old/tasks.md': '- [x] a\n',
+      '/p/openspec/changes/archive/2026-10-30-new/tasks.md': '- [x] a\n',
+    });
+    const read: string[] = [];
+    const original = files.read.bind(files);
+    files.read = (path) => (read.push(path), original(path));
+    expect(openSpecPlan('/p', files, { archivedSince: CalendarDate.parse('2026-10-25') })).toEqual([
+      { change: 'new', archived: true, archivedOn: '2026-10-30', done: 1, total: 1 },
+      { change: 'old', archived: true, archivedOn: '2026-09-01', done: 0, total: 0 },
+    ]);
+    expect(read).toEqual(['/p/openspec/changes/archive/2026-10-30-new/tasks.md']);
+  });
+
+  it('lists the archive without reading tasks, skipping names without a real date; no archive is empty', () => {
+    const files = new InMemoryProjectFiles({
+      '/p/openspec/changes/archive/2026-11-02-plan-progress/tasks.md': '- [x] a\n',
+      '/p/openspec/changes/archive/2026-02-30-bad/tasks.md': '- [x] a\n',
+      '/p/openspec/changes/archive/notes/x.md': '',
+    });
+    files.read = () => {
+      throw new Error('must not read');
+    };
+    expect(openSpecArchived('/p', files).map((c) => ({ ...c, archivedOn: c.archivedOn.value }))).toEqual([
+      {
+        change: 'plan-progress',
+        archivedOn: '2026-11-02',
+        directory: '2026-11-02-plan-progress',
+        path: '/p/openspec/changes/archive/2026-11-02-plan-progress',
+      },
+    ]);
+    expect(openSpecArchived('/q', new InMemoryProjectFiles())).toEqual([]);
   });
 });

@@ -25,7 +25,7 @@ function timed(command: string, args: readonly string[], options: { cwd: string;
 }
 
 describe('hook budgets on a large store', () => {
-  it('stays within the budgets with 100 tasks and a journal of 100 000 events', () => {
+  it('stays within the budgets with 100 tasks, a journal of 100 000 events and 50 archived changes', () => {
     const cli = cliSandbox();
     const repo = cli.repo('api');
     execFileSync('git', ['init', '-q'], { cwd: repo });
@@ -58,6 +58,14 @@ describe('hook budgets on a large store', () => {
     new YamlSessionStore(layout).update(SessionId.parse('live'), () => ({ session: 'live', project: 'api', root: repo, task: 'T-1', since: '2026-10-27T08:00:00.000Z', everBound: true }));
     new YamlCheckpointState(layout).write(SessionId.parse('live'), { lastAt: new Date().toISOString() });
 
+    // A project on OpenSpec with 50 archived changes: every bound call lists the archive.
+    mkdirSync(join(repo, '.estimetry'), { recursive: true });
+    writeFileSync(join(repo, '.estimetry', 'config.yaml'), 'schemaVersion: 1\nproject: api\nflow: openspec\n');
+    for (let i = 0; i < 50; i++) {
+      const dir = join(repo, 'openspec', 'changes', 'archive', `2026-10-${String(1 + (i % 28)).padStart(2, '0')}-change-${i}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'tasks.md'), '- [x] done\n');
+    }
     const env = cli.env;
     const run = (event: string, extra: Record<string, unknown> = {}) =>
       timed(process.execPath, [join(cli.bin, 'estimetry'), 'hook', 'claude-code', event], {

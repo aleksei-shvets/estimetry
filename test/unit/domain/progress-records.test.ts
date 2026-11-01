@@ -54,6 +54,20 @@ describe('progress records', () => {
     }
   });
 
+  it('accepts completions and baselines, and an archive date in a checkpoint plan', () => {
+    const completed = {
+      ...envelope,
+      type: 'change.completed',
+      data: { source: 'estimetry', project: 'api', change: 'auth', directory: '2026-10-30-auth', flow: 'openspec', completedAt: '2026-10-30T10:00:00.000Z', detectedAt: '2026-10-30T10:00:05.000Z', approximate: false },
+    };
+    expect(parseProgressRecord(completed).type).toBe('change.completed');
+    expect(parseProgressRecord({ ...envelope, type: 'plan.baseline', data: { source: 'estimetry', project: 'api', directories: ['2026-09-01-old'] } }).type).toBe('plan.baseline');
+    expect(() => parseProgressRecord({ ...completed, data: { ...completed.data, approximate: 'no' } })).toThrow(/data.approximate/);
+    const dated = { ...checkpoint, data: { ...checkpoint.data, plan: [{ change: 'a', archived: true, archivedOn: '2026-10-30', done: 1, total: 1 }] } };
+    expect(parseProgressRecord(dated).type).toBe('checkpoint.recorded');
+    expect(() => parseProgressRecord({ ...dated, data: { ...dated.data, plan: [{ change: 'a', archived: true, archivedOn: '2026-13-01', done: 1, total: 1 }] } })).toThrow(/archivedOn/);
+  });
+
   it('cuts long file lists and keeps the real count', () => {
     const many = Array.from({ length: MAX_RECORDED_FILES + 5 }, (_, i) => ({ path: `f${i}`, added: 1, deleted: 0 }));
     expect(fileList(many)).toMatchObject({ fileCount: MAX_RECORDED_FILES + 5, truncated: true });

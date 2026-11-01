@@ -47,7 +47,13 @@ export class FileTaskStatusReader implements TaskStatusReader {
       title: snapshot.title,
       status: snapshot.status,
       projects: snapshot.projects,
+      ...groupsOf(snapshot.estimate?.parts),
       ...(snapshot.startedAt === undefined ? {} : { startedAt: snapshot.startedAt }),
     };
   }
+}
+
+function groupsOf(parts: readonly { readonly group?: string }[] | undefined): { groups?: string[] } {
+  const groups = [...new Set((parts ?? []).flatMap((part) => (part.group === undefined ? [] : [part.group])))];
+  return groups.length === 0 ? {} : { groups };
 }

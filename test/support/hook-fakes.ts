@@ -2,7 +2,7 @@ import type { ActivityDraft, HookAdapter, HookKind, HookTranslation } from '../.
 import type { CheckpointState, CheckpointStatus } from '../../src/application/ports/checkpoint-state.js';
 import type { CommitInfo, GitHead, GitSnapshots } from '../../src/application/ports/git-snapshot.js';
 import type { LocatedProject, ProjectLocator } from '../../src/application/ports/project-locator.js';
-import type { ProjectPlans } from '../../src/application/ports/project-plans.js';
+import type { ProjectPlanReading, ProjectPlans } from '../../src/application/ports/project-plans.js';
 import type { SessionBinding, SessionBindings } from '../../src/application/ports/session-bindings.js';
 import type { TaskStatusReader, TaskSummary } from '../../src/application/ports/task-status-reader.js';
 import { SessionId } from '../../src/domain/measurement/session-id.js';
@@ -106,8 +106,18 @@ function toSummary(s: { id: string; title: string; status: string; startedAt?: s
 export class FakeProjectPlans implements ProjectPlans {
   constructor(public changes: readonly ChangeProgress[] | undefined = [{ change: 'a', archived: false, done: 1, total: 4 }]) {}
 
+  readings: ProjectPlanReading[] = [];
+
   plan(): readonly ChangeProgress[] | undefined {
     return this.changes;
+  }
+
+  plans(projects: readonly string[]): ProjectPlanReading[] {
+    return projects.map((project) => this.readings.find((reading) => reading.project === project) ?? { project, unavailable: 'not-on-this-machine' });
+  }
+
+  archives(projects: readonly string[]): ProjectPlanReading[] {
+    return this.plans(projects).map(({ changes: _changes, ...rest }) => rest);
   }
 }
 

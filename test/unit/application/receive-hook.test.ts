@@ -58,9 +58,12 @@ function call(event: string, kind: HookKind, events: readonly ActivityDraft[] = 
   });
 }
 
+let checked: string[] = [];
+
 const types = (task: string) => journal.readActivity(TaskId.parse(task)).map((e) => e.type);
 
 beforeEach(() => {
+  checked = [];
   tasks = new InMemoryTaskRepository();
   journal = new InMemoryEventJournal();
   bindings = new InMemorySessionBindings();
@@ -77,13 +80,14 @@ beforeEach(() => {
     locator: new FakeProjectLocator(),
     sessionTask: new SessionTask(bindings, status, journal, ids, authors),
     checkpoints: new Checkpoints(state, journal, new FakeProjectPlans(), git, git, settings, errors, ids, authors),
+    completions: { check: (task) => void checked.push(task.id) },
     journal,
     tasks: status,
     bindings,
     checkpointState: state,
     git,
     settings,
-    facts: async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5 }) }),
+    facts: async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5, planDone: 51 }) }),
     clock,
     ids,
     authors,
@@ -92,6 +96,15 @@ beforeEach(() => {
 });
 
 describe('which task a session serves', () => {
+  it('checks the archive for completions on every call of a bound session, sync or async', async () => {
+    await call('ToolDone', 'tool-done', [tool('t0')], { session: 's0' });
+    expect(checked).toEqual([]);
+    startedTask('T-1', 'estimetry v1');
+    await call('ToolDone', 'tool-done', [tool('t1')]);
+    await call('Prompt', 'prompt', []);
+    expect(checked).toEqual(['T-1', 'T-1']);
+  });
+
   it('binds to the only task in progress, opening the window at the start of the task', async () => {
     startedTask('T-1', 'estimetry v1');
     await call('ToolDone', 'tool-done', [tool('t1')]);
@@ -226,7 +239,7 @@ describe('checkpoints and context', () => {
     startedTask('T-1', 'estimetry v1');
     const out = await call('Start', 'session-start', [{ type: 'session.started', data: {} }]);
     expect(JSON.parse(out ?? '{}').text).toBe(
-      'estimetry: task T-1 "estimetry v1" — 3h 30m of 58h 30m (6%). If the work has gone beyond the plan, record it with /emt-extra.',
+      'estimetry: task T-1 "estimetry v1" — 3h 30m of 58h 30m (6%), plan 51% done. If the work has gone beyond the plan, record it with /emt-extra.',
     );
   });
 

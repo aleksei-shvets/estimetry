@@ -8,7 +8,7 @@ The CLI is `estimetry`, with the short alias `emt`. It needs Node.js 20.19 or ne
 npm install -g estimetry
 ```
 
-> estimetry is in early development. Closing tasks, plan progress and calibration are still being built.
+> estimetry is in early development. Closing tasks and calibration are still being built.
 
 ## Setting up a project: `estimetry init`
 
@@ -88,6 +88,25 @@ measurement:
 ```
 
 After a checkpoint, the agent is reminded with your next prompt to record work outside the plan with `/emt-extra`.
+
+### Plan progress
+
+`emt status` also shows how much of the plan is done:
+
+```
+plan            51% done by changes (58h 30m of 58h 30m in groups)
+  not started   close-retro-cards, estimate-mode
+changes         4 done, last hooks-and-flows 2026-11-01 (approx.)
+```
+
+- **Parts are linked by `group`.** A part of the estimate whose `group` is the name of an OpenSpec change is linked to that change, in any project of the task. An archived change counts as 100% done, an active one by its checked boxes, a change not created yet as 0%. The percent is weighted by the most likely hours of the linked parts.
+- **The plan of a task** is its active changes plus the archived ones dated no earlier than the day before the task started. An older archive with the same name belongs to earlier work.
+- **Groups without a change** are listed as `not started`, as `possible typo` when a change has a similar name, or as `archived before start`.
+- **Without groups** (or without an estimate) the plan is counted by the checkboxes of all its changes and marked as not linked to the estimate.
+- **Not tracked** when the project's flow is `none` or unknown, the project has no `.estimetry/config.yaml`, or it is not on this machine. For a task in several projects, the percent counts the projects estimetry can read and lists the others under `not tracked`: their groups may look not started although they are done.
+- **Several working copies** of a project (worktrees, clones): the plan is read in the one you work in.
+
+A change is completed when its directory appears in the archive, however it got there: `openspec archive`, a skill moving it, or you in a terminal. The next hook call of a session bound to the task records it, with the time of the move. Changes already archived when estimetry first looks at a task are recorded with their date only, marked `(approx.)`. A change moved back out of the archive no longer counts as completed. The start of a session shows the percent too (`plan 51% done`), and `emt parallel on` records it.
 
 ### What is never stored
 

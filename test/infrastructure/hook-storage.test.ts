@@ -21,6 +21,8 @@ import { FileTaskStatusReader } from '../../src/infrastructure/persistence/file-
 import { JsonlEventJournal } from '../../src/infrastructure/persistence/jsonl-event-journal.js';
 import { YamlCheckpointState, YamlSessionStore } from '../../src/infrastructure/persistence/yaml-session-store.js';
 import { YamlConfigStore } from '../../src/infrastructure/persistence/yaml-config-store.js';
+import { YamlProgressState } from '../../src/infrastructure/persistence/yaml-progress-state.js';
+import { NodeProjectFiles } from '../../src/infrastructure/fs/node-project-files.js';
 import { ROOT, spawnNode } from '../support/cli.js';
 import { tempDir } from '../support/temp-dir.js';
 
@@ -205,5 +207,33 @@ describe('YamlConfigStore checkpoint interval', () => {
     expect(store.checkpointInterval()).toEqual({ minutes: 15 });
     writeFileSync(join(root, 'config.yaml'), 'measurement:\n  checkpointMinutes: 45\n');
     expect(store.checkpointInterval()).toMatchObject({ minutes: 20, problem: expect.stringContaining('measurement.checkpointMinutes') });
+  });
+});
+
+describe('archive listing and the progress cache', () => {
+  it('lists subdirectories without a stat, gives the ctime on request, and a missing directory is empty', () => {
+    const dir = tempDir('list-');
+    mkdirSync(join(dir, 'b'));
+    mkdirSync(join(dir, 'a'));
+    writeFileSync(join(dir, 'file.md'), '');
+    const before = Date.now() - 1000;
+    const files = new NodeProjectFiles();
+    expect(files.list(dir)).toEqual(['a', 'b']);
+    expect(files.changedAt(join(dir, 'a'))).toBeGreaterThanOrEqual(before);
+    expect(files.changedAt(join(dir, 'missing'))).toBeUndefined();
+    expect(files.list(join(dir, 'missing'))).toEqual([]);
+  });
+
+  it('keeps seen directories per task and treats a broken cache as missing', () => {
+    const layout = new StorageLayout(tempDir('progress-'));
+    const state = new YamlProgressState(layout);
+    expect(state.read('T-1')).toBeUndefined();
+    state.write('T-1', { directories: { api: ['2026-11-02-plan-progress'] } });
+    expect(state.read('T-1')).toEqual({ directories: { api: ['2026-11-02-plan-progress'] } });
+    writeFileSync(layout.taskProgress('T-1'), 'directories: [oops');
+    expect(state.read('T-1')).toBeUndefined();
+    writeFileSync(layout.taskProgress('T-1'), 'directories: { api: [1] }\n');
+    expect(state.read('T-1')).toBeUndefined();
+    expect(state.read('../x')).toBeUndefined();
   });
 });

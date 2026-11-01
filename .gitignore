@@ -3,5 +3,5 @@ dist/
 .claude/
 CLAUDE.*
 docs/
-openspec/
+/openspec/
 .estimetry/

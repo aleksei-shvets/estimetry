@@ -10,6 +10,8 @@ export interface TaskFact {
   readonly minutes: number;
   /** "Most likely" of the estimate, in hours. */
   readonly likelyHours?: number;
+  /** Percent of the plan done, when it can be counted. */
+  readonly planDone?: number;
 }
 
 /** Status line at the start of a session (claude-code-hooks spec, "Контекст для агента"). */
@@ -27,7 +29,8 @@ export function sessionStartContext(input: {
         : fact.likelyHours === undefined
           ? ` — ${duration(fact.minutes)} so far`
           : ` — ${duration(fact.minutes)} of ${duration(fact.likelyHours * 60)} (${Math.round((fact.minutes / (fact.likelyHours * 60)) * 100)}%)`;
-    return cut(`estimetry: task ${input.task.id} "${input.task.title}"${progress}. ${EXTRA_REMINDER.replace('estimetry: if', 'If')}`);
+    const plan = fact?.planDone === undefined ? '' : `, plan ${fact.planDone}% done`;
+    return cut(`estimetry: task ${input.task.id} "${input.task.title}"${progress}${plan}. ${EXTRA_REMINDER.replace('estimetry: if', 'If')}`);
   }
   if (input.candidates.length > 1) {
     const list = input.candidates.map((task) => `${task.id} "${task.title}"`).join(', ');

@@ -71,6 +71,7 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     { SessionTask },
     { Checkpoints },
     { FlowProjectPlans },
+    { ChangeCompletions },
     { HookAdapterRegistry },
     { claudeCodeHooks },
     { FlowRegistry },
@@ -79,6 +80,8 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     { FsProjectLocator },
     { NodeProjectFiles },
     { YamlSessionStore, YamlCheckpointState },
+    { YamlProgressState },
+    { FileProjectRepository },
     { FileTaskStatusReader },
     { JsonlEventJournal },
     { YamlConfigStore },
@@ -92,6 +95,7 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     import('../application/hooks/session-task.js'),
     import('../application/hooks/checkpoints.js'),
     import('../application/hooks/flow-plans.js'),
+    import('../application/hooks/change-completions.js'),
     import('../integrations/tools/hook-adapters.js'),
     import('../integrations/tools/claude-code/hook-translation.js'),
     import('../integrations/flows/registry.js'),
@@ -100,6 +104,8 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     import('../infrastructure/fs/fs-project-locator.js'),
     import('../infrastructure/fs/node-project-files.js'),
     import('../infrastructure/persistence/yaml-session-store.js'),
+    import('../infrastructure/persistence/yaml-progress-state.js'),
+    import('../infrastructure/persistence/file-project-repository.js'),
     import('../infrastructure/persistence/file-task-status-reader.js'),
     import('../infrastructure/persistence/jsonl-event-journal.js'),
     import('../infrastructure/persistence/yaml-config-store.js'),
@@ -120,6 +126,8 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
   const git = new GitSnapshotsCli();
   const started = Timestamp.fromMillis(Math.round(startedAt));
   const flows = new FlowRegistry().register(openSpecFlow).register(noneFlow);
+  const files = new NodeProjectFiles();
+  const plans = new FlowProjectPlans(new YamlProjectConfigFile(), flows, files, new FileProjectRepository(layout));
   return new ReceiveHook({
     adapters: new HookAdapterRegistry().register(claudeCodeHooks),
     locator: new FsProjectLocator(layout),
@@ -127,7 +135,7 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     checkpoints: new Checkpoints(
       checkpointState,
       journal,
-      new FlowProjectPlans(new YamlProjectConfigFile(), flows, new NodeProjectFiles()),
+      plans,
       new FsGitHead(),
       git,
       config,
@@ -135,6 +143,7 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
       ids,
       config,
     ),
+    completions: new ChangeCompletions(plans, files, new YamlProgressState(layout), journal, tasks, ids, config, errors),
     journal,
     tasks,
     bindings,
@@ -143,13 +152,19 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     settings: config,
     // Only the session start needs the fact, and only it loads the task repository and the calculator.
     facts: async () => {
-      const [{ MeasuredTaskFacts }, { TaskMeasurement }, { SnapshotTaskReader }, { SystemClock }] = await Promise.all([
-        import('../application/hooks/task-facts.js'),
-        import('../application/task/task-measurement.js'),
-        import('../infrastructure/persistence/snapshot-task-reader.js'),
-        import('../infrastructure/system/system-clock.js'),
-      ]);
-      return new MeasuredTaskFacts(new SnapshotTaskReader(layout), new TaskMeasurement(journal, config, new SystemClock()));
+      const [{ MeasuredTaskFacts }, { TaskMeasurement }, { TaskPlanProgress }, { SnapshotTaskReader }, { SystemClock }] =
+        await Promise.all([
+          import('../application/hooks/task-facts.js'),
+          import('../application/task/task-measurement.js'),
+          import('../application/task/task-plan-progress.js'),
+          import('../infrastructure/persistence/snapshot-task-reader.js'),
+          import('../infrastructure/system/system-clock.js'),
+        ]);
+      return new MeasuredTaskFacts(
+        new SnapshotTaskReader(layout),
+        new TaskMeasurement(journal, config, new SystemClock()),
+        new TaskPlanProgress(plans, journal),
+      );
     },
     clock: { now: () => started },
     ids,
@@ -231,6 +246,7 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
     { RandomIdGenerator },
     { YamlSessionStore },
     { FileTaskStatusReader },
+    { FlowProjectPlans },
   ] = await Promise.all([
     import('../application/estimetry.js'),
     import('../infrastructure/git/git-cli.js'),
@@ -244,12 +260,16 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
     import('../infrastructure/system/random-id-generator.js'),
     import('../infrastructure/persistence/yaml-session-store.js'),
     import('../infrastructure/persistence/file-task-status-reader.js'),
+    import('../application/hooks/flow-plans.js'),
   ]);
   const git = new GitCli(cwd);
   const config = new YamlConfigStore(layout, () => git.userEmail() ?? userInfo().username);
+  const projects = new FileProjectRepository(layout);
+  const projectConfig = new YamlProjectConfigFile();
+  const install = await installDependencies(environment, config);
   return createEstimetry({
     tasks: new FileTaskRepository(layout),
-    projects: new FileProjectRepository(layout),
+    projects,
     workspace: git,
     authors: config,
     taskTypes: config,
@@ -258,8 +278,10 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
     journal: new JsonlEventJournal(layout),
     measurement: config,
     estimates: new YamlEstimateReader(cwd),
-    projectConfig: new YamlProjectConfigFile(),
-    install: await installDependencies(environment, config),
+    projectConfig,
+    install,
+    plans: new FlowProjectPlans(projectConfig, install.flows, install.files, projects),
+    workspaceDir: cwd,
     sessions: { bindings: new YamlSessionStore(layout), tasks: new FileTaskStatusReader(layout) },
   });
 }

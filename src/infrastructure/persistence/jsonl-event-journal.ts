@@ -40,6 +40,24 @@ export class JsonlEventJournal implements EventJournal {
     return this.read(this.layout.taskJournal(task.toString()), isProgressRecordType, (record) => parseProgressRecord(record));
   }
 
+  readAll(task: TaskId): { activity: ActivityEvent[]; records: ProgressRecord[] } {
+    const activity: ActivityEvent[] = [];
+    const records: ProgressRecord[] = [];
+    for (const record of readJsonLines(this.layout.taskJournal(task.toString()))) {
+      const type = (record as { type?: unknown } | null)?.type;
+      try {
+        if (isActivityEventType(type)) {
+          activity.push(parseActivityEvent(record));
+        } else if (isProgressRecordType(type)) {
+          records.push(parseProgressRecord(record));
+        }
+      } catch {
+        // Skipped like in the separate reads.
+      }
+    }
+    return { activity, records };
+  }
+
   appendUnassigned(project: string, entry: ActivityEvent | ProgressRecord): void {
     const valid = isProgressRecordType(entry.type)
       ? parseProgressRecord(entry, { withoutTask: true })

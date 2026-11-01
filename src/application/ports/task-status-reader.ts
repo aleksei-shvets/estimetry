@@ -5,6 +5,8 @@ export interface TaskSummary {
   readonly status: string;
   readonly startedAt?: string;
   readonly projects: readonly string[];
+  /** Groups of the estimate's parts: the changes of the task. */
+  readonly groups?: readonly string[];
 }
 
 export interface TaskStatusReader {

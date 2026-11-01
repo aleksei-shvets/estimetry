@@ -83,6 +83,11 @@ export class StorageLayout {
     return join(this.sessionsDir, `${session}.checkpoint.yaml`);
   }
 
+  /** Cache of archive directories already looked at for a task; the task id is checked before it gets here. */
+  taskProgress(taskId: string): string {
+    return join(this.root, 'progress', `${taskId}.yaml`);
+  }
+
   unassignedJournal(project: string): string {
     return join(this.eventsDir, 'unassigned', `${project}.jsonl`);
   }

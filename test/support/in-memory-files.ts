@@ -41,6 +41,26 @@ export class InMemoryProjectFiles implements ProjectFiles {
     this.files.delete(path);
   }
 
+  /** ctime of directories by path; a directory implied by the files and missing here changed at 0. */
+  readonly changed = new Map<string, number>();
+
+  list(dir: string): string[] {
+    const names = new Set<string>();
+    for (const path of this.files.keys()) {
+      if (path.startsWith(`${dir}/`)) {
+        const rest = path.slice(dir.length + 1).split('/');
+        if (rest.length > 1) {
+          names.add(rest[0] as string);
+        }
+      }
+    }
+    return [...names].sort();
+  }
+
+  changedAt(path: string): number | undefined {
+    return this.changed.get(path) ?? (this.isDirectory(path) ? 0 : undefined);
+  }
+
   find(root: string, names: readonly string[], options: { readonly depth: number; readonly limit: number }): string[] {
     return [...this.files.keys()]
       .filter((path) => path.startsWith(`${root}/`))
@@ -201,8 +221,9 @@ export function fakeInstallDependencies(files: InMemoryProjectFiles, overrides: 
         detect: (root, f) => f.isDirectory(`${root}/openspec`),
         setupHint: (root, f) => (f.isDirectory(`${root}/openspec`) ? undefined : 'run `openspec init`'),
         plan: () => [],
+        archived: () => [],
       },
-      { id: 'none', title: 'No SDD', detect: () => true, plan: () => [] },
+      { id: 'none', title: 'No SDD', detect: () => true, plan: () => [], archived: () => [] },
     ]),
     detectors: new ListRegistry<StackDetector & { id: string }>([
       { id: 'go', manifests: ['go.mod'], detect: (_name, content) => { if (!content.startsWith('module')) throw new Error('not a go.mod'); return ['go']; } },

@@ -203,7 +203,8 @@ function isParallelModeChangeData(value: unknown): value is ParallelModeChangeDa
     isStringArray(value['parts']) &&
     optionalString(value['reason']) &&
     optional(value['agents'], (n) => Number.isSafeInteger(n) && (n as number) >= 1) &&
-    optional(value['budgetShare'], isNonNegative)
+    optional(value['budgetShare'], isNonNegative) &&
+    optional(value['planShare'], (share) => isNonNegative(share) && (share as number) <= 1)
   );
 }
 

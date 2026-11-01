@@ -14,6 +14,8 @@ export interface EventJournal {
   /** Checkpoints and commits of the task; they never count in its version. */
   appendRecord(record: ProgressRecord): void;
   readRecords(task: TaskId): ProgressRecord[];
+  /** Both from one read of the journal, for a reader that needs both. */
+  readAll(task: TaskId): { activity: ActivityEvent[]; records: ProgressRecord[] };
   /** The journal of sessions without a task in `project`: events and records with no task in the envelope. */
   appendUnassigned(project: string, entry: ActivityEvent | ProgressRecord): void;
   readUnassigned(project: string): ActivityEvent[];

@@ -28,6 +28,8 @@ import { ShowStatus, type StatusView } from './task/show-status.js';
 import { ShowTask } from './task/show-task.js';
 import { StartTask, type StartTaskInput } from './task/start-task.js';
 import { TaskMeasurement } from './task/task-measurement.js';
+import { TaskPlanProgress } from './task/task-plan-progress.js';
+import type { ProjectPlans } from './ports/project-plans.js';
 import type { TaskView } from './task/task-view.js';
 
 /** Everything the application needs from the outside world. */
@@ -46,6 +48,10 @@ export interface EstimetryDependencies {
   readonly install: InstallDependencies;
   /** Bindings of AI tool sessions, for `emt attach --session`. */
   readonly sessions: { readonly bindings: SessionBindings; readonly tasks: TaskStatusReader };
+  /** Plans of the flows of a task's projects, for its progress. */
+  readonly plans: Pick<ProjectPlans, 'plans'>;
+  /** The directory the command runs in: of several working copies of a project, its plan is read there. */
+  readonly workspaceDir?: string;
 }
 
 /**
@@ -83,8 +89,9 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
   const saveEstimate = new SaveEstimate(deps.tasks, activeTask, deps.estimates, deps.taskTypes, meta);
   const recordManualTime = new RecordManualTime(deps.tasks, activeTask, measurement, deps.clock, meta);
   const recordExtra = new RecordExtra(deps.tasks, activeTask, meta);
-  const changeParallelMode = new ChangeParallelMode(deps.tasks, activeTask, measurement, meta);
-  const showStatus = new ShowStatus(activeTask, measurement);
+  const planProgress = new TaskPlanProgress(deps.plans, deps.journal, deps.workspaceDir);
+  const changeParallelMode = new ChangeParallelMode(deps.tasks, activeTask, measurement, meta, planProgress);
+  const showStatus = new ShowStatus(activeTask, measurement, planProgress, deps.journal);
   const initProject = new InitProject(deps.workspace, currentProject, deps.projects, deps.projectConfig, deps.install);
 
   return {

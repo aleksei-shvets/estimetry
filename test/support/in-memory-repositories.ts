@@ -118,6 +118,10 @@ export class InMemoryEventJournal implements EventJournal {
     return [...(this.records.get(task.toString()) ?? [])];
   }
 
+  readAll(task: TaskId): { activity: ActivityEvent[]; records: ProgressRecord[] } {
+    return { activity: this.readActivity(task), records: this.readRecords(task) };
+  }
+
   appendUnassigned(project: string, entry: ActivityEvent | ProgressRecord): void {
     const valid = isProgressRecordType(entry.type)
       ? parseProgressRecord(entry, { withoutTask: true })
