@@ -65,4 +65,25 @@ export class StorageLayout {
   get configLock(): string {
     return join(this.root, 'config.lock');
   }
+
+  get sessionsDir(): string {
+    return join(this.root, 'sessions');
+  }
+
+  /** The session ids are checked by SessionId before they get here. */
+  sessionBinding(session: string): string {
+    return join(this.sessionsDir, `${session}.yaml`);
+  }
+
+  sessionLock(session: string): string {
+    return join(this.sessionsDir, `${session}.lock`);
+  }
+
+  sessionCheckpoints(session: string): string {
+    return join(this.sessionsDir, `${session}.checkpoint.yaml`);
+  }
+
+  unassignedJournal(project: string): string {
+    return join(this.eventsDir, 'unassigned', `${project}.jsonl`);
+  }
 }

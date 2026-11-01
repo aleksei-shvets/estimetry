@@ -18,6 +18,9 @@ export const CONFIG_SCHEMA_VERSION = 1;
  * The profile is detected once and then kept, so it stays stable across machines
  * even if the detection source changes.
  */
+/** Minutes between checkpoints when the config does not say (design §13). */
+export const DEFAULT_CHECKPOINT_MINUTES = 20;
+
 export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, MeasurementSettings, SharingPreference {
   private author: Author | undefined;
 
@@ -48,6 +51,21 @@ export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, Measure
     } catch (error) {
       throw new InvalidValue(`${this.layout.configFile}: measurement.idleMinutes: ${(error as Error).message}`);
     }
+  }
+
+  /** `measurement.checkpointMinutes`: 10–30, 20 by default; out of range gives the default and a problem to report. */
+  checkpointInterval(): { minutes: number; problem?: string } {
+    const value = this.read().measurement?.['checkpointMinutes'];
+    if (value === undefined) {
+      return { minutes: DEFAULT_CHECKPOINT_MINUTES };
+    }
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 10 && value <= 30) {
+      return { minutes: value };
+    }
+    return {
+      minutes: DEFAULT_CHECKPOINT_MINUTES,
+      problem: `${this.layout.configFile}: measurement.checkpointMinutes must be a whole number from 10 to 30; using ${DEFAULT_CHECKPOINT_MINUTES}`,
+    };
   }
 
   /** `sharing.mode`; an unknown value counts as not chosen. */

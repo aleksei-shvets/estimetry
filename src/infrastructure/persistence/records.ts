@@ -237,7 +237,7 @@ export interface ConfigDocument {
   readonly schemaVersion?: number;
   readonly author?: { readonly id?: string };
   readonly taskTypes?: readonly string[];
-  readonly measurement?: { readonly idleMinutes?: unknown };
+  readonly measurement?: { readonly idleMinutes?: unknown; readonly [key: string]: unknown };
   readonly [key: string]: unknown;
 }
 
