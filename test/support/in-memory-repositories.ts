@@ -1,4 +1,5 @@
 import type { EventJournal } from '../../src/application/ports/event-journal.js';
+import { isProgressRecordType, parseProgressRecord, type ProgressRecord } from '../../src/domain/progress/progress-records.js';
 import { parseActivityEvent, type ActivityEvent } from '../../src/domain/measurement/activity-events.js';
 import type { Project } from '../../src/domain/project/project.js';
 import type { ProjectId } from '../../src/domain/project/project-id.js';
@@ -96,6 +97,8 @@ export class InMemoryProjectRepository implements ProjectRepository {
 /** Activity events per task, validated on append like the JSONL journal. */
 export class InMemoryEventJournal implements EventJournal {
   readonly events = new Map<string, ActivityEvent[]>();
+  readonly records = new Map<string, ProgressRecord[]>();
+  readonly unassigned = new Map<string, (ActivityEvent | ProgressRecord)[]>();
 
   append(event: ActivityEvent): void {
     const valid = parseActivityEvent(event);
@@ -104,5 +107,25 @@ export class InMemoryEventJournal implements EventJournal {
 
   readActivity(task: TaskId): ActivityEvent[] {
     return [...(this.events.get(task.toString()) ?? [])];
+  }
+
+  appendRecord(record: ProgressRecord): void {
+    const valid = parseProgressRecord(record);
+    this.records.set(valid.task, [...(this.records.get(valid.task) ?? []), valid]);
+  }
+
+  readRecords(task: TaskId): ProgressRecord[] {
+    return [...(this.records.get(task.toString()) ?? [])];
+  }
+
+  appendUnassigned(project: string, entry: ActivityEvent | ProgressRecord): void {
+    const valid = isProgressRecordType(entry.type)
+      ? parseProgressRecord(entry, { withoutTask: true })
+      : parseActivityEvent(entry, { withoutTask: true });
+    this.unassigned.set(project, [...(this.unassigned.get(project) ?? []), valid]);
+  }
+
+  readUnassigned(project: string): ActivityEvent[] {
+    return (this.unassigned.get(project) ?? []).filter((entry): entry is ActivityEvent => !isProgressRecordType(entry.type));
   }
 }

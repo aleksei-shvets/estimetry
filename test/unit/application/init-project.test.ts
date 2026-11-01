@@ -24,6 +24,7 @@ import {
   ListRegistry,
 } from '../../support/in-memory-files.js';
 import { InMemoryEventJournal, InMemoryProjectRepository, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
+import { InMemorySessionBindings, RepositoryTaskStatusReader } from '../../support/hook-fakes.js';
 
 const ROOT = '/work/api';
 const REPO = 'c'.repeat(40);
@@ -51,6 +52,7 @@ function build(overrides: Partial<InstallDependencies> = {}): void {
     estimates: new InMemoryEstimateReader(),
     projectConfig: new InMemoryProjectConfigFile(files),
     install: fakeInstallDependencies(files, { tools: new ListRegistry([tool]), commitHook: hook, sharing, excludes, ...overrides }),
+    sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(new InMemoryTaskRepository()) },
   });
 }
 
@@ -147,6 +149,7 @@ describe('init', () => {
           taskTypes: new InMemoryTaskTypeCatalog(['feature']), clock: new FixedClock(), ids: new SequentialIdGenerator(),
           journal: new InMemoryEventJournal(), measurement: new FixedMeasurementSettings(), estimates: new InMemoryEstimateReader(),
           projectConfig: new InMemoryProjectConfigFile(files), install: fakeInstallDependencies(files),
+    sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(new InMemoryTaskRepository()) },
         });
         resolve.createTask({ title: 'x' });
         return projects.findByPath('/elsewhere/api')!;

@@ -1,22 +1,275 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import type { ActivityDraft, HookKind } from '../../../src/application/contracts/hook-adapter.js';
+import { BindSession } from '../../../src/application/hooks/bind-session.js';
+import { Checkpoints } from '../../../src/application/hooks/checkpoints.js';
 import { ReceiveHook } from '../../../src/application/hooks/receive-hook.js';
+import { SessionTask } from '../../../src/application/hooks/session-task.js';
+import { SessionId } from '../../../src/domain/measurement/session-id.js';
+import { ProjectId } from '../../../src/domain/project/project-id.js';
+import { Author } from '../../../src/domain/shared/author.js';
 import { InvalidValue } from '../../../src/domain/shared/domain-error.js';
-import { FakeToolAdapter, ListRegistry } from '../../support/in-memory-files.js';
+import { Timestamp } from '../../../src/domain/shared/timestamp.js';
+import { Task } from '../../../src/domain/task/task.js';
+import { TaskId } from '../../../src/domain/task/task-id.js';
+import { DEFAULT_TASK_TYPES, TaskType } from '../../../src/domain/task/task-type.js';
+import { FakeAuthorProvider, FixedClock, FixedMeasurementSettings, RecordingErrorReporter, SequentialIdGenerator } from '../../support/fakes.js';
+import {
+  FakeGit,
+  FakeHookAdapter,
+  FakeProjectLocator,
+  FakeProjectPlans,
+  InMemoryCheckpointState,
+  InMemorySessionBindings,
+  RepositoryTaskStatusReader,
+} from '../../support/hook-fakes.js';
+import { ListRegistry } from '../../support/in-memory-files.js';
+import { InMemoryEventJournal, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
 
-const receive = new ReceiveHook(new ListRegistry([new FakeToolAdapter()]));
-const call = (source?: string, event?: string) => () => receive.execute({ source, event, payload: '{}' });
+const API = '/work/api';
+const day = (hhmm: string) => `2026-10-27T${hhmm}:00.000Z`;
 
-describe('ReceiveHook', () => {
-  it('accepts the events of a registered tool, by id or alias, and the git post-commit', () => {
-    expect(call('fake-tool', 'Stop')).not.toThrow();
-    expect(call('fake', 'Stop')).not.toThrow();
-    expect(call('git', 'post-commit')).not.toThrow();
+let tasks: InMemoryTaskRepository;
+let journal: InMemoryEventJournal;
+let bindings: InMemorySessionBindings;
+let state: InMemoryCheckpointState;
+let clock: FixedClock;
+let settings: FixedMeasurementSettings;
+let errors: RecordingErrorReporter;
+let git: FakeGit;
+let receive: ReceiveHook;
+let bind: BindSession;
+let n = 0;
+
+function startedTask(id: string, title: string, startedAt = day('09:00')): void {
+  const meta = () => ({ id: `m-${++n}`, at: Timestamp.parse(day('09:59')), author: Author.of('dev@example.com') });
+  const task = Task.create({ id: TaskId.parse(id), title, type: TaskType.of('feature', DEFAULT_TASK_TYPES), project: ProjectId.parse('api') }, meta());
+  task.start(ProjectId.parse('api'), meta(), Timestamp.parse(startedAt));
+  tasks.save(task);
+}
+
+const tool = (toolUseId: string): ActivityDraft => ({ type: 'tool.used', data: { toolUseId } });
+
+function call(event: string, kind: HookKind, events: readonly ActivityDraft[] = [], options: { session?: string; cwd?: string } = {}) {
+  return receive.execute({
+    source: 'fake-tool',
+    event,
+    payload: JSON.stringify({ session: options.session ?? 's1', kind, events }),
+    cwd: options.cwd ?? API,
+  });
+}
+
+const types = (task: string) => journal.readActivity(TaskId.parse(task)).map((e) => e.type);
+
+beforeEach(() => {
+  tasks = new InMemoryTaskRepository();
+  journal = new InMemoryEventJournal();
+  bindings = new InMemorySessionBindings();
+  state = new InMemoryCheckpointState();
+  clock = new FixedClock(day('10:00'));
+  settings = new FixedMeasurementSettings();
+  errors = new RecordingErrorReporter();
+  git = new FakeGit();
+  const ids = new SequentialIdGenerator();
+  const authors = new FakeAuthorProvider();
+  const status = new RepositoryTaskStatusReader(tasks);
+  receive = new ReceiveHook({
+    adapters: new ListRegistry([new FakeHookAdapter()]),
+    locator: new FakeProjectLocator(),
+    sessionTask: new SessionTask(bindings, status, journal, ids, authors),
+    checkpoints: new Checkpoints(state, journal, new FakeProjectPlans(), git, git, settings, errors, ids, authors),
+    journal,
+    tasks: status,
+    bindings,
+    checkpointState: state,
+    git,
+    settings,
+    facts: async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5 }) }),
+    clock,
+    ids,
+    authors,
+  });
+  bind = new BindSession(bindings, status, journal, ids, authors);
+});
+
+describe('which task a session serves', () => {
+  it('binds to the only task in progress, opening the window at the start of the task', async () => {
+    startedTask('T-1', 'estimetry v1');
+    await call('ToolDone', 'tool-done', [tool('t1')]);
+    const events = journal.readActivity(TaskId.parse('T-1'));
+    expect(events.map((e) => [e.type, e.ts])).toEqual([
+      ['session.bound', day('09:00')],
+      ['tool.used', day('10:00')],
+    ]);
+    expect(events[1]?.data).toMatchObject({ source: 'fake-tool', session: 's1', toolUseId: 't1' });
   });
 
-  it('rejects an unknown source or event and a call without arguments', () => {
-    expect(call('cursor', 'Stop')).toThrow(/unknown hook source "cursor"/);
-    expect(call('fake-tool', 'Teleport')).toThrow(InvalidValue);
-    expect(call('git', 'pre-push')).toThrow(InvalidValue);
-    expect(call()).toThrow(/needs a source and an event/);
+  it('writes events of a session without a task to the project, and copies them when a backdated task starts', async () => {
+    await call('ToolDone', 'tool-done', [tool('t1')]);
+    expect(journal.readUnassigned('api')).toHaveLength(1);
+    startedTask('T-1', 'Late start', day('09:30'));
+    clock.set(day('10:05'));
+    await call('Prompt', 'prompt', [{ type: 'turn.started', data: { origin: 'user' } }]);
+    expect(types('T-1')).toEqual(['session.bound', 'tool.used', 'turn.started']);
+    // Copying is idempotent: a second binding attempt does not duplicate.
+    expect(journal.readActivity(TaskId.parse('T-1')).filter((e) => e.type === 'tool.used')).toHaveLength(1);
+  });
+
+  it('keeps "no task" for a minute on background calls, but looks again on a prompt', async () => {
+    await call('ToolDone', 'tool-done');
+    startedTask('T-1', 'Started meanwhile');
+    clock.set(day('10:00').replace(':00.000Z', ':30.000Z'));
+    await call('ToolDone', 'tool-done', [tool('t2')]);
+    expect(types('T-1')).toEqual([]);
+    await call('Prompt', 'prompt', [{ type: 'turn.started', data: { origin: 'user' } }]);
+    expect(types('T-1')).toContain('turn.started');
+  });
+
+  it('with two tasks asks the agent to choose and gives the command with the session id', async () => {
+    startedTask('T-1', 'Payments');
+    startedTask('T-2', 'Webhooks');
+    const out = await call('Start', 'session-start', [{ type: 'session.started', data: {} }]);
+    expect(JSON.parse(out ?? '{}').text).toBe(
+      'estimetry: several tasks are in progress in this project: T-1 "Payments", T-2 "Webhooks". ' +
+        'Ask the user which one this session serves, then run: emt attach <task> --session s1',
+    );
+    expect(journal.readUnassigned('api').map((e) => e.type)).toEqual(['session.started']);
+  });
+
+  it('a switch with attach closes the window in the old task and opens one in the new task', async () => {
+    startedTask('T-1', 'Payments');
+    await call('ToolDone', 'tool-done', [tool('t1')]);
+    startedTask('T-2', 'Webhooks');
+    clock.set(day('10:20'));
+    bind.bind('s1', 'T-2', { id: 'api', root: API }, clock.now());
+    await call('ToolDone', 'tool-done', [tool('t2')]);
+    expect(types('T-1')).toEqual(['session.bound', 'tool.used', 'session.unbound']);
+    expect(types('T-2')).toEqual(['session.bound', 'tool.used']);
+    expect(journal.readActivity(TaskId.parse('T-2'))[0]?.ts).toBe(day('10:20'));
+  });
+
+  it('attach refuses a task that is not in progress and leaves the binding', async () => {
+    startedTask('T-1', 'Payments');
+    await call('ToolDone', 'tool-done');
+    expect(() => bind.bind('s1', 'T-9', { id: 'api', root: API }, clock.now())).toThrow(/T-9 is not in progress/);
+    expect(bindings.get(SessionId.parse('s1'))?.task).toBe('T-1');
+  });
+
+  it('a bound session keeps writing to its task after the agent changed directory', async () => {
+    startedTask('T-1', 'Payments');
+    await call('ToolDone', 'tool-done');
+    await call('ToolDone', 'tool-done', [tool('t2')], { cwd: '/tmp/scratch' });
+    expect(types('T-1').filter((t) => t === 'tool.used')).toHaveLength(1);
+  });
+
+  it('a session bound to a task no longer in progress is resolved again', async () => {
+    startedTask('T-1', 'Payments');
+    bindings.update(SessionId.parse('s1'), () => ({ session: 's1', project: 'api', root: API, task: 'T-9', since: day('08:00'), everBound: true }));
+    await call('ToolDone', 'tool-done', [tool('t1')]);
+    expect(bindings.get(SessionId.parse('s1'))?.task).toBe('T-1');
+    // The session served a task before, so the new window starts now, not at the start of T-1.
+    expect(journal.readActivity(TaskId.parse('T-1'))[0]).toMatchObject({ type: 'session.bound', ts: day('10:00') });
+  });
+
+  it('stays silent outside registered projects', async () => {
+    startedTask('T-1', 'Payments');
+    expect(await call('ToolDone', 'tool-done', [tool('t1')], { cwd: '/elsewhere' })).toBeUndefined();
+    expect(types('T-1')).toEqual([]);
+    expect(journal.unassigned.size).toBe(0);
+  });
+});
+
+describe('checkpoints and context', () => {
+  it('writes a checkpoint when the interval has passed, and reminds on the next prompt once', async () => {
+    startedTask('T-1', 'Payments');
+    await call('ToolDone', 'tool-done');
+    clock.set(day('10:10'));
+    await call('ToolDone', 'tool-done');
+    clock.set(day('10:21'));
+    await call('Stop', 'turn-end');
+    const records = journal.readRecords(TaskId.parse('T-1'));
+    expect(records.map((r) => r.ts)).toEqual([day('10:00'), day('10:21')]);
+    expect(records[0]?.data).toMatchObject({ plan: [{ change: 'a', done: 1, total: 4 }], head: 'abc123', workingTree: { fileCount: 1, untracked: 0 } });
+
+    const reminder = await call('Prompt', 'prompt');
+    expect(JSON.parse(reminder ?? '{}').text).toBe('estimetry: if the work has gone beyond the plan, record it with /emt-extra.');
+    expect(await call('Prompt', 'prompt')).toBeUndefined();
+  });
+
+  it('writes no checkpoint on synchronous calls and runs no git there', async () => {
+    startedTask('T-1', 'Payments');
+    await call('Prompt', 'prompt');
+    await call('Start', 'session-start');
+    expect(journal.readRecords(TaskId.parse('T-1'))).toEqual([]);
+    expect(git.workingTreeCalls).toBe(0);
+  });
+
+  it('a snapshot part that fails stays empty, the checkpoint is still written', async () => {
+    startedTask('T-1', 'Payments');
+    git.headSha = undefined;
+    await call('ToolDone', 'tool-done');
+    const [record] = journal.readRecords(TaskId.parse('T-1'));
+    expect(record?.data).not.toHaveProperty('head');
+    expect(record?.data).not.toHaveProperty('workingTree');
+  });
+
+  it('reports a broken interval once per session and uses the default', async () => {
+    startedTask('T-1', 'Payments');
+    settings.checkpoint = { minutes: 20, problem: 'measurement.checkpointMinutes must be a whole number from 10 to 30' };
+    await call('ToolDone', 'tool-done');
+    clock.set(day('10:30'));
+    await call('ToolDone', 'tool-done');
+    expect(errors.reports).toHaveLength(1);
+    expect(journal.readRecords(TaskId.parse('T-1'))).toHaveLength(2);
+  });
+
+  it('starts a session with the task and its fact', async () => {
+    startedTask('T-1', 'estimetry v1');
+    const out = await call('Start', 'session-start', [{ type: 'session.started', data: {} }]);
+    expect(JSON.parse(out ?? '{}').text).toBe(
+      'estimetry: task T-1 "estimetry v1" — 3h 30m of 58h 30m (6%). If the work has gone beyond the plan, record it with /emt-extra.',
+    );
+  });
+
+  it('says that nothing is counted when no task is in progress', async () => {
+    const out = await call('Start', 'session-start');
+    expect(JSON.parse(out ?? '{}').text).toMatch(/no task is in progress .* \/emt-start/);
+  });
+});
+
+describe('the receiver itself', () => {
+  it('refuses unknown sources, events and stdin that is not JSON without repeating it', async () => {
+    await expect(receive.execute({ source: 'cursor', event: 'Stop', payload: '{}', cwd: API })).rejects.toThrow(/unknown hook source "cursor"/);
+    await expect(receive.execute({ source: 'fake-tool', event: 'Teleport', payload: '{}', cwd: API })).rejects.toThrow(InvalidValue);
+    await expect(receive.execute({ source: undefined, event: undefined, payload: '', cwd: API })).rejects.toThrow(/needs a source/);
+    const secret = receive.execute({ source: 'fake-tool', event: 'Stop', payload: 'password=hunter2', cwd: API });
+    await expect(secret).rejects.toThrow(/stdin is not JSON/);
+    await secret.catch((error: Error) => expect(error.message).not.toContain('hunter2'));
+  });
+});
+
+describe('commits', () => {
+  const commit = () => receive.execute({ source: 'git', event: 'post-commit', payload: '', cwd: API });
+
+  it('goes to the only task in progress', async () => {
+    startedTask('T-1', 'Payments');
+    await commit();
+    expect(journal.readRecords(TaskId.parse('T-1'))[0]).toMatchObject({
+      type: 'commit.recorded',
+      data: { sha: 'c0ffee', parents: ['abc123'], patchId: 'p1d', fileCount: 1, truncated: false },
+    });
+  });
+
+  it('with two tasks goes to the task of the session active last, else to the project', async () => {
+    startedTask('T-1', 'Payments');
+    startedTask('T-2', 'Webhooks');
+    await commit();
+    expect(journal.readUnassigned('api')).toHaveLength(0); // records are kept apart from activity
+    expect(journal.unassigned.get('api')?.map((e) => e.type)).toEqual(['commit.recorded']);
+
+    bind.bind('s7', 'T-2', { id: 'api', root: API }, clock.now());
+    await call('ToolDone', 'tool-done', [], { session: 's7' });
+    clock.set(day('10:05'));
+    await commit();
+    expect(journal.readRecords(TaskId.parse('T-2')).map((r) => r.type)).toContain('commit.recorded');
   });
 });

@@ -200,8 +200,9 @@ export function fakeInstallDependencies(files: InMemoryProjectFiles, overrides: 
         title: 'OpenSpec',
         detect: (root, f) => f.isDirectory(`${root}/openspec`),
         setupHint: (root, f) => (f.isDirectory(`${root}/openspec`) ? undefined : 'run `openspec init`'),
+        plan: () => [],
       },
-      { id: 'none', title: 'No SDD', detect: () => true },
+      { id: 'none', title: 'No SDD', detect: () => true, plan: () => [] },
     ]),
     detectors: new ListRegistry<StackDetector & { id: string }>([
       { id: 'go', manifests: ['go.mod'], detect: (_name, content) => { if (!content.startsWith('module')) throw new Error('not a go.mod'); return ['go']; } },

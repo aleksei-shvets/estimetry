@@ -18,6 +18,7 @@ import {
 } from '../../support/fakes.js';
 import { InMemoryEventJournal, InMemoryProjectRepository, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
 import { fakeInstallDependencies, InMemoryProjectConfigFile, InMemoryProjectFiles } from '../../support/in-memory-files.js';
+import { InMemorySessionBindings, RepositoryTaskStatusReader } from '../../support/hook-fakes.js';
 
 let tasks: InMemoryTaskRepository;
 let projects: InMemoryProjectRepository;
@@ -48,6 +49,7 @@ beforeEach(() => {
     estimates: new InMemoryEstimateReader(),
     projectConfig: new InMemoryProjectConfigFile(projectFiles),
     install: fakeInstallDependencies(projectFiles),
+    sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(tasks) },
   });
 });
 

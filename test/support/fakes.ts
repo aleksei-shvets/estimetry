@@ -85,10 +85,17 @@ export class RecordingErrorReporter implements ErrorReporter {
 }
 
 export class FixedMeasurementSettings implements MeasurementSettings {
-  constructor(public minutes = 30) {}
+  constructor(
+    public minutes = 30,
+    public checkpoint: { minutes: number; problem?: string } = { minutes: 20 },
+  ) {}
 
   idlePolicy(): IdlePolicy {
     return IdlePolicy.ofMinutes(this.minutes);
+  }
+
+  checkpointInterval(): { minutes: number; problem?: string } {
+    return this.checkpoint;
   }
 }
 

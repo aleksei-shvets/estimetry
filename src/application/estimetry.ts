@@ -8,12 +8,15 @@ import type { EventJournal } from './ports/event-journal.js';
 import type { IdGenerator } from './ports/id-generator.js';
 import type { MeasurementSettings } from './ports/measurement-settings.js';
 import type { ProjectConfigFile } from './ports/project-config-file.js';
+import type { SessionBindings } from './ports/session-bindings.js';
+import type { TaskStatusReader } from './ports/task-status-reader.js';
 import type { TaskTypeCatalog } from './ports/task-type-catalog.js';
 import type { WorkspaceLocator } from './ports/workspace-locator.js';
 import { InitProject, type InitChoices, type InitInput, type InitReport, type InstallDependencies } from './project/init-project.js';
 import { ResolveCurrentProject } from './project/resolve-current-project.js';
 import { EventMetaSource } from './shared/event-meta-source.js';
-import { AttachTask, type AttachTaskResult } from './task/attach-task.js';
+import { BindSession } from './hooks/bind-session.js';
+import { AttachTask, type AttachTaskInput, type AttachTaskResult } from './task/attach-task.js';
 import { ChangeParallelMode, type ChangeParallelModeInput, type ParallelModeChanged } from './task/change-parallel-mode.js';
 import { CreateTask, type CreateTaskInput } from './task/create-task.js';
 import { ListTasks } from './task/list-tasks.js';
@@ -41,6 +44,8 @@ export interface EstimetryDependencies {
   readonly estimates: EstimateReader;
   readonly projectConfig: ProjectConfigFile;
   readonly install: InstallDependencies;
+  /** Bindings of AI tool sessions, for `emt attach --session`. */
+  readonly sessions: { readonly bindings: SessionBindings; readonly tasks: TaskStatusReader };
 }
 
 /**
@@ -50,7 +55,7 @@ export interface EstimetryDependencies {
 export interface Estimetry {
   createTask(input: CreateTaskInput): TaskView;
   startTask(input: StartTaskInput): TaskView;
-  attachTask(input: { readonly task: TaskId }): AttachTaskResult;
+  attachTask(input: AttachTaskInput): AttachTaskResult;
   listTasks(input: { readonly all?: boolean }): TaskView[];
   showTask(input: { readonly task: TaskId }): TaskView;
   saveEstimate(input: SaveEstimateInput): EstimateSaved;
@@ -71,7 +76,8 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
   const measurement = new TaskMeasurement(deps.journal, deps.measurement, deps.clock);
 
   const startTask = new StartTask(deps.tasks, currentProject, activeTask, meta);
-  const attachTask = new AttachTask(deps.tasks, currentProject, meta);
+  const bindSession = new BindSession(deps.sessions.bindings, deps.sessions.tasks, deps.journal, deps.ids, deps.authors);
+  const attachTask = new AttachTask(deps.tasks, currentProject, meta, bindSession, deps.workspace, deps.clock);
   const listTasks = new ListTasks(deps.tasks, currentProject);
   const showTask = new ShowTask(deps.tasks);
   const saveEstimate = new SaveEstimate(deps.tasks, activeTask, deps.estimates, deps.taskTypes, meta);
