@@ -42,7 +42,8 @@ describe('Claude Code hooks', () => {
     install();
     const settings = json(LOCAL);
     expect(Object.keys(settings.hooks)).toEqual(adapter.hookEvents);
-    expect(settings.hooks['Stop']).toEqual([{ hooks: [{ type: 'command', command: 'estimetry hook claude-code Stop', timeout: 10 }] }]);
+    expect(settings.hooks['Stop']).toEqual([{ hooks: [{ type: 'command', command: 'estimetry hook claude-code Stop', timeout: 10, async: true }] }]);
+    expect(settings.hooks['SessionStart']?.[0]?.hooks[0]).not.toHaveProperty('async');
     expect(files.read(SHARED)).toBeUndefined();
     expect(adapter.state(ROOT, files)).toEqual({ installed: true, shared: false });
   });

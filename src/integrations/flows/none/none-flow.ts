@@ -5,4 +5,5 @@ export const noneFlow: Flow = {
   id: 'none',
   title: 'No SDD',
   detect: () => false,
+  plan: () => [],
 };

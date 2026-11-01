@@ -6,23 +6,10 @@ import type { ProjectFiles } from '../../../application/ports/project-files.js';
 import { COMMANDS, ESTIMETRY_SKILL } from '../content/commands.js';
 import { withBlock, withoutBlock } from './claude-md.js';
 import { hasOurHooks, withHooks, withoutHooks } from './hook-settings.js';
+import { CLAUDE_CODE_HOOK_EVENTS, SYNCHRONOUS_HOOK_EVENTS } from './hook-events.js';
 import { ownership, renderSkill } from './skill-file.js';
 
-/** Hook events of Claude Code that the activity contract needs (see design.md of claude-code-init). */
-export const CLAUDE_CODE_HOOK_EVENTS = [
-  'SessionStart',
-  'SessionEnd',
-  'UserPromptSubmit',
-  'Stop',
-  'StopFailure',
-  'Notification',
-  'PermissionRequest',
-  'PreToolUse',
-  'PostToolUse',
-  'PostToolUseFailure',
-  'SubagentStart',
-  'SubagentStop',
-] as const;
+export { CLAUDE_CODE_HOOK_EVENTS } from './hook-events.js';
 
 const SHARED_SETTINGS = join('.claude', 'settings.json');
 const LOCAL_SETTINGS = join('.claude', 'settings.local.json');
@@ -62,7 +49,7 @@ export class ClaudeCodeAdapter implements ToolAdapter {
   private hooks({ projectRoot, files, shared }: InstallContext): InstallPlan {
     const [target, previous] = shared ? [SHARED_SETTINGS, LOCAL_SETTINGS] : [LOCAL_SETTINGS, SHARED_SETTINGS];
     const changes: FileChange[] = [
-      { path: join(projectRoot, target), content: withHooks(files.read(join(projectRoot, target)), this.hookEvents, target) },
+      { path: join(projectRoot, target), content: withHooks(files.read(join(projectRoot, target)), this.hookEvents, target, SYNCHRONOUS_HOOK_EVENTS) },
     ];
     const warnings: string[] = [];
     const old = files.read(join(projectRoot, previous));
