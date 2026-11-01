@@ -156,8 +156,13 @@ describe('estimetry init', () => {
 describe('estimetry hook', () => {
   it('always exits 0 without output, logging what it could not accept', async () => {
     const repo = gitRepo('hooks');
-    const ok = await cli.run(['hook', 'claude-code', 'Stop'], repo, 'estimetry');
-    expect(ok).toEqual({ code: 0, stdout: '', stderr: '' });
+    const ok = spawnSync(process.execPath, [join(cli.bin, 'estimetry'), 'hook', 'claude-code', 'Stop'], {
+      cwd: repo,
+      env: cli.env,
+      input: JSON.stringify({ session_id: 's1', cwd: repo, hook_event_name: 'Stop' }),
+      encoding: 'utf8',
+    });
+    expect({ code: ok.status, stdout: ok.stdout, stderr: ok.stderr }).toEqual({ code: 0, stdout: '', stderr: '' });
     expect(existsSync(join(cli.home, 'errors.log'))).toBe(false);
 
     for (const args of [['hook', 'cursor', 'Stop'], ['hook'], ['hook', 'claude-code', 'Stop', 'extra', '--weird']]) {

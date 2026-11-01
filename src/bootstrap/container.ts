@@ -24,8 +24,13 @@ export interface Container {
   readonly errors: ErrorReporter;
   /** Builds the application on first use; commands that fail early never load storage or git. */
   readonly app: () => Promise<Estimetry>;
-  /** The hook receiver alone, without storage, git or the facade: hooks run on every tool call. */
-  readonly hooks: () => Promise<{ receive(call: HookCall): void }>;
+  /** The hook receiver alone, without the facade, commander or install code: hooks run on every tool call. */
+  readonly hooks: () => Promise<{ receive(call: HookCall): Promise<string | undefined> }>;
+}
+
+export interface ContainerOptions {
+  /** When the process started (ms since the epoch): the time of every event a hook writes. */
+  readonly startedAt?: number;
 }
 
 /** Version from package.json, for `--version` and the stamp in generated files. */
@@ -41,7 +46,7 @@ function claudeConfigDir(environment: Environment): string {
 }
 
 /** Composition root: the only place that knows which implementation backs which port. */
-export function createContainer(environment: Environment): Container {
+export function createContainer(environment: Environment, options: ContainerOptions = {}): Container {
   const layout = StorageLayout.resolve(environment);
   const errors = new FileErrorReporter(layout.errorsLog);
   let app: Promise<Estimetry> | undefined;
@@ -50,11 +55,106 @@ export function createContainer(environment: Environment): Container {
     errors,
     app: () => (app ??= buildApp(layout, environment)),
     hooks: async () => {
-      const [{ ReceiveHook }, tools] = await Promise.all([import('../application/hooks/receive-hook.js'), toolRegistry(environment)]);
-      const receiver = new ReceiveHook(tools);
+      const receiver = await buildHookReceiver(layout, errors, options.startedAt ?? Date.now());
       return { receive: (call) => receiver.execute(call) };
     },
   };
+}
+
+/**
+ * Only what a hook needs. The author comes from config.yaml alone: detecting it
+ * would run git, and init has written the profile already.
+ */
+async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, startedAt: number) {
+  const [
+    { ReceiveHook },
+    { SessionTask },
+    { Checkpoints },
+    { FlowProjectPlans },
+    { HookAdapterRegistry },
+    { claudeCodeHooks },
+    { FlowRegistry },
+    { openSpecFlow },
+    { noneFlow },
+    { FsProjectLocator },
+    { NodeProjectFiles },
+    { YamlSessionStore, YamlCheckpointState },
+    { FileTaskStatusReader },
+    { JsonlEventJournal },
+    { YamlConfigStore },
+    { YamlProjectConfigFile },
+    { FsGitHead },
+    { GitSnapshotsCli },
+    { RandomIdGenerator },
+    { Timestamp },
+  ] = await Promise.all([
+    import('../application/hooks/receive-hook.js'),
+    import('../application/hooks/session-task.js'),
+    import('../application/hooks/checkpoints.js'),
+    import('../application/hooks/flow-plans.js'),
+    import('../integrations/tools/hook-adapters.js'),
+    import('../integrations/tools/claude-code/hook-translation.js'),
+    import('../integrations/flows/registry.js'),
+    import('../integrations/flows/openspec/openspec-flow.js'),
+    import('../integrations/flows/none/none-flow.js'),
+    import('../infrastructure/fs/fs-project-locator.js'),
+    import('../infrastructure/fs/node-project-files.js'),
+    import('../infrastructure/persistence/yaml-session-store.js'),
+    import('../infrastructure/persistence/file-task-status-reader.js'),
+    import('../infrastructure/persistence/jsonl-event-journal.js'),
+    import('../infrastructure/persistence/yaml-config-store.js'),
+    import('../infrastructure/persistence/yaml-project-config-file.js'),
+    import('../infrastructure/git/fs-git-head.js'),
+    import('../infrastructure/git/git-snapshots.js'),
+    import('../infrastructure/system/random-id-generator.js'),
+    import('../domain/shared/timestamp.js'),
+  ]);
+  const config = new YamlConfigStore(layout, () => {
+    throw new Error(`no author profile in ${layout.configFile}; run estimetry init`);
+  });
+  const journal = new JsonlEventJournal(layout);
+  const ids = new RandomIdGenerator();
+  const tasks = new FileTaskStatusReader(layout);
+  const bindings = new YamlSessionStore(layout);
+  const checkpointState = new YamlCheckpointState(layout);
+  const git = new GitSnapshotsCli();
+  const started = Timestamp.fromMillis(Math.round(startedAt));
+  const flows = new FlowRegistry().register(openSpecFlow).register(noneFlow);
+  return new ReceiveHook({
+    adapters: new HookAdapterRegistry().register(claudeCodeHooks),
+    locator: new FsProjectLocator(layout),
+    sessionTask: new SessionTask(bindings, tasks, journal, ids, config),
+    checkpoints: new Checkpoints(
+      checkpointState,
+      journal,
+      new FlowProjectPlans(new YamlProjectConfigFile(), flows, new NodeProjectFiles()),
+      new FsGitHead(),
+      git,
+      config,
+      errors,
+      ids,
+      config,
+    ),
+    journal,
+    tasks,
+    bindings,
+    checkpointState,
+    git,
+    settings: config,
+    // Only the session start needs the fact, and only it loads the task repository and the calculator.
+    facts: async () => {
+      const [{ MeasuredTaskFacts }, { TaskMeasurement }, { SnapshotTaskReader }, { SystemClock }] = await Promise.all([
+        import('../application/hooks/task-facts.js'),
+        import('../application/task/task-measurement.js'),
+        import('../infrastructure/persistence/snapshot-task-reader.js'),
+        import('../infrastructure/system/system-clock.js'),
+      ]);
+      return new MeasuredTaskFacts(new SnapshotTaskReader(layout), new TaskMeasurement(journal, config, new SystemClock()));
+    },
+    clock: { now: () => started },
+    ids,
+    authors: config,
+  });
 }
 
 async function toolRegistry(environment: Environment) {
@@ -129,6 +229,8 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
     { YamlProjectConfigFile },
     { SystemClock },
     { RandomIdGenerator },
+    { YamlSessionStore },
+    { FileTaskStatusReader },
   ] = await Promise.all([
     import('../application/estimetry.js'),
     import('../infrastructure/git/git-cli.js'),
@@ -140,6 +242,8 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
     import('../infrastructure/persistence/yaml-project-config-file.js'),
     import('../infrastructure/system/system-clock.js'),
     import('../infrastructure/system/random-id-generator.js'),
+    import('../infrastructure/persistence/yaml-session-store.js'),
+    import('../infrastructure/persistence/file-task-status-reader.js'),
   ]);
   const git = new GitCli(cwd);
   const config = new YamlConfigStore(layout, () => git.userEmail() ?? userInfo().username);
@@ -156,5 +260,6 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
     estimates: new YamlEstimateReader(cwd),
     projectConfig: new YamlProjectConfigFile(),
     install: await installDependencies(environment, config),
+    sessions: { bindings: new YamlSessionStore(layout), tasks: new FileTaskStatusReader(layout) },
   });
 }

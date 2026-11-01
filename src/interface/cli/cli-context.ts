@@ -16,7 +16,7 @@ export interface Terminal {
 export interface CliContext {
   readonly app: () => Promise<Estimetry>;
   /** The hook receiver alone: hooks run on every tool call and must not load storage or git. */
-  readonly hooks: () => Promise<{ receive(call: HookCall): void }>;
+  readonly hooks: () => Promise<{ receive(call: HookCall): Promise<string | undefined> }>;
   readonly out: CliOutput;
   readonly terminal: Terminal;
 }

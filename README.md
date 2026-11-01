@@ -8,7 +8,7 @@ The CLI is `estimetry`, with the short alias `emt`. It needs Node.js 20.19 or ne
 npm install -g estimetry
 ```
 
-> estimetry is in early development. Measuring through hooks, closing tasks and calibration are still being built.
+> estimetry is in early development. Closing tasks, plan progress and calibration are still being built.
 
 ## Setting up a project: `estimetry init`
 
@@ -60,5 +60,40 @@ A repeated run keeps what is installed: once the git hook or the shared install 
 - **Your edits to generated skills are kept.** Every generated skill carries `metadata.generatedBy` and a hash of its content. If you edit one, init keeps your version and reports it as `skipped`; `--force` overwrites it. A file of the same name that estimetry did not create is never touched.
 - **A rewritten hook is yours.** estimetry recognises its hooks by the command prefix `estimetry hook claude-code`. If you change that command, init treats the hook as yours and adds its own next to it.
 - **`settings.local.json` may not be ignored by git.** Claude Code adds `**/.claude/settings.local.json` to your global git excludes only when it writes that file itself. If init creates it and git does not ignore it, init offers to add the same line. With `--no-interactive` it only warns.
-- **Hooks are only received for now.** `estimetry hook` accepts every call, exits 0 without output and logs problems to `errors.log`. Recording sessions from hooks comes in the next version.
 - **Hooks need `estimetry` on `PATH`.** When run through `npx`, the hooks will not find it, and init warns about that.
+
+## Measuring a task
+
+Once a task is started (`emt start`), the Claude Code hooks record its sessions into the task's journal. `emt status` shows the fact measured so far: the time of the agents, your own time, and how certain the numbers are.
+
+### What counts
+
+- **Agent time** — while the main agent works on a turn or a subagent runs, including tools that take a while.
+- **Your time** — while the session is yours: reviewing results and writing the next prompt. Pauses longer than the idle threshold do not count.
+- **Not counted** — commands left running in the background after the agent finished its turn (`run_in_background`, or a subagent waiting for its own background job). The machine works then, not the agent.
+
+### Which task a session serves
+
+- **One task in progress** — a session binds to it by itself.
+- **Several tasks in progress** — the agent gets the session id at the start of the session and asks you which task it is. It then runs `emt attach <task> --session <id>`. The same command switches a running session to another task; the time before and after the switch goes to the right task.
+- **No task in progress** — the session's time is kept in a journal of the project and counts for no task. Start a task, even with `emt start --at "<when you began>"`, and the session's work since then moves into it.
+
+### Checkpoints
+
+Every 20 minutes of work a checkpoint records the state of the plan (the checkboxes of OpenSpec `tasks.md`), `HEAD` and the uncommitted changes of the repository. It runs only in background hooks. Set the interval in `~/.local/share/estimetry/config.yaml`:
+
+```yaml
+measurement:
+  checkpointMinutes: 20   # 10 to 30
+```
+
+After a checkpoint, the agent is reminded with your next prompt to record work outside the plan with `/emt-extra`.
+
+### What is never stored
+
+The journal keeps when things happened, not what was said or done: no prompt texts, no tool inputs or outputs, no commands, no commit messages. Commits are recorded as their hash, parents, `patch-id` and lines per file.
+
+### After upgrading estimetry
+
+Run `estimetry init` again in each project. Most hooks then run in the background, so the agent does not wait for them. Before that they still work, just slower.
+

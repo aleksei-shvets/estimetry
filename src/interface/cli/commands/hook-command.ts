@@ -1,33 +1,45 @@
-import type { Command } from 'commander';
 import type { ErrorReporter } from '../../../application/ports/error-reporter.js';
 import type { CliContext } from '../cli-context.js';
 
 /** Long enough for any hook payload; a stdin nobody closes must not hold the agent up. */
 const STDIN_TIMEOUT_MS = 2_000;
 
+export interface HookRun {
+  readonly hooks: CliContext['hooks'];
+  readonly errors: ErrorReporter;
+  readonly terminal: CliContext['terminal'];
+  readonly out: CliContext['out'];
+  /** Directory of the process and `CLAUDE_PROJECT_DIR`, if the tool set it. */
+  readonly cwd: string;
+  readonly projectDir?: string;
+}
+
 /**
- * Entry point of installed hooks. Never fails and never prints: an error ends up
- * in errors.log and the exit code stays 0, so a hook cannot break the session.
+ * `estimetry hook <source> <event>`, run before the CLI parser so a hook loads
+ * as little as possible. Never fails: any error goes to errors.log, the exit
+ * code stays 0, and only the context for the agent is printed.
  */
-export function registerHookCommand(program: Command, ctx: CliContext & { readonly errors: ErrorReporter }): void {
-  program
-    .command('hook', { hidden: true })
-    .argument('[source]')
-    .argument('[event]')
-    .allowExcessArguments()
-    .allowUnknownOption()
-    .helpOption(false)
-    .action(async (source: string | undefined, event: string | undefined, _options: unknown, command: Command) => {
-      try {
-        const payload = await readStdin(ctx.terminal.input);
-        if (command.args.length > 2) {
-          throw new Error(`unexpected hook arguments: ${command.args.slice(2).join(' ')}`);
-        }
-        (await ctx.hooks()).receive({ source, event, payload });
-      } catch (error) {
-        ctx.errors.report(`hook ${source ?? ''} ${event ?? ''}`.trim(), error);
-      }
+export async function runHook(args: readonly string[], run: HookRun): Promise<number> {
+  const [source, event, ...extra] = args;
+  try {
+    const payload = await readStdin(run.terminal.input);
+    if (extra.length > 0) {
+      throw new Error(`unexpected hook arguments: ${extra.length} more than <source> <event>`);
+    }
+    const output = await (await run.hooks()).receive({
+      source,
+      event,
+      payload,
+      cwd: run.cwd,
+      ...(run.projectDir === undefined || run.projectDir === '' ? {} : { projectDir: run.projectDir }),
     });
+    if (output !== undefined) {
+      run.out.print(output);
+    }
+  } catch (error) {
+    run.errors.report(`hook ${source ?? ''} ${event ?? ''}`.trim(), error);
+  }
+  return 0;
 }
 
 /** All of stdin, or nothing when it is a terminal (run by hand). */
