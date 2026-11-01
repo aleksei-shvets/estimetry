@@ -69,9 +69,25 @@ describe('effort properties on generated sessions', () => {
     const rand = random(seed * 31);
     const twice = events.flatMap((event) => [
       event,
-      { ...event, id: `${event.id}-copy`, ts: new Date(Date.parse(event.ts) + Math.floor(rand() * 1_500)).toISOString() },
+      // Both copies of a hook installed twice start at once, within milliseconds of each other.
+      { ...event, id: `${event.id}-copy`, ts: new Date(Date.parse(event.ts) + Math.floor(rand() * 20)).toISOString() },
     ]);
     expect(summary(shuffled(twice, seed), base)).toEqual(summary(events, base));
+  });
+
+  it.each(SEEDS)('seed %i: time jitter of parallel hooks moves the fact by at most a second per event', (seed) => {
+    const { events, first, last } = generateSession(seed);
+    const base = input(events, first, last, seed);
+    const rand = random(seed * 104_729);
+    const jittered = events.map((event) => ({
+      ...event,
+      ts: new Date(Date.parse(event.ts) + Math.round((rand() * 2 - 1) * 300)).toISOString(),
+    }));
+    const exact = summary(events, base);
+    const shifted = summary(jittered, base);
+    const tolerance = 1_000 * events.length;
+    expect(Math.abs(shifted.agents - exact.agents)).toBeLessThanOrEqual(tolerance);
+    expect(Math.abs(shifted.user - exact.user)).toBeLessThanOrEqual(tolerance);
   });
 
   it('several sessions of one user count the user once', () => {

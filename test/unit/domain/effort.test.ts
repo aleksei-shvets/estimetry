@@ -5,7 +5,7 @@ import { measureEffort } from '../../../src/domain/measurement/effort-calculator
 import { IdlePolicy } from '../../../src/domain/measurement/idle-policy.js';
 import { ManualTime } from '../../../src/domain/measurement/manual-time.js';
 import type { ParallelPeriod } from '../../../src/domain/measurement/parallel-mode.js';
-import { at, ev } from '../../support/activity.js';
+import { activity, at, ev } from '../../support/activity.js';
 
 interface Options {
   readonly start?: string;
@@ -406,5 +406,111 @@ describe('auxiliary metrics', () => {
     expect(report.sequentialEquivalent?.minutes).toBe(60);
     expect(report.calendar.minutes).toBe(240);
     expect(measure(events).report.sequentialEquivalent).toBeUndefined();
+  });
+});
+
+describe('hooks running in parallel and turn ids', () => {
+  const T = (iso: string) => `2026-10-27T${iso}Z`;
+
+  it('a tool end that arrives before its start does not leave the tool running', () => {
+    const result = measure([
+      ev.prompt('10:00'),
+      ev.toolUsed(T('10:05:00.100'), { toolUseId: 't1' }),
+      ev.toolStarted(T('10:05:00.150'), { toolUseId: 't1' }),
+      ev.stop('11:30'),
+    ]);
+    expect(result.agents).toBeCloseTo(5, 1);
+  });
+
+  it('a late end of an earlier turn does not close the next one', () => {
+    const result = measure([
+      ev.prompt('10:00', { turn: 'p1' }),
+      ev.toolUsed('10:19'),
+      ev.automated(T('10:20:00.000'), { turn: 'p2' }),
+      ev.stop(T('10:20:00.200'), { turn: 'p1' }),
+      ev.toolUsed('10:25'),
+      ev.stop('10:30', { turn: 'p2' }),
+    ]);
+    // p1 did end — its end only arrived 200 ms late — so it runs to 10:20 rather than being cut at 10:19.
+    expect(result.agents).toBeCloseTo(30, 1);
+    expect(result.uncertainty).toBe(4); // only the 19 silent minutes of p1, not an abandoned turn
+  });
+
+  it('a permission prompt before the start of its call keeps the wait going', () => {
+    const result = measure([
+      ev.prompt('10:00'),
+      ev.waiting(T('10:10:00.000'), { reason: 'permission' }),
+      ev.toolStarted(T('10:10:00.100'), { toolUseId: 't1' }),
+      ev.toolUsed('11:40', { toolUseId: 't1', durationMs: 600_000 }),
+      ev.stop('11:40'),
+    ]);
+    expect(result.agents).toBeCloseTo(20, 1); // 10:00–10:10 and 11:30–11:40; 80 minutes of waiting are a pause
+  });
+
+  it('a message delivered mid-turn continues the turn, whoever sent it', () => {
+    for (const origin of ['automated', 'user'] as const) {
+      const result = measure([
+        ev.sessionStarted('09:59'),
+        ev.prompt('10:00', { turn: 'p1' }),
+        ev.toolUsed('10:10'),
+        activity('turn.started', '10:12', { origin, turn: 'p1' }),
+        ev.toolUsed('10:20'),
+        ev.stop('10:30', { turn: 'p1' }),
+        ev.sessionEnded('10:30'),
+      ]);
+      expect(result).toMatchObject({ agents: 30, user: 1 });
+    }
+  });
+
+  it('a session switched to another task splits the turn between the tasks without loss', () => {
+    const first = measure([ev.prompt('10:00'), ev.toolUsed('10:10'), ev.toolUsed('10:18'), activity('session.unbound', '10:20')]);
+    const second = measure([activity('session.bound', '10:20'), ev.toolUsed('10:25'), ev.toolUsed('10:35'), ev.stop('10:40')]);
+    expect(first.agents).toBe(20);
+    expect(second.agents).toBe(20);
+    expect(second.user).toBe(0);
+  });
+
+  it('a session bound while the user has it opens the user span', () => {
+    expect(measure([activity('session.bound', '10:00'), ev.prompt('10:10'), ev.stop('10:20')])).toMatchObject({ user: 10, agents: 10 });
+  });
+});
+
+describe('subagents that stop, resume and turn out to run in the background', () => {
+  it('a resumed subagent gets a second interval', () => {
+    const result = measure([ev.agentStarted('10:00', 'a1'), ev.agentStopped('10:05', 'a1'), ev.agentStarted('10:20', 'a1'), ev.agentStopped('10:30', 'a1')]);
+    expect(result.agents).toBe(15);
+  });
+
+  it('agent.detached makes a subagent background after its start, and the flag sticks after a resume', () => {
+    const events = [
+      ev.prompt('10:00'),
+      ev.toolStarted('10:10', { toolUseId: 'spawn' }),
+      ev.agentStarted('10:10', 'a1'),
+      activity('agent.detached', '10:10', { agent: 'a1' }),
+      ev.toolUsed('10:10', { toolUseId: 'spawn' }),
+      ev.toolStarted('10:11', { toolUseId: 'build' }), // the main agent keeps working meanwhile
+      ev.toolUsed('10:40', { agent: 'a1' }),
+      ev.agentStopped('10:50', 'a1'),
+      ev.toolUsed('10:59', { toolUseId: 'build' }),
+      ev.stop('11:00'),
+    ];
+    // Background: 60 of the main agent + 40 of a1; as a foreground child a1 would replace the main agent's 40.
+    expect(measure(events)).toMatchObject({ agents: 60, work: 100 });
+    // Resumed inside a later turn without `background`: still background, so the main agent's time is not replaced.
+    const resumed = measure([
+      ...events,
+      ev.prompt('11:05'),
+      ev.toolStarted('11:06', { toolUseId: 'b2' }),
+      ev.agentStarted('11:10', 'a1'),
+      ev.agentStopped('11:20', 'a1'),
+      ev.toolUsed('11:29', { toolUseId: 'b2' }),
+      ev.stop('11:30'),
+    ]);
+    expect(resumed.work).toBe(100 + 25 + 10);
+  });
+
+  it('agent.detached does not open or move an interval of the subagent', () => {
+    const result = measure([activity('agent.detached', '09:00', { agent: 'a1' }), ev.agentStarted('10:00', 'a1'), ev.agentStopped('10:10', 'a1')]);
+    expect(result.agents).toBe(10);
   });
 });

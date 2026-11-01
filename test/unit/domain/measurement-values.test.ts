@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { InvalidActivityEvent, parseActivityEvent } from '../../../src/domain/measurement/activity-events.js';
+import { SessionId } from '../../../src/domain/measurement/session-id.js';
 import { Duration } from '../../../src/domain/measurement/duration.js';
 import { Extra } from '../../../src/domain/measurement/extra.js';
 import { IdlePolicy } from '../../../src/domain/measurement/idle-policy.js';
@@ -104,6 +105,12 @@ describe('activity events', () => {
       ['tool.used', { tool: 'Bash', toolUseId: 't1', durationMs: 1200, failed: true }],
       ['agent.started', { agent: 'a1', parentAgent: 'a0', agentType: 'explore', background: true }],
       ['agent.stopped', { agent: 'a1' }],
+      ['agent.detached', { agent: 'a1' }],
+      ['session.bound', {}],
+      ['session.unbound', {}],
+      ['turn.started', { origin: 'user', turn: 'p-1' }],
+      ['turn.ended', { turn: 'p-1' }],
+      ['turn.awaiting-input', { turn: 'p-1', reason: 'question' }],
     ];
     for (const [type, data] of cases) {
       expect(parseActivityEvent(withData(data, type)).type).toBe(type);
@@ -121,6 +128,9 @@ describe('activity events', () => {
     [withData({}, 'agent.started'), 'data.agent'],
     [withData({ reason: 'lunch' }, 'turn.awaiting-input'), 'data.reason'],
     [withData({ agent: '' }), 'data.agent'],
+    [withData({ turn: '' }), 'data.turn'],
+    [withData({}, 'agent.detached'), 'data.agent'],
+    [{ ...valid, task: undefined }, 'task'],
   ])('rejects a contract violation and names the field (%#)', (record, path) => {
     try {
       parseActivityEvent(record);
@@ -134,6 +144,23 @@ describe('activity events', () => {
 
   it('tolerates fields it does not know', () => {
     expect(() => parseActivityEvent(withData({ futureField: 1 }))).not.toThrow();
+  });
+
+  it('reads events of the journal without a task, which have no task in the envelope', () => {
+    const { task: _task, ...withoutTask } = valid;
+    expect(parseActivityEvent(withoutTask, { withoutTask: true }).type).toBe('turn.started');
+  });
+});
+
+describe('SessionId', () => {
+  it('accepts tool session ids and refuses anything that could escape a file name', () => {
+    expect(SessionId.parse('f3e07b87-e277-4b2e-a77c-09b1b58b5599').value).toBe('f3e07b87-e277-4b2e-a77c-09b1b58b5599');
+    for (const bad of ['../../etc', 'a/b', '', 'x'.repeat(129), 'a b']) {
+      expect(() => SessionId.parse(bad)).toThrow(InvalidValue);
+    }
+    // The message does not repeat the value: it may come from untrusted stdin.
+    expect(() => SessionId.parse('../secret')).toThrow(/^invalid session id/);
+    try { SessionId.parse('../secret'); } catch (error) { expect((error as Error).message).not.toContain('secret'); }
   });
 });
 

@@ -30,6 +30,11 @@ interface AgentData extends SessionData {
   readonly agent?: string;
 }
 
+/** `turn` is the id of the turn when the tool gives one: a message delivered mid-turn carries the same id. */
+interface TurnData extends AgentData {
+  readonly turn?: string;
+}
+
 interface ToolData extends AgentData {
   readonly tool?: string;
   readonly toolUseId?: string;
@@ -37,9 +42,9 @@ interface ToolData extends AgentData {
 
 export type SessionStarted = EventEnvelope<'session.started', SessionData & { readonly resumed?: boolean }>;
 export type SessionEnded = EventEnvelope<'session.ended', SessionData>;
-export type TurnStarted = EventEnvelope<'turn.started', AgentData & { readonly origin: TurnOrigin }>;
-export type TurnEnded = EventEnvelope<'turn.ended', AgentData & { readonly outcome?: TurnOutcome }>;
-export type TurnAwaitingInput = EventEnvelope<'turn.awaiting-input', AgentData & { readonly reason?: AwaitingReason }>;
+export type TurnStarted = EventEnvelope<'turn.started', TurnData & { readonly origin: TurnOrigin }>;
+export type TurnEnded = EventEnvelope<'turn.ended', TurnData & { readonly outcome?: TurnOutcome }>;
+export type TurnAwaitingInput = EventEnvelope<'turn.awaiting-input', TurnData & { readonly reason?: AwaitingReason }>;
 export type ToolStarted = EventEnvelope<'tool.started', ToolData>;
 export type ToolUsed = EventEnvelope<
   'tool.used',
@@ -50,6 +55,12 @@ export type AgentStarted = EventEnvelope<
   SessionData & { readonly agent: string; readonly parentAgent?: string; readonly agentType?: string; readonly background?: boolean }
 >;
 export type AgentStopped = EventEnvelope<'agent.stopped', SessionData & { readonly agent: string }>;
+/** The subagent turned out to run in the background; known only after it started with some tools. */
+export type AgentDetached = EventEnvelope<'agent.detached', SessionData & { readonly agent: string }>;
+/** The session serves this task from `ts` on; written by the core when it binds or switches a session. */
+export type SessionBound = EventEnvelope<'session.bound', SessionData>;
+/** The session stopped serving this task at `ts`: it was switched to another one. */
+export type SessionUnbound = EventEnvelope<'session.unbound', SessionData>;
 
 export type ActivityEvent =
   | SessionStarted
@@ -60,7 +71,10 @@ export type ActivityEvent =
   | ToolStarted
   | ToolUsed
   | AgentStarted
-  | AgentStopped;
+  | AgentStopped
+  | AgentDetached
+  | SessionBound
+  | SessionUnbound;
 
 export type ActivityEventType = ActivityEvent['type'];
 
@@ -74,6 +88,9 @@ export const ACTIVITY_EVENT_TYPES: readonly ActivityEventType[] = [
   'tool.used',
   'agent.started',
   'agent.stopped',
+  'agent.detached',
+  'session.bound',
+  'session.unbound',
 ];
 
 export function isActivityEventType(type: unknown): type is ActivityEventType {
@@ -99,7 +116,7 @@ type Json = Record<string, unknown>;
  * tolerated, so a journal written by a newer version stays readable.
  * @throws InvalidActivityEvent
  */
-export function parseActivityEvent(value: unknown): ActivityEvent {
+export function parseActivityEvent(value: unknown, options: { readonly withoutTask?: boolean } = {}): ActivityEvent {
   const record = object(value, '(event)');
   number(record, 'schemaVersion');
   string(record, 'id');
@@ -112,7 +129,12 @@ export function parseActivityEvent(value: unknown): ActivityEvent {
     throw new InvalidActivityEvent('type', `must be one of ${ACTIVITY_EVENT_TYPES.join(', ')}, got ${show(type)}`);
   }
   string(record, 'author');
-  string(record, 'task');
+  if (options.withoutTask) {
+    // The journal of sessions without a task has no task in the envelope.
+    optionalString(record, 'task', '');
+  } else {
+    string(record, 'task');
+  }
   optionalString(record, 'project', '');
   const data = object(record['data'], 'data');
   string(data, 'source', 'data.');
@@ -123,17 +145,22 @@ export function parseActivityEvent(value: unknown): ActivityEvent {
       optionalBoolean(data, 'resumed');
       break;
     case 'session.ended':
+    case 'session.bound':
+    case 'session.unbound':
       break;
     case 'turn.started':
       optionalString(data, 'agent');
+      optionalString(data, 'turn');
       oneOf(data, 'origin', TURN_ORIGINS, true);
       break;
     case 'turn.ended':
       optionalString(data, 'agent');
+      optionalString(data, 'turn');
       oneOf(data, 'outcome', TURN_OUTCOMES, false);
       break;
     case 'turn.awaiting-input':
       optionalString(data, 'agent');
+      optionalString(data, 'turn');
       oneOf(data, 'reason', AWAITING_REASONS, false);
       break;
     case 'tool.started':
@@ -156,6 +183,7 @@ export function parseActivityEvent(value: unknown): ActivityEvent {
       optionalBoolean(data, 'background');
       break;
     case 'agent.stopped':
+    case 'agent.detached':
       string(data, 'agent', 'data.');
       break;
   }

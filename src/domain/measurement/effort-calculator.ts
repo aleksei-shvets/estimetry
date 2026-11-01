@@ -24,6 +24,13 @@ export interface EffortInput {
   readonly now: Timestamp;
 }
 
+/** Bounds for infinite window ends; the same range Timestamp accepts. */
+const EARLIEST_MS = -8.64e15;
+const LATEST_MS = 8.64e15;
+
+/** Parallel hook processes can swap the times of neighbouring events by up to this much. */
+const ORDER_JITTER_MS = 1_000;
+
 /** Repeated deliveries of one hook arrive within this window. */
 const DUPLICATE_WINDOW_MS = 2_000;
 
@@ -91,14 +98,28 @@ export function measureEffort(input: EffortInput): EffortReport {
 
 export function buildTimeline(input: EffortInput): Timeline {
   const collector = new Collector(input.policy.threshold.millis);
-  const context = { startedAt: input.startedAt.toMillis(), now: input.now.toMillis() };
+  const startedAt = input.startedAt.toMillis();
+  const now = input.now.toMillis();
 
-  for (const [session, events] of bySession(prepare(input.activity))) {
+  for (const [session, all] of bySession(prepare(input.activity))) {
+    // Windows and the background flag are facts about the session and its agents, not steps of a run.
+    const windows = sessionWindows(all);
+    collector.window(session, windows);
+    for (const item of all) {
+      if (item.event.type === 'agent.detached') {
+        collector.detach(key(session, item.event.data.agent));
+      }
+    }
+    const events = all.filter(({ event }) => !NOT_STEPS.has(event.type));
+    const context: Context = { startedAt, now, windowStart: (at) => windowStart(windows, at) };
     const streams = new Map<string, Prepared[]>();
     for (const item of events) {
       push(streams, agentOf(item.event) ?? MAIN, item);
     }
-    const sessionEnds = events.filter((item) => item.event.type === 'session.ended').map((item) => item.at);
+    // A subagent still running when the session ends, or leaves this task, ends then.
+    const sessionEnds = events
+      .filter((item) => item.event.type === 'session.ended' || item.event.type === 'session.unbound')
+      .map((item) => item.at);
     collector.describe(key(session, MAIN), { session, agent: undefined, parent: undefined, background: false });
     mainStream(session, streams.get(MAIN) ?? [], collector, context);
     for (const [agent, items] of streams) {
@@ -118,6 +139,49 @@ interface Prepared {
 interface Context {
   readonly startedAt: number;
   readonly now: number;
+  /** Start of the window of the session that holds `at`; the earliest time when the session has no windows. */
+  readonly windowStart: (at: number) => number;
+}
+
+/** Describes an agent instead of advancing its run. */
+const NOT_STEPS: ReadonlySet<ActivityEvent['type']> = new Set(['agent.detached']);
+
+/** A stretch in which the session served this task; open ends are infinite. */
+interface Window {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Windows from `session.bound` and `session.unbound`. Without them the session
+ * served the task all the time; an `unbound` with no `bound` before it closes a window open from the beginning.
+ */
+function sessionWindows(items: readonly Prepared[]): Window[] | undefined {
+  const marks = items.filter(({ event }) => event.type === 'session.bound' || event.type === 'session.unbound');
+  if (marks.length === 0) {
+    return undefined;
+  }
+  const windows: Window[] = [];
+  let open: number | undefined = marks[0]?.event.type === 'session.unbound' ? -Infinity : undefined;
+  for (const { event, at } of marks) {
+    if (event.type === 'session.bound') {
+      open ??= at;
+    } else if (open !== undefined) {
+      windows.push({ start: open, end: at });
+      open = undefined;
+    }
+  }
+  if (open !== undefined) {
+    windows.push({ start: open, end: Infinity });
+  }
+  return windows;
+}
+
+function windowStart(windows: readonly Window[] | undefined, at: number): number {
+  if (windows === undefined) {
+    return -Infinity;
+  }
+  return windows.find((window) => window.start <= at && at <= window.end)?.start ?? -Infinity;
 }
 
 /**
@@ -157,7 +221,7 @@ function duplicateKeyOf(event: ActivityEvent): string | undefined {
   if ((event.type === 'tool.started' || event.type === 'tool.used') && toolUseId === undefined) {
     return undefined;
   }
-  return JSON.stringify([event.type, toolUseId ?? '']);
+  return toolUseId === undefined ? event.type : `${event.type}\u0000${toolUseId}`;
 }
 
 function bySession(items: readonly Prepared[]): Map<string, Prepared[]> {
@@ -192,13 +256,20 @@ function key(session: string, agent: string): string {
  */
 function mainStream(session: string, items: readonly Prepared[], c: Collector, ctx: Context): void {
   const agentKey = key(session, MAIN);
-  let turn: { run: Run; origin: TurnOrigin } | undefined;
+  let turn: { run: Run; origin: TurnOrigin; id: string | undefined } | undefined;
   /** The user has control: the span opened by `session.started` or by the end of a user turn. */
   let span = false;
   let cursor = 0;
   /** The next user gap follows a turn closed by a heuristic, which already counted its doubt. */
   let quiet = false;
   let seen = false;
+  /** When each turn reported its end, to tell a late end from a turn that never ended. */
+  const endsAt = new Map<string, number>();
+  for (const { event, at } of items) {
+    if (event.type === 'turn.ended' && event.data.turn !== undefined && !endsAt.has(event.data.turn)) {
+      endsAt.set(event.data.turn, at);
+    }
+  }
 
   const userUntil = (at: number): void => {
     if (span) {
@@ -222,7 +293,7 @@ function mainStream(session: string, items: readonly Prepared[], c: Collector, c
       return;
     }
     const last = turn.run.last;
-    c.doubt('agent', last, Math.min(last + c.idle, next));
+    c.doubt(session, 'agent', last, Math.min(last + c.idle, next));
     closeTurn(last);
     quiet = true;
   };
@@ -242,6 +313,8 @@ function mainStream(session: string, items: readonly Prepared[], c: Collector, c
         }
         break;
       case 'session.ended':
+      case 'session.unbound':
+        // Leaving the task ends an open turn there and then, like the end of the session.
         if (turn) {
           turn.run.end(at);
           turn = undefined;
@@ -250,26 +323,57 @@ function mainStream(session: string, items: readonly Prepared[], c: Collector, c
         }
         span = false;
         break;
-      case 'turn.started':
+      case 'session.bound':
         if (turn) {
-          abandonTurn(at); // interrupted: the tool never reported the end of the previous turn
+          break;
+        }
+        // The session joins the task: the user has it from now, and a turn found mid-way starts here.
+        if (span) {
+          userUntil(at);
+        } else {
+          span = true;
+          cursor = at;
+          quiet = false;
+        }
+        seen = false;
+        continue;
+      case 'turn.started':
+        if (turn && turn.id !== undefined && turn.id === event.data.turn) {
+          // A message delivered mid-turn (a subagent report, a queued prompt): the same turn goes on.
+          turn.run.step(event, at);
+          break;
+        }
+        if (turn) {
+          const lateEnd = turn.id === undefined ? undefined : endsAt.get(turn.id);
+          if (lateEnd !== undefined && lateEnd >= at && lateEnd - at <= ORDER_JITTER_MS) {
+            // The previous turn did end; its end only arrived a moment after this start.
+            turn.run.end(at);
+            closeTurn(at);
+          } else {
+            abandonTurn(at); // interrupted: the tool never reported the end of the previous turn
+          }
         }
         userUntil(at);
         if (event.data.origin === 'user') {
           span = false;
         }
-        turn = { run: new Run(session, agentKey, at, c), origin: event.data.origin };
+        turn = { run: new Run(session, agentKey, at, c), origin: event.data.origin, id: event.data.turn };
         break;
       default:
+        if (event.type === 'turn.ended' && turn?.id !== undefined && event.data.turn !== undefined && event.data.turn !== turn.id) {
+          continue; // the late end of an earlier turn: parallel hooks swapped places with the next turn's start
+        }
         if (!turn) {
           if (seen) {
             continue; // e.g. a notification after the turn ended
           }
-          // The session joined the task mid-turn (`emt start` ran inside it): the turn began at the start.
-          const start = Math.min(at, Math.max(ctx.startedAt, at - c.idle));
+          // The session joined the task mid-turn (`emt start` or a binding ran inside it): the turn began then.
+          const start = Math.min(at, Math.max(ctx.startedAt, ctx.windowStart(at), at - c.idle));
+          userUntil(start);
+          span = false;
           c.addAgent(agentKey, start, at);
-          c.doubt('agent', start, at);
-          turn = { run: new Run(session, agentKey, at, c), origin: 'user' };
+          c.doubt(session, 'agent', start, at);
+          turn = { run: new Run(session, agentKey, at, c), origin: 'user', id: undefined };
         }
         turn.run.step(event, at);
         if (event.type === 'turn.ended') {
@@ -305,7 +409,7 @@ function subagentStream(
   let run: Run | undefined;
   const abandon = (next: number): void => {
     if (run) {
-      c.doubt('agent', run.last, Math.min(run.last + c.idle, next));
+      c.doubt(session, 'agent', run.last, Math.min(run.last + c.idle, next));
     }
   };
 
@@ -346,6 +450,8 @@ class Run {
   last: number;
   private waiting = false;
   private readonly tools = new Set<string>();
+  /** Calls already reported as finished: parallel hooks may deliver the end before the start. */
+  private readonly finished = new Set<string>();
   /** Tools started without an id; matched with completions by order. */
   private anonymousTools = 0;
 
@@ -360,6 +466,11 @@ class Run {
 
   /** Accounts for the time since the previous event, then applies `event`. */
   step(event: ActivityEvent, at: number): void {
+    if (this.waiting && event.type === 'tool.started') {
+      // The permission prompt can arrive before the start of its own call; the wait goes on.
+      this.startTool(event.data.toolUseId);
+      return;
+    }
     if (this.waiting) {
       // Waiting for the user outweighs a running tool: a permission prompt keeps the tool "running".
       let waitEnd = at;
@@ -382,11 +493,7 @@ class Run {
       }
     }
     if (event.type === 'tool.started') {
-      if (event.data.toolUseId === undefined) {
-        this.anonymousTools += 1;
-      } else {
-        this.tools.add(event.data.toolUseId);
-      }
+      this.startTool(event.data.toolUseId);
     }
     if (event.type === 'turn.awaiting-input') {
       this.waiting = true;
@@ -404,12 +511,23 @@ class Run {
     this.last = Math.max(this.last, at);
   }
 
+  private startTool(toolUseId: string | undefined): void {
+    if (toolUseId === undefined) {
+      this.anonymousTools += 1;
+    } else if (!this.finished.has(toolUseId)) {
+      this.tools.add(toolUseId);
+    }
+  }
+
   private get toolRunning(): boolean {
     return this.tools.size > 0 || this.anonymousTools > 0;
   }
 
   /** Returns true if the completion matched a started tool. */
   private finishTool(toolUseId: string | undefined): boolean {
+    if (toolUseId !== undefined) {
+      this.finished.add(toolUseId);
+    }
     if (toolUseId !== undefined && this.tools.delete(toolUseId)) {
       return true;
     }
@@ -432,15 +550,34 @@ interface AgentInfo {
 class Collector {
   private readonly agents = new Map<string, { info: AgentInfo; intervals: Interval[] }>();
   private readonly user = new Map<string, Interval[]>();
-  private readonly doubts = { agent: [] as Interval[], user: [] as Interval[] };
+  /** Doubtful stretches by session, so they are clipped by the windows of their session. */
+  private readonly doubts = new Map<string, { agent: Interval[]; user: Interval[] }>();
   /** Stretches in which an agent waited for the user, by agent. */
   private readonly waits = new Map<string, Interval[]>();
+  private readonly windows = new Map<string, readonly Window[]>();
+  private readonly detached = new Set<string>();
 
   constructor(readonly idle: number) {}
 
+  /** The background flag sticks: a resumed subagent or a late `agent.detached` keeps it. */
   describe(agentKey: string, info: AgentInfo): void {
     const existing = this.agents.get(agentKey);
-    this.agents.set(agentKey, { info, intervals: existing?.intervals ?? [] });
+    const background = info.background || (existing?.info.background ?? false) || this.detached.has(agentKey);
+    this.agents.set(agentKey, { info: { ...info, background }, intervals: existing?.intervals ?? [] });
+  }
+
+  detach(agentKey: string): void {
+    this.detached.add(agentKey);
+    const existing = this.agents.get(agentKey);
+    if (existing) {
+      this.agents.set(agentKey, { ...existing, info: { ...existing.info, background: true } });
+    }
+  }
+
+  window(session: string, windows: readonly Window[] | undefined): void {
+    if (windows !== undefined) {
+      this.windows.set(session, windows);
+    }
   }
 
   addAgent(agentKey: string, start: number, end: number): void {
@@ -449,9 +586,11 @@ class Collector {
     }
   }
 
-  doubt(kind: 'agent' | 'user', start: number, end: number): void {
+  doubt(session: string, kind: 'agent' | 'user', start: number, end: number): void {
     if (end > start) {
-      this.doubts[kind].push(interval(start, end));
+      const own = this.doubts.get(session) ?? { agent: [], user: [] };
+      own[kind].push(interval(start, end));
+      this.doubts.set(session, own);
     }
   }
 
@@ -461,19 +600,20 @@ class Collector {
     if (length <= 0) {
       return;
     }
+    const session = this.sessionOf(agentKey);
     if (toolRunning) {
       this.addAgent(agentKey, start, end);
       if (length > 2 * this.idle) {
-        this.doubt('agent', start, end);
+        this.doubt(session, 'agent', start, end);
       }
       return;
     }
-    this.silence(length, start, end, false, () => this.addAgent(agentKey, start, end), 'agent');
+    this.silence(session, length, start, end, false, () => this.addAgent(agentKey, start, end), 'agent');
   }
 
   /** A stretch while the user has control of a session. */
   userGap(session: string, start: number, end: number, quiet: boolean): void {
-    this.silence(end - start, start, end, quiet, () => this.addUser(session, start, end), 'user');
+    this.silence(session, end - start, start, end, quiet, () => this.addUser(session, start, end), 'user');
   }
 
   /** The agent waits for the user: the user's time if short, a pause if long. */
@@ -483,9 +623,9 @@ class Collector {
       return;
     }
     push(this.waits, agentKey, interval(start, end));
-    this.silence(length, start, end, false, () => this.addUser(session, start, end), 'user');
+    this.silence(session, length, start, end, false, () => this.addUser(session, start, end), 'user');
     if (endedByUntimedTool && length > 2 * this.idle) {
-      this.doubt('agent', start, end); // the tool may have been working for part of it
+      this.doubt(session, 'agent', start, end); // the tool may have been working for part of it
     }
   }
 
@@ -494,21 +634,22 @@ class Collector {
     const agents = new Map<string, AgentTimeline>();
     for (const [agentKey, { info, intervals }] of this.agents) {
       const own = IntervalSet.of(intervals).minus(IntervalSet.of(blocked.get(agentKey) ?? []));
-      agents.set(agentKey, { ...info, intervals: own.from(startedAt) });
+      agents.set(agentKey, { ...info, intervals: this.clip(info.session, own.intervals, startedAt) });
     }
     const userBySession = new Map<string, IntervalSet>();
     for (const [session, intervals] of this.user) {
       // A subagent's wait is the user's time, but the main agent of the session may be busy meanwhile.
       const main = agents.get(key(session, MAIN))?.intervals ?? IntervalSet.EMPTY;
-      userBySession.set(session, IntervalSet.of(intervals).from(startedAt).minus(main));
+      userBySession.set(session, this.clip(session, intervals, startedAt).minus(main));
     }
+    const doubts = [...this.doubts.entries()];
     return {
       agents,
       user: IntervalSet.of([...userBySession.values()].flatMap((set) => set.intervals)),
       userBySession,
       doubts: {
-        agent: IntervalSet.of(this.doubts.agent).from(startedAt),
-        user: IntervalSet.of(this.doubts.user).from(startedAt),
+        agent: IntervalSet.of(doubts.flatMap(([session, d]) => this.clip(session, d.agent, startedAt).intervals)),
+        user: IntervalSet.of(doubts.flatMap(([session, d]) => this.clip(session, d.user, startedAt).intervals)),
       },
     };
   }
@@ -536,6 +677,7 @@ class Collector {
    * half the threshold is doubtful; beyond it is a pause, doubtful up to twice the threshold.
    */
   private silence(
+    session: string,
     length: number,
     start: number,
     end: number,
@@ -549,11 +691,27 @@ class Collector {
     if (length <= this.idle) {
       count();
       if (!quiet && length > this.idle / 2) {
-        this.doubt(kind, start + this.idle / 2, end);
+        this.doubt(session, kind, start + this.idle / 2, end);
       }
     } else if (!quiet && length <= 2 * this.idle) {
-      this.doubt(kind, start, end);
+      this.doubt(session, kind, start, end);
     }
+  }
+
+  private sessionOf(agentKey: string): string {
+    return this.agents.get(agentKey)?.info.session ?? agentKey.slice(0, agentKey.lastIndexOf('/'));
+  }
+
+  /** Clipped to the start of the task and to the windows in which the session served it. */
+  private clip(session: string, intervals: Iterable<Interval>, startedAt: Timestamp): IntervalSet {
+    const clipped = IntervalSet.of(intervals).from(startedAt);
+    const windows = this.windows.get(session);
+    if (windows === undefined) {
+      return clipped;
+    }
+    const allowed = IntervalSet.of(windows.map((w) => interval(Math.max(w.start, EARLIEST_MS), Math.min(w.end, LATEST_MS))));
+    const outside = IntervalSet.of([interval(EARLIEST_MS, LATEST_MS)]).minus(allowed);
+    return clipped.minus(outside);
   }
 
   private addUser(session: string, start: number, end: number): void {
