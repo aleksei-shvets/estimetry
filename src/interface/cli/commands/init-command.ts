@@ -36,6 +36,7 @@ const SHARE_HINTS: Readonly<Record<ShareMode, string>> = {
 export function registerInitCommand(program: Command, ctx: CliContext): void {
   program
     .command('init')
+    .helpGroup('Setup')
     .description('set up estimetry in this project: hooks, skills and commands of the AI tool, project config')
     .option('--tools <ids>', 'AI tools, comma-separated (claude-code)')
     .option('--flow <id>', 'development process: openspec or none (default: detected)')

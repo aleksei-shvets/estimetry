@@ -14,6 +14,7 @@ interface ManualOptions {
 export function registerManualCommand(program: Command, ctx: CliContext): void {
   program
     .command('manual')
+    .helpGroup('Measuring')
     .description('record time the hooks did not see: your work outside agent sessions, or agent work with --agent')
     .argument('<duration>', 'e.g. 40m, 1h30m, 1.5h')
     .argument('<description>', 'what the time was spent on')

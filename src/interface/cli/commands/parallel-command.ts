@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { groupCommand } from '../help-command.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
 import { parseCount, parseTaskOption } from '../parse-input.js';
 
@@ -11,7 +12,7 @@ interface OnOptions {
 }
 
 export function registerParallelCommand(program: Command, ctx: CliContext): void {
-  const parallel = program.command('parallel').description('switch parallel mode of a task (several agents at once)');
+  const parallel = groupCommand(program, 'parallel', 'Measuring', ctx).description('switch parallel mode of a task (several agents at once)');
 
   parallel
     .command('on')

@@ -30,12 +30,27 @@ describe('binaries', () => {
     expect(estimetry).toMatchObject({ code: 0, stdout: `${version}\n` });
   });
 
-  it('prints help with the commands', async () => {
+  it('prints help with every command by stage, its options and examples', async () => {
     const help = await cli.run(['--help'], api);
     expect(help.code).toBe(0);
-    for (const command of ['task', 'start', 'attach', 'estimate', 'manual', 'extra', 'parallel', 'status']) {
-      expect(help.stdout).toContain(command);
+    for (const line of ['Setup:', 'Tasks and estimates:', 'Measuring:', 'Closing:', '  task new <title>', '  estimate save <file>', '  parallel on', '  close [task]']) {
+      expect(help.stdout).toContain(line);
     }
+    expect(help.stdout).toMatch(/--part <id>/);
+    expect(help.stdout).toMatch(/--category <category>.*\(required\)/s);
+    expect(help.stdout).toContain('Examples:\n  emt init');
+    expect((await cli.run(['--help'], api, 'estimetry')).stdout).toContain('Run "estimetry <command> --help"');
+  });
+
+  it('shows the help of groups and nested commands', async () => {
+    const group = await cli.run(['task', '--help'], api);
+    expect(group.stdout).toMatch(/task list[\s\S]*--closed/);
+    const nested = await cli.run(['help', 'task', 'new'], api);
+    expect(nested).toMatchObject({ code: 0 });
+    expect(nested.stdout).toMatch(/^Usage: emt task new \[options\] <title>/);
+    const bare = await cli.run(['task'], api);
+    expect(bare.code).toBe(1);
+    expect(bare.stdout).toContain('task new <title>');
   });
 
   it('fails with code 1 on an unknown command', async () => {

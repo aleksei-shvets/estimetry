@@ -43,6 +43,7 @@ function printWarnings(ctx: CliContext, warnings: readonly string[]): void {
 export function registerCloseCommands(program: Command, ctx: CliContext): void {
   program
     .command('close')
+    .helpGroup('Closing')
     .description('close a task after the user agreed; then run `emt retro`')
     .argument('[task]', 'task id; defaults to the only task in progress in this project')
     .option('--at <time>', 'when the work ended (ISO 8601 or "YYYY-MM-DD HH:MM"); defaults to now')
@@ -68,6 +69,7 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
 
   program
     .command('reopen')
+    .helpGroup('Closing')
     .description('open a task closed by mistake')
     .argument('<task>', 'task id, e.g. T-12')
     .option('--json', 'print JSON')
@@ -79,6 +81,7 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
 
   program
     .command('retro')
+    .helpGroup('Closing')
     .description('record why the fact differs from the estimate, and one lesson')
     .argument('[task]', 'task id; defaults to the task of this project closed last')
     .requiredOption('--reason <text>', 'a reason, optionally "<part id>: <text>"; repeat for several', (value: string, all: string[] = []) => [...all, value])
@@ -92,6 +95,7 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
 
   program
     .command('renegotiate')
+    .helpGroup('Closing')
     .description('the customer agreed to more work: close the task as it is and start a new one for the rest')
     .argument('<title>', 'title of the new task')
     .option('--task <id>', 'the task being renegotiated; defaults to the only task in progress in this project')
@@ -132,6 +136,7 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
 
   program
     .command('rebuild')
+    .helpGroup('Setup')
     .description('rebuild task snapshots, cards and calibration.json from the journals')
     .argument('[task]', 'only this task')
     .option('--json', 'print JSON')

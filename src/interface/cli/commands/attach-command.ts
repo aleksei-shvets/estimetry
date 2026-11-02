@@ -5,6 +5,7 @@ import { presenterFor, type CliContext } from '../cli-context.js';
 export function registerAttachCommand(program: Command, ctx: CliContext): void {
   program
     .command('attach')
+    .helpGroup('Measuring')
     .description('connect a task to the current project (for tasks that span several repositories)')
     .argument('<task>', 'task id, e.g. T-12')
     .option('--session <id>', 'also bind this session of the AI tool to the task (when several tasks are in progress)')

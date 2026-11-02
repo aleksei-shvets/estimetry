@@ -10,6 +10,12 @@ npm install -g estimetry
 
 > estimetry is in early development. Estimating with past tasks (`emt similar`, `emt calibrate`) is still being built.
 
+## Help
+
+`emt --help` lists every command, nested ones included (`task new`, `estimate save`, `parallel on`), grouped by stage: setup, tasks and estimates, measuring, closing. Each comes with its options; required ones are marked. Examples of the usual order close the list.
+
+`emt <command> --help` or `emt help <command>` shows one command in full, e.g. `emt help task new`.
+
 ## Setting up a project: `estimetry init`
 
 Run it in the root of a repository:

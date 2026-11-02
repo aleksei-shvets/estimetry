@@ -15,6 +15,7 @@ interface ExtraOptions {
 export function registerExtraCommand(program: Command, ctx: CliContext): void {
   program
     .command('extra')
+    .helpGroup('Measuring')
     .description('record work outside the estimated plan')
     .argument('<description>', 'what the extra work was')
     .requiredOption('--category <category>', `one of: ${EXTRA_CATEGORIES.join(', ')}`)

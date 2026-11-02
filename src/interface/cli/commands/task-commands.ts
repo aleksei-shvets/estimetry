@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import { TaskId } from '../../../domain/task/task-id.js';
+import { groupCommand } from '../help-command.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
 
 interface JsonOption {
@@ -7,7 +8,7 @@ interface JsonOption {
 }
 
 export function registerTaskCommands(program: Command, ctx: CliContext): void {
-  const task = program.command('task').description('create and inspect tasks');
+  const task = groupCommand(program, 'task', 'Tasks and estimates', ctx).description('create and inspect tasks');
 
   task
     .command('new')

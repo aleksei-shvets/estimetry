@@ -1,9 +1,10 @@
 import type { Command } from 'commander';
+import { groupCommand } from '../help-command.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
 import { parseTaskOption } from '../parse-input.js';
 
 export function registerEstimateCommand(program: Command, ctx: CliContext): void {
-  const estimate = program.command('estimate').description('work with the estimate of a task');
+  const estimate = groupCommand(program, 'estimate', 'Tasks and estimates', ctx).description('work with the estimate of a task');
 
   estimate
     .command('save')

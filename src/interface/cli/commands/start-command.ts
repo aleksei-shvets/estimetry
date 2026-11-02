@@ -7,6 +7,7 @@ import { unestimatedWarning } from '../presenters/text-presenter.js';
 export function registerStartCommand(program: Command, ctx: CliContext): void {
   program
     .command('start')
+    .helpGroup('Measuring')
     .description('start work on a task; from now on its effort is recorded')
     .argument('[task]', 'task id; defaults to the only task of this project that can be started')
     .option('--at <time>', 'backdate the start (ISO 8601 or "YYYY-MM-DD HH:MM"), for work begun earlier')
