@@ -69,6 +69,23 @@ export class IntervalSet {
     return this.minus(IntervalSet.of([Interval.of(EARLIEST, from)]));
   }
 
+  /** The part of the set inside `[from, to]`. */
+  within(from: Timestamp, to: Timestamp): IntervalSet {
+    if (to.toMillis() <= from.toMillis()) {
+      return IntervalSet.EMPTY;
+    }
+    return IntervalSet.of(
+      this.intervals
+        .filter((interval) => interval.end.toMillis() > from.toMillis() && interval.start.toMillis() < to.toMillis())
+        .map((interval) =>
+          Interval.of(
+            Timestamp.fromMillis(Math.max(interval.start.toMillis(), from.toMillis())),
+            Timestamp.fromMillis(Math.min(interval.end.toMillis(), to.toMillis())),
+          ),
+        ),
+    );
+  }
+
   overlaps(interval: Interval): boolean {
     return this.intervals.some((own) => own.overlaps(interval));
   }

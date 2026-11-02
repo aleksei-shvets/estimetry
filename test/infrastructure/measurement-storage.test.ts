@@ -110,6 +110,14 @@ describe('YamlEstimateReader', () => {
     throw new Error('expected InvalidEstimate');
   }
 
+  it('reads the coefficient of a calibrated estimate and refuses one that is not positive', () => {
+    const base = 'schemaVersion: 1\ncalibrated: true\nparts:\n  - { name: a, hours: { optimistic: 1, likely: 13, pessimistic: 20 } }\n';
+    const estimate = reader(`${base}calibration: { coefficient: 1.3 }\n`)();
+    expect(estimate.toData().calibration).toEqual({ coefficient: 1.3 });
+    expect(estimate.baseLikely).toBe(10);
+    expect(issues(reader(`${base}calibration: { coefficient: 0 }\n`)).map((i) => i.path)).toEqual(['calibration.coefficient']);
+  });
+
   it('reads a valid file with totals', () => {
     const estimate = reader(`schemaVersion: 1
 type: feature

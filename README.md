@@ -8,7 +8,7 @@ The CLI is `estimetry`, with the short alias `emt`. It needs Node.js 20.19 or ne
 npm install -g estimetry
 ```
 
-> estimetry is in early development. Closing tasks and calibration are still being built.
+> estimetry is in early development. Estimating with past tasks (`emt similar`, `emt calibrate`) is still being built.
 
 ## Setting up a project: `estimetry init`
 
@@ -31,7 +31,7 @@ In a terminal it asks a few questions:
 | What | Where | Who gets it |
 |---|---|---|
 | Hooks for 12 Claude Code events, each running `estimetry hook claude-code <event>` | `.claude/settings.local.json` | you |
-| Skills `estimetry`, `emt-estimate`, `emt-start`, `emt-extra`, `emt-parallel`, `emt-manual` (also the `/emt-…` commands) | `~/.claude/skills/` (or `$CLAUDE_CONFIG_DIR/skills/`) | you, in every project |
+| Skills `estimetry`, `emt-estimate`, `emt-start`, `emt-extra`, `emt-parallel`, `emt-manual`, `emt-close`, `emt-retro` (also the `/emt-…` commands) | `~/.claude/skills/` (or `$CLAUDE_CONFIG_DIR/skills/`) | you, in every project |
 | Project id and development process | `.estimetry/config.yaml` | the team; commit it so clones of the repository are one project |
 
 With `--shared-hooks` the hooks go to `.claude/settings.json` and the skills to `.claude/skills/` of the project. A reminder to run `/emt-estimate` before naming a deadline is added to `CLAUDE.md`, between `<!-- estimetry:start -->` and `<!-- estimetry:end -->`. These are files the project commits, so the whole team gets them.
@@ -107,6 +107,65 @@ changes         4 done, last hooks-and-flows 2026-11-01 (approx.)
 - **Several working copies** of a project (worktrees, clones): the plan is read in the one you work in.
 
 A change is completed when its directory appears in the archive, however it got there: `openspec archive`, a skill moving it, or you in a terminal. The next hook call of a session bound to the task records it, with the time of the move. Changes already archived when estimetry first looks at a task are recorded with their date only, marked `(approx.)`. A change moved back out of the archive no longer counts as completed. The start of a session shows the percent too (`plan 51% done`), and `emt parallel on` records it.
+
+## Closing a task
+
+A task closes only when you agree. When a change of the task moves into the archive, the agent gets a note on your next prompt and asks whether it was the last one and whether to close the task. It never closes the task by itself.
+
+```sh
+emt close            # shows the fact and the plan, then asks
+emt close --yes      # without a terminal (an agent): only after you agreed
+emt close --at "2026-11-02 18:00"   # the work ended earlier
+emt close --abandoned               # the task was dropped; it is not used for calibration
+```
+
+Closing records the code volume and the plan, ends parallel mode, and lets the sessions of the task go: a session that closed a task does not move to another task by itself until it starts again or you run `emt attach <task> --session <id>`.
+
+Then hold the retro with the agent (`/emt-retro`): why the fact differs from the estimate and one lesson for next time.
+
+```sh
+emt retro --reason "manual-testing: two devices instead of one" --reason "API docs were outdated" --lesson "plan manual testing per platform"
+```
+
+A reason that starts with the id of an estimate part (`manual-testing:`) is about that part. Running `emt retro` again replaces the retro.
+
+- **More work agreed with the customer.** `emt renegotiate "Payments v2" --description "refunds added"` closes the task as it is and creates a new task for the rest, linked to it. Estimate and start the new task as usual.
+- **Closed by mistake.** `emt reopen T-3` opens the task again; its card goes away until the next closing.
+- **Manual time of a part.** `emt manual 40m "testing on device" --part manual-testing` counts the time toward that part of the estimate.
+- **Closed tasks** are listed with `emt task list --closed`; `emt task show T-3` shows the card.
+
+### The card
+
+Every closed task gets a card in `~/.local/share/estimetry/cards/<task>.yaml`, about 50 lines. It holds:
+- the estimate and the fact, also by parts of the estimate;
+- extra work and parallel mode;
+- the code volume, as lines of production code, tests, config and docs;
+- the retro.
+
+Time is split between parts by the checkboxes their changes closed between checkpoints. Time no part can claim is shown as `unattributed`.
+
+The code volume counts the task's recorded commits still reachable from `HEAD`, plus what is not committed. Without recorded commits it counts your commits since the task started. Generated files (lock files, `*.g.dart`, `dist/` and the like) are left out. Lines are only a self-check: they never change the fact or the coefficients.
+
+Names, descriptions and the retro sit in a separate `text` section of the card, apart from the numbers.
+
+### Calibration
+
+`calibration.json` holds your coefficients, computed from your cards:
+- fact over estimate, overall, by task type and by technology (median, mean, number of tasks);
+- the share of extra work by category, and how much scope renegotiations added;
+- how well the code volume was forecast;
+- which kinds of parts run over.
+
+A coefficient based on fewer than 5 tasks is shown but not applied. Set the minimum in `config.yaml`:
+
+```yaml
+calibration:
+  minTasks: 5
+```
+
+Tasks in parallel mode count with their sequential equivalent. Abandoned tasks and tasks with manual time only are left out.
+
+`emt rebuild` rebuilds task snapshots, cards and `calibration.json` from the journals, for example after an upgrade changed a formula.
 
 ### What is never stored
 

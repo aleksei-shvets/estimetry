@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ProjectId } from '../../src/domain/project/project-id.js';
@@ -12,6 +12,7 @@ import { StorageLayout } from '../../src/infrastructure/fs/storage-layout.js';
 import { FileProjectRepository } from '../../src/infrastructure/persistence/file-project-repository.js';
 import { FileTaskRepository } from '../../src/infrastructure/persistence/file-task-repository.js';
 import { YamlCheckpointState, YamlSessionStore } from '../../src/infrastructure/persistence/yaml-session-store.js';
+import { FileCloseProposals } from '../../src/infrastructure/persistence/file-close-proposals.js';
 import { SessionId } from '../../src/domain/measurement/session-id.js';
 import { cliSandbox } from '../support/cli.js';
 
@@ -77,10 +78,23 @@ describe('hook budgets on a large store', () => {
     const background = median(Array.from({ length: 10 }, () => run('PostToolUse', { tool_name: 'Read', tool_use_id: 'x', duration_ms: 3 }))) - node;
     const prompt = median(Array.from({ length: 10 }, () => run('UserPromptSubmit', { prompt: 'go' }))) - node;
     const start = median(Array.from({ length: 5 }, () => run('SessionStart', { source: 'resume' }))) - node;
-    console.log(`hook budget, ms beyond node start: background ${background.toFixed(0)}, prompt ${prompt.toFixed(0)}, session start ${start.toFixed(0)}`);
+    // A pending proposal to close the task makes the prompt read the plan of the task.
+    const proposals = new FileCloseProposals(layout);
+    const proposing = median(
+      Array.from({ length: 5 }, () => {
+        proposals.put('T-1', { change: 'change-1', completedAt: new Date().toISOString(), session: 'live' });
+        return run('UserPromptSubmit', { prompt: 'go' });
+      }),
+    ) - node;
+    expect(existsSync(layout.closeProposal('T-1'))).toBe(false);
+    console.log(
+      `hook budget, ms beyond node start: background ${background.toFixed(0)}, prompt ${prompt.toFixed(0)}, ` +
+        `prompt with a proposal ${proposing.toFixed(0)}, session start ${start.toFixed(0)}`,
+    );
     // Budgets are 150, 150 and 1000 ms; CI machines get twice as much.
     expect(background).toBeLessThan(300);
     expect(prompt).toBeLessThan(300);
+    expect(proposing).toBeLessThan(300);
     expect(start).toBeLessThan(2000);
   }, 180_000);
 });

@@ -13,7 +13,7 @@ import { isNotFound } from '../fs/jsonl.js';
 
 type Json = Record<string, unknown>;
 
-const ESTIMATE_FIELDS = ['schemaVersion', 'parts', 'type', 'stack', 'codeVolume', 'rationale', 'basedOn', 'calibrated'];
+const ESTIMATE_FIELDS = ['schemaVersion', 'parts', 'type', 'stack', 'codeVolume', 'rationale', 'basedOn', 'calibrated', 'calibration'];
 const PART_FIELDS = ['name', 'id', 'group', 'kind', 'who', 'hours'];
 const HOURS_FIELDS = ['optimistic', 'likely', 'pessimistic'];
 const CODE_VOLUME_FIELDS = ['production', 'tests'];
@@ -74,6 +74,7 @@ class EstimateParser {
       this.issue('calibrated', 'expected true or false');
     }
     const codeVolume = this.codeVolume(value['codeVolume']);
+    const coefficient = this.coefficient(value['calibration']);
     if (this.issues.length > 0 || parts.some((part) => part === undefined)) {
       return undefined;
     }
@@ -86,8 +87,26 @@ class EstimateParser {
         ...(rationale === undefined ? {} : { rationale }),
         ...(codeVolume === undefined ? {} : { codeVolume }),
         calibrated: calibrated === true,
+        ...(coefficient === undefined ? {} : { coefficient }),
       }),
     );
+  }
+
+  private coefficient(value: unknown): number | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (!isObject(value)) {
+      this.issue('calibration', 'expected a mapping with `coefficient`');
+      return undefined;
+    }
+    this.unknownFields(value, ['coefficient'], 'calibration.');
+    const coefficient = value['coefficient'];
+    if (typeof coefficient !== 'number' || !(coefficient > 0)) {
+      this.issue('calibration.coefficient', 'expected a number greater than 0');
+      return undefined;
+    }
+    return coefficient;
   }
 
   private part(value: unknown, path: string): EstimatePart | undefined {

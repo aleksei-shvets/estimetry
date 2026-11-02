@@ -99,7 +99,9 @@ describe('emt estimate save', () => {
   it('saves the estimate as the plan, takes its type and warns about missing manual testing', async () => {
     await emt('task', 'new', 'Webhook', '--type', 'feature');
     const result = await emt('estimate', 'save', plan(VALID_PLAN));
-    expect(result).toMatchObject({ code: 0, stdout: 'Estimate saved for T-1: 5 / 10 / 15 h, 2 parts\n' });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/^Estimate saved for T-1: 5 \/ 10 \/ 15 h, 2 parts\nTime is not measured yet: start the task when work begins with `emt start T-1`/);
+    expect((await emt('status', 'T-1')).stdout).toMatch(/not started: the time of sessions is not counted until `emt start T-1`/);
     expect(result.stderr).toBe('warning: the estimate has no manual-testing part\n');
     const task = JSON.parse((await emt('task', 'show', 'T-1', '--json')).stdout) as Record<string, unknown>;
     expect(task).toMatchObject({ status: 'estimated', estimated: true, type: 'integration' });
@@ -107,6 +109,7 @@ describe('emt estimate save', () => {
 
     const started = await emt('start');
     expect(started.stderr).toBe('');
+    expect((await emt('status')).stdout).not.toContain('not started');
   });
 
   it('reports every problem in the file at once with paths', async () => {
@@ -206,7 +209,10 @@ describe('emt start --at', () => {
     expect(future.code).toBe(1);
     expect((await emt('start', '--at', '2026-10-26T09:00:00Z')).code).toBe(0);
     expect(JSON.parse((await emt('task', 'show', 'T-1', '--json')).stdout)).toMatchObject({ startedAt: '2026-10-26T09:00:00.000Z' });
-    expect(journal().at(-1)).toMatchObject({ type: 'task.started', data: { at: '2026-10-26T09:00:00.000Z' } });
+    expect(journal().filter((event) => String(event['type']).startsWith('task.')).at(-1)).toMatchObject({
+      type: 'task.started',
+      data: { at: '2026-10-26T09:00:00.000Z' },
+    });
   });
 
   it('shows moments in local time, in the form --at accepts, and keeps UTC in --json', async () => {

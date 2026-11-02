@@ -1,5 +1,7 @@
 import type { AuthorProvider } from '../../application/ports/author-provider.js';
+import type { CalibrationSettings } from '../../application/ports/calibration-settings.js';
 import type { MeasurementSettings } from '../../application/ports/measurement-settings.js';
+import { DEFAULT_MIN_TASKS } from '../../domain/calibration/calibration.js';
 import { isShareMode, type ShareMode, type SharingPreference } from '../../application/ports/sharing-preference.js';
 import type { TaskTypeCatalog } from '../../application/ports/task-type-catalog.js';
 import { IdlePolicy } from '../../domain/measurement/idle-policy.js';
@@ -21,7 +23,7 @@ export const CONFIG_SCHEMA_VERSION = 1;
 /** Minutes between checkpoints when the config does not say (design §13). */
 export const DEFAULT_CHECKPOINT_MINUTES = 20;
 
-export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, MeasurementSettings, SharingPreference {
+export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, MeasurementSettings, SharingPreference, CalibrationSettings {
   private author: Author | undefined;
 
   constructor(
@@ -66,6 +68,13 @@ export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, Measure
       minutes: DEFAULT_CHECKPOINT_MINUTES,
       problem: `${this.layout.configFile}: measurement.checkpointMinutes must be a whole number from 10 to 30; using ${DEFAULT_CHECKPOINT_MINUTES}`,
     };
+  }
+
+  /** `calibration.minTasks`: a whole number ≥ 1, 5 by default; anything else gives the default. */
+  minTasks(): number {
+    const calibration = this.read()['calibration'];
+    const value = typeof calibration === 'object' && calibration !== null ? (calibration as Record<string, unknown>)['minTasks'] : undefined;
+    return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : DEFAULT_MIN_TASKS;
   }
 
   /** `sharing.mode`; an unknown value counts as not chosen. */

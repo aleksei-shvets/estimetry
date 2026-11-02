@@ -81,6 +81,7 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     { NodeProjectFiles },
     { YamlSessionStore, YamlCheckpointState },
     { YamlProgressState },
+    { FileCloseProposals },
     { FileProjectRepository },
     { FileTaskStatusReader },
     { JsonlEventJournal },
@@ -105,6 +106,7 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     import('../infrastructure/fs/node-project-files.js'),
     import('../infrastructure/persistence/yaml-session-store.js'),
     import('../infrastructure/persistence/yaml-progress-state.js'),
+    import('../infrastructure/persistence/file-close-proposals.js'),
     import('../infrastructure/persistence/file-project-repository.js'),
     import('../infrastructure/persistence/file-task-status-reader.js'),
     import('../infrastructure/persistence/jsonl-event-journal.js'),
@@ -127,7 +129,9 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
   const started = Timestamp.fromMillis(Math.round(startedAt));
   const flows = new FlowRegistry().register(openSpecFlow).register(noneFlow);
   const files = new NodeProjectFiles();
-  const plans = new FlowProjectPlans(new YamlProjectConfigFile(), flows, files, new FileProjectRepository(layout));
+  const projects = new FileProjectRepository(layout);
+  const plans = new FlowProjectPlans(new YamlProjectConfigFile(), flows, files, projects);
+  const proposals = new FileCloseProposals(layout);
   return new ReceiveHook({
     adapters: new HookAdapterRegistry().register(claudeCodeHooks),
     locator: new FsProjectLocator(layout),
@@ -143,7 +147,29 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
       ids,
       config,
     ),
-    completions: new ChangeCompletions(plans, files, new YamlProgressState(layout), journal, tasks, ids, config, errors),
+    completions: new ChangeCompletions(plans, files, new YamlProgressState(layout), journal, tasks, ids, config, errors, proposals),
+    proposals,
+    // Only a pending proposal to close the task needs the plan of the task.
+    planOf: async () => {
+      const [{ PlanSnapshots }, { SnapshotTaskReader }, { FsGitHead: Head }, { TaskId }] = await Promise.all([
+        import('../application/task/plan-snapshots.js'),
+        import('../infrastructure/persistence/snapshot-task-reader.js'),
+        import('../infrastructure/git/fs-git-head.js'),
+        import('../domain/task/task-id.js'),
+      ]);
+      const snapshots = new PlanSnapshots(plans, new Head(), projects);
+      const reader = new SnapshotTaskReader(layout);
+      return {
+        of: (task: string, near: string) => {
+          const found = reader.find(TaskId.parse(task));
+          if (found === undefined) {
+            return { unfinished: [] };
+          }
+          const plan = snapshots.closing(found, near);
+          return { ...(plan.done === undefined ? {} : { done: plan.done }), unfinished: plan.unfinishedGroups };
+        },
+      };
+    },
     journal,
     tasks,
     bindings,
@@ -247,6 +273,11 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
     { YamlSessionStore },
     { FileTaskStatusReader },
     { FlowProjectPlans },
+    { YamlCardStore },
+    { JsonCalibrationStore },
+    { FileCloseProposals },
+    { GitCodeMeasurer },
+    { FsGitHead },
   ] = await Promise.all([
     import('../application/estimetry.js'),
     import('../infrastructure/git/git-cli.js'),
@@ -261,6 +292,11 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
     import('../infrastructure/persistence/yaml-session-store.js'),
     import('../infrastructure/persistence/file-task-status-reader.js'),
     import('../application/hooks/flow-plans.js'),
+    import('../infrastructure/persistence/yaml-card-store.js'),
+    import('../infrastructure/persistence/json-calibration-store.js'),
+    import('../infrastructure/persistence/file-close-proposals.js'),
+    import('../infrastructure/git/git-code-measurer.js'),
+    import('../infrastructure/git/fs-git-head.js'),
   ]);
   const git = new GitCli(cwd);
   const config = new YamlConfigStore(layout, () => git.userEmail() ?? userInfo().username);
@@ -282,6 +318,14 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
     install,
     plans: new FlowProjectPlans(projectConfig, install.flows, install.files, projects),
     workspaceDir: cwd,
+    closing: {
+      cards: new YamlCardStore(layout),
+      calibration: new JsonCalibrationStore(layout, () => new Date().toISOString()),
+      settings: config,
+      proposals: new FileCloseProposals(layout),
+      code: new GitCodeMeasurer(),
+      head: new FsGitHead(),
+    },
     sessions: { bindings: new YamlSessionStore(layout), tasks: new FileTaskStatusReader(layout) },
   });
 }

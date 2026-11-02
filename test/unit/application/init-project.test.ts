@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { fakeClosing } from '../../support/closing-fakes.js';
 import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
 import { InstallBlocked } from '../../../src/application/contracts/install-blocked.js';
 import type { InstallDependencies } from '../../../src/application/project/init-project.js';
@@ -54,6 +55,7 @@ function build(overrides: Partial<InstallDependencies> = {}): void {
     install: fakeInstallDependencies(files, { tools: new ListRegistry([tool]), commitHook: hook, sharing, excludes, ...overrides }),
     sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(new InMemoryTaskRepository()) },
     plans: new FakeProjectPlans(),
+    closing: fakeClosing(),
   });
 }
 
@@ -152,6 +154,7 @@ describe('init', () => {
           projectConfig: new InMemoryProjectConfigFile(files), install: fakeInstallDependencies(files),
     sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(new InMemoryTaskRepository()) },
     plans: new FakeProjectPlans(),
+    closing: fakeClosing(),
         });
         resolve.createTask({ title: 'x' });
         return projects.findByPath('/elsewhere/api')!;

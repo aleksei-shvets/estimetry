@@ -11,6 +11,8 @@ export interface ManualTimeData {
   /** End of the work; absent when the user did not say when it happened. */
   readonly at?: string;
   readonly description: string;
+  /** Id of the estimate part the time belongs to, e.g. manual testing. */
+  readonly part?: string;
 }
 
 /**
@@ -24,6 +26,7 @@ export class ManualTime {
     readonly duration: Duration,
     readonly at: Timestamp | undefined,
     readonly description: string,
+    readonly part: string | undefined,
   ) {}
 
   static of(input: {
@@ -31,6 +34,7 @@ export class ManualTime {
     readonly duration: Duration;
     readonly at?: Timestamp;
     readonly description: string;
+    readonly part?: string;
   }): ManualTime {
     const description = input.description.trim();
     if (description === '') {
@@ -39,7 +43,11 @@ export class ManualTime {
     if (input.duration.millis === 0) {
       throw new InvalidValue('manual time must be greater than zero');
     }
-    return new ManualTime(input.kind, input.duration, input.at, description);
+    const part = input.part?.trim();
+    if (part === '') {
+      throw new InvalidValue('estimate part id must not be empty');
+    }
+    return new ManualTime(input.kind, input.duration, input.at, description, part);
   }
 
   static fromData(data: ManualTimeData): ManualTime {
@@ -48,6 +56,7 @@ export class ManualTime {
       duration: Duration.ofMillis(data.durationMs),
       ...(data.at === undefined ? {} : { at: Timestamp.parse(data.at) }),
       description: data.description,
+      ...(data.part === undefined ? {} : { part: data.part }),
     });
   }
 
@@ -57,6 +66,7 @@ export class ManualTime {
       durationMs: this.duration.millis,
       ...(this.at === undefined ? {} : { at: this.at.toISOString() }),
       description: this.description,
+      ...(this.part === undefined ? {} : { part: this.part }),
     };
   }
 }

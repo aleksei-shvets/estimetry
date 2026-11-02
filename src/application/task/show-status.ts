@@ -10,7 +10,14 @@ import type { CompletedChange, TaskPlanProgress, UntrackedProject } from './task
 
 /** Effort of a task for `emt status`. Durations are whole minutes; shares are fractions, null when undefined. */
 export interface StatusView {
-  readonly task: { readonly id: string; readonly title: string; readonly status: string; readonly startedAt?: string };
+  readonly task: {
+    readonly id: string;
+    readonly title: string;
+    readonly status: string;
+    readonly startedAt?: string;
+    /** A closed task is measured up to this moment. */
+    readonly closedAt?: string;
+  };
   readonly fact: number;
   readonly agentTime: number;
   readonly userTime: number;
@@ -84,6 +91,7 @@ export class ShowStatus {
         title: task.title,
         status: task.status,
         ...(startedAt === undefined ? {} : { startedAt }),
+        ...(task.closure === undefined ? {} : { closedAt: task.closure.at }),
       },
       fact: minutes(report.fact),
       agentTime: minutes(report.agentTime),

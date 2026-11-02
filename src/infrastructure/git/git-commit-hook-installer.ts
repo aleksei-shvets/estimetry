@@ -6,9 +6,13 @@ import type { CommitHookInstaller } from '../../application/ports/commit-hook-in
 
 export const BLOCK_START = '# >>> estimetry >>>';
 export const BLOCK_END = '# <<< estimetry <<<';
-/** Runs in the background, so the commit never waits, and stays silent for colleagues without estimetry. */
+/**
+ * Runs in the background, so the commit never waits, and stays silent for
+ * colleagues without estimetry. The sha is taken first, in the hook itself:
+ * by the time the background process looks, `HEAD` may already be the next commit.
+ */
 export const BLOCK_COMMAND =
-  'if command -v estimetry >/dev/null 2>&1; then estimetry hook git post-commit </dev/null >/dev/null 2>&1 & fi';
+  'if command -v estimetry >/dev/null 2>&1; then estimetry_sha=$(git rev-parse HEAD 2>/dev/null); printf \'%s\' "$estimetry_sha" | estimetry hook git post-commit >/dev/null 2>&1 & fi';
 const BLOCK = [BLOCK_START, BLOCK_COMMAND, BLOCK_END];
 const HUSKY_LOADER = '. "$(dirname "$0")/_/husky.sh"';
 const SHELLS = /^#!.*\b(sh|bash|zsh|dash|ksh)\b/;

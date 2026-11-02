@@ -17,5 +17,6 @@ export interface GitHead {
 /** Runs git; only for hooks that run in the background. */
 export interface GitSnapshots {
   workingTree(root: string): { readonly files: readonly FileLines[]; readonly untracked: number } | undefined;
-  commit(root: string): CommitInfo | undefined;
+  /** The commit `sha`, or `HEAD` without it. */
+  commit(root: string, sha?: string): CommitInfo | undefined;
 }

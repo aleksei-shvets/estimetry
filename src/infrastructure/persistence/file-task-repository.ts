@@ -46,7 +46,16 @@ export class FileTaskRepository implements TaskRepository {
     if (snapshot && snapshot.version === events.length && snapshot.lastEventId === events.at(-1)?.id) {
       return Task.rehydrate(snapshot);
     }
-    return this.rebuild(id.toString());
+    return this.rebuildById(id.toString());
+  }
+
+  ids(): TaskId[] {
+    const ids = new Set([...this.taskFiles(this.layout.eventsDir, '.jsonl'), ...this.taskFiles(this.layout.tasksDir, '.yaml')]);
+    return [...ids].map((id) => TaskId.parse(id)).sort((a, b) => a.number - b.number);
+  }
+
+  rebuild(id: TaskId): Task | undefined {
+    return this.rebuildById(id.toString());
   }
 
   save(task: Task): void {
@@ -84,7 +93,7 @@ export class FileTaskRepository implements TaskRepository {
     return tasks.sort((a, b) => a.id.number - b.id.number);
   }
 
-  private rebuild(id: string): Task | undefined {
+  private rebuildById(id: string): Task | undefined {
     return withFileLock(this.layout.taskLock(id), () => {
       const events = this.readEvents(id);
       if (events.length === 0) {

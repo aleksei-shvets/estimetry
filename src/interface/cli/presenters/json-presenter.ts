@@ -15,4 +15,9 @@ export const jsonPresenter: Presenter = {
   parallelModeChanged: json,
   status: json,
   initReport: json,
+  taskClosed: json,
+  taskReopened: json,
+  retroRecorded: json,
+  renegotiated: json,
+  rebuildReport: json,
 };

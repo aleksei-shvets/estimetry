@@ -53,6 +53,20 @@ export class InMemoryTaskRepository implements TaskRepository {
   listAll(): Task[] {
     return [...this.journals.values()].filter((events) => events.length > 0).map((events) => Task.fromEvents(events));
   }
+
+  ids(): TaskId[] {
+    return [...this.journals.keys()].map((id) => TaskId.parse(id));
+  }
+
+  /** Task ids whose rebuild fails, as a broken journal would. */
+  readonly broken = new Set<string>();
+
+  rebuild(id: TaskId): Task | undefined {
+    if (this.broken.has(id.toString())) {
+      throw new Error(`journal of ${id.toString()} cannot be read`);
+    }
+    return this.find(id);
+  }
 }
 
 export class InMemoryProjectRepository implements ProjectRepository {

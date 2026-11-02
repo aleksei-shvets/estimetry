@@ -7,6 +7,7 @@ interface ManualOptions {
   readonly at?: string;
   readonly agent?: boolean;
   readonly task?: string;
+  readonly part?: string;
   readonly json?: boolean;
 }
 
@@ -19,6 +20,7 @@ export function registerManualCommand(program: Command, ctx: CliContext): void {
     .option('--at <time>', 'when the work ended (ISO 8601 or "YYYY-MM-DD HH:MM"); merges with measured time')
     .option('--agent', 'agent time, e.g. work done before estimetry was installed')
     .option('--task <id>', 'task id; defaults to the only task in progress in this project')
+    .option('--part <id>', 'id of the estimate part the time belongs to, e.g. manual-testing')
     .option('--json', 'print JSON')
     .action(async (duration: string, description: string, options: ManualOptions) => {
       const recorded = (await ctx.app()).recordManualTime({
@@ -26,6 +28,7 @@ export function registerManualCommand(program: Command, ctx: CliContext): void {
         duration: parseDuration(duration),
         description,
         ...(options.at === undefined ? {} : { at: parseTime(options.at) }),
+        ...(options.part === undefined ? {} : { part: options.part }),
         ...parseTaskOption(options.task),
       });
       if (recorded.overlapsMeasured) {

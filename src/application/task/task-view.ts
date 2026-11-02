@@ -12,6 +12,10 @@ export interface TaskView {
   readonly author: string;
   readonly createdAt: string;
   readonly startedAt?: string;
+  readonly closedAt?: string;
+  readonly outcome?: string;
+  readonly spawnedFrom?: string;
+  readonly spawned?: string;
 }
 
 /**
@@ -31,5 +35,14 @@ export function toTaskView(task: Task): TaskView {
     author: s.author,
     createdAt: s.createdAt,
     ...(s.startedAt === undefined ? {} : { startedAt: s.startedAt }),
+    ...closing(task),
+    ...(task.spawnedFrom === undefined ? {} : { spawnedFrom: task.spawnedFrom }),
   };
+}
+
+function closing(task: Task): Partial<TaskView> {
+  const closure = task.closure;
+  return closure === undefined
+    ? {}
+    : { closedAt: closure.at, outcome: closure.outcome, ...(closure.spawned === undefined ? {} : { spawned: closure.spawned }) };
 }

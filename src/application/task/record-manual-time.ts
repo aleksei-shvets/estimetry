@@ -18,6 +18,8 @@ export interface RecordManualTimeInput {
   readonly description: string;
   /** End of the work; omitted when the user does not know when it happened. */
   readonly at?: Timestamp;
+  /** Id of the estimate part the time belongs to. */
+  readonly part?: string;
 }
 
 export interface ManualTimeRecorded {
@@ -26,6 +28,7 @@ export interface ManualTimeRecorded {
   readonly minutes: number;
   readonly at?: string;
   readonly description: string;
+  readonly part?: string;
   /**
    * The record has no `at`, yet the last `minutes` before now are already measured:
    * the user may be recording time that is counted already.
@@ -58,6 +61,7 @@ export class RecordManualTime {
         kind: data.kind,
         minutes: manual.duration.minutes,
         ...(data.at === undefined ? {} : { at: data.at }),
+        ...(data.part === undefined ? {} : { part: data.part }),
         description: data.description,
         overlapsMeasured,
       };

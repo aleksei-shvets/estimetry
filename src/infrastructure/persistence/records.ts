@@ -5,7 +5,7 @@ import { MANUAL_TIME_KINDS, type ManualTimeData } from '../../domain/measurement
 import type { ParallelModeChangeData, ParallelPeriod } from '../../domain/measurement/parallel-mode.js';
 import type { ProjectSnapshot } from '../../domain/project/project.js';
 import type { TaskSnapshot } from '../../domain/task/task.js';
-import { isTaskEventType, type TaskEvent } from '../../domain/task/task-events.js';
+import { isTaskEventType, TASK_OUTCOMES, type TaskEvent, type TaskOutcome } from '../../domain/task/task-events.js';
 import { isTaskStatus } from '../../domain/task/task-status.js';
 
 /*
@@ -65,7 +65,12 @@ export function parseTaskEvent(value: unknown): TaskEvent | undefined {
   const data = value['data'];
   switch (value['type']) {
     case 'task.created':
-      if (!isString(data['title']) || !isString(data['taskType']) || !optionalString(data['ticket'])) {
+      if (
+        !isString(data['title']) ||
+        !isString(data['taskType']) ||
+        !optionalString(data['ticket']) ||
+        !optionalString(data['spawnedFrom'])
+      ) {
         return undefined;
       }
       break;
@@ -100,6 +105,22 @@ export function parseTaskEvent(value: unknown): TaskEvent | undefined {
       }
       break;
     case 'task.parallel-mode-disabled':
+    case 'task.reopened':
+      break;
+    case 'task.closed':
+      if (!isTime(data['at']) || !isTaskOutcome(data['outcome']) || !optionalString(data['spawned'])) {
+        return undefined;
+      }
+      break;
+    case 'task.retro-recorded':
+      if (
+        !Array.isArray(data['reasons']) ||
+        data['reasons'].length === 0 ||
+        !data['reasons'].every((r) => isObject(r) && isString(r['text']) && optionalString(r['part'])) ||
+        !isString(data['lesson'])
+      ) {
+        return undefined;
+      }
       break;
   }
   return value as unknown as TaskEvent;
@@ -123,6 +144,10 @@ export function parseTaskSnapshot(value: unknown): TaskSnapshot | undefined {
     !optional(value['manualTime'], (v) => Array.isArray(v) && v.every(isManualTimeData)) ||
     !optional(value['extras'], (v) => Array.isArray(v) && v.every(isExtraData)) ||
     !optional(value['parallelMode'], (v) => Array.isArray(v) && v.every(isParallelPeriod)) ||
+    !optionalString(value['spawnedFrom']) ||
+    !optional(value['closures'], (v) => Array.isArray(v) && v.every(isClosure)) ||
+    !optional(value['retro'], (v) => isObject(v) && Array.isArray(v['reasons']) && isString(v['lesson']) && isTime(v['recordedAt'])) ||
+    !optional(value['lastEventAt'], isTime) ||
     typeof value['version'] !== 'number' ||
     !isString(value['lastEventId'])
   ) {
@@ -149,7 +174,8 @@ function isEstimateData(value: unknown): value is EstimateData {
     !optional(value['stack'], isStringArray) ||
     !optional(value['basedOn'], isStringArray) ||
     !optionalString(value['rationale']) ||
-    !optional(value['codeVolume'], isObject)
+    !optional(value['codeVolume'], isObject) ||
+    !optional(value['calibration'], (c) => isObject(c) && typeof c['coefficient'] === 'number')
   ) {
     return false;
   }
@@ -181,7 +207,8 @@ function isManualTimeData(value: unknown): value is ManualTimeData {
     isNonNegative(value['durationMs']) &&
     (value['durationMs'] as number) > 0 &&
     optionalTime(value['at']) &&
-    isString(value['description'])
+    isString(value['description']) &&
+    optionalString(value['part'])
   );
 }
 
@@ -189,7 +216,8 @@ function isExtraData(value: unknown): value is ExtraData {
   return (
     isObject(value) &&
     isExtraCategory(value['category']) &&
-    value['accounting'] === 'absorbed' &&
+    (value['accounting'] === 'absorbed' || (value['accounting'] === 'renegotiated' && isString(value['spawned']))) &&
+    optionalString(value['spawned']) &&
     isString(value['description']) &&
     optional(value['timeMs'], isNonNegative) &&
     optional(value['lines'], isNonNegative) &&
@@ -205,6 +233,16 @@ function isParallelModeChangeData(value: unknown): value is ParallelModeChangeDa
     optional(value['agents'], (n) => Number.isSafeInteger(n) && (n as number) >= 1) &&
     optional(value['budgetShare'], isNonNegative) &&
     optional(value['planShare'], (share) => isNonNegative(share) && (share as number) <= 1)
+  );
+}
+
+function isClosure(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isTime(value['at']) &&
+    isTaskOutcome(value['outcome']) &&
+    optionalString(value['spawned']) &&
+    optional(value['reopenedAt'], isTime)
   );
 }
 
@@ -261,4 +299,8 @@ export function parseConfig(value: unknown): ConfigDocument {
     ...(taskTypes ? { taskTypes } : {}),
     ...(measurement ? { measurement } : {}),
   };
+}
+
+function isTaskOutcome(value: unknown): value is TaskOutcome {
+  return typeof value === 'string' && (TASK_OUTCOMES as readonly string[]).includes(value);
 }

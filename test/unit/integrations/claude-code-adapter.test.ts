@@ -107,11 +107,14 @@ describe('Claude Code skills', () => {
 
   it('installs the skill and the commands for the user, not into the project', () => {
     install();
-    for (const id of ['estimetry', 'emt-estimate', 'emt-start', 'emt-extra', 'emt-parallel', 'emt-manual']) {
+    for (const id of ['estimetry', 'emt-estimate', 'emt-start', 'emt-extra', 'emt-parallel', 'emt-manual', 'emt-close', 'emt-retro']) {
       expect(files.read(skill(HOME, id))).toContain('generatedBy: "estimetry 1.0.0"');
     }
     expect([...files.files.keys()].some((path) => path.startsWith(`${ROOT}/.claude/skills`))).toBe(false);
     expect(files.read(skill(HOME, 'emt-start'))).toContain('allowed-tools: Bash(emt *) Bash(estimetry *)');
+    // Closing only with the user's consent: the texts never let the agent decide alone.
+    expect(files.read(skill(HOME, 'emt-close'))).toContain('Only after the user says yes');
+    expect(files.read(skill(HOME, 'estimetry'))).toContain('Never close a task on your own');
   });
 
   it('a shared install puts them into the project; a personal one takes them out again', () => {

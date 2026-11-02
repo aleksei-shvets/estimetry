@@ -15,6 +15,8 @@ export interface EstimateData {
   readonly rationale?: string;
   readonly basedOn?: readonly string[];
   readonly calibrated: boolean;
+  /** The coefficient the estimate was multiplied by when calibrated. */
+  readonly calibration?: { readonly coefficient: number };
 }
 
 /**
@@ -31,6 +33,8 @@ export class Estimate {
     readonly rationale: string | undefined,
     readonly basedOn: readonly string[],
     readonly calibrated: boolean,
+    /** What calibration multiplied the estimate by; undefined when it was not applied. */
+    readonly coefficient: number | undefined,
   ) {}
 
   /** @throws InvalidEstimate when there are no parts or part ids repeat. */
@@ -42,8 +46,12 @@ export class Estimate {
     readonly rationale?: string;
     readonly basedOn?: readonly string[];
     readonly calibrated?: boolean;
+    readonly coefficient?: number;
   }): Estimate {
     const issues: EstimateIssue[] = [];
+    if (input.coefficient !== undefined && !(Number.isFinite(input.coefficient) && input.coefficient > 0)) {
+      issues.push({ path: 'calibration.coefficient', message: 'expected a number greater than 0' });
+    }
     if (input.parts.length === 0) {
       issues.push({ path: 'parts', message: 'the estimate needs at least one part' });
     }
@@ -68,6 +76,7 @@ export class Estimate {
       rationale,
       [...(input.basedOn ?? [])],
       input.calibrated ?? false,
+      input.coefficient,
     );
   }
 
@@ -80,7 +89,16 @@ export class Estimate {
       ...(data.rationale === undefined ? {} : { rationale: data.rationale }),
       ...(data.basedOn === undefined ? {} : { basedOn: data.basedOn }),
       calibrated: data.calibrated,
+      ...(data.calibration === undefined ? {} : { coefficient: data.calibration.coefficient }),
     });
+  }
+
+  /**
+   * Most likely hours before calibration: what calibration compares the fact
+   * with, so that a calibrated estimate does not pull the next coefficient to 1.
+   */
+  get baseLikely(): number {
+    return this.total.likely / (this.coefficient ?? 1);
   }
 
   /** Sums of optimistic, likely and pessimistic hours over all parts. */
@@ -110,6 +128,7 @@ export class Estimate {
       ...(this.rationale === undefined ? {} : { rationale: this.rationale }),
       ...(this.basedOn.length === 0 ? {} : { basedOn: [...this.basedOn] }),
       calibrated: this.calibrated,
+      ...(this.coefficient === undefined ? {} : { calibration: { coefficient: this.coefficient } }),
     };
   }
 }

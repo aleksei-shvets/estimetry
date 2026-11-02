@@ -21,13 +21,18 @@ export function isTempFile(name: string): boolean {
  * full: write a sibling temp file, fsync it, rename it over the target.
  */
 export function writeYamlAtomic(file: string, data: unknown): void {
+  writeTextAtomic(file, stringify(data));
+}
+
+/** Any text the same way: temp file, fsync, rename. */
+export function writeTextAtomic(file: string, text: string): void {
   const dir = dirname(file);
   mkdirSync(dir, { recursive: true });
   const temp = join(dir, `.${basename(file)}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`);
   try {
     const fd = openSync(temp, 'w');
     try {
-      writeSync(fd, stringify(data));
+      writeSync(fd, text);
       fsyncSync(fd);
     } finally {
       closeSync(fd);

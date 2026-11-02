@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { InMemoryCloseProposals } from '../../support/closing-fakes.js';
 import type { ActivityDraft, HookKind } from '../../../src/application/contracts/hook-adapter.js';
 import { BindSession } from '../../../src/application/hooks/bind-session.js';
 import { Checkpoints } from '../../../src/application/hooks/checkpoints.js';
@@ -59,11 +60,13 @@ function call(event: string, kind: HookKind, events: readonly ActivityDraft[] = 
 }
 
 let checked: string[] = [];
+let proposals: InMemoryCloseProposals;
 
 const types = (task: string) => journal.readActivity(TaskId.parse(task)).map((e) => e.type);
 
 beforeEach(() => {
   checked = [];
+  proposals = new InMemoryCloseProposals();
   tasks = new InMemoryTaskRepository();
   journal = new InMemoryEventJournal();
   bindings = new InMemorySessionBindings();
@@ -81,6 +84,8 @@ beforeEach(() => {
     sessionTask: new SessionTask(bindings, status, journal, ids, authors),
     checkpoints: new Checkpoints(state, journal, new FakeProjectPlans(), git, git, settings, errors, ids, authors),
     completions: { check: (task) => void checked.push(task.id) },
+    proposals,
+    planOf: async () => ({ of: () => ({ done: 51, unfinished: ['release'] }) }),
     journal,
     tasks: status,
     bindings,
@@ -286,3 +291,57 @@ describe('commits', () => {
     expect(journal.readRecords(TaskId.parse('T-2')).map((r) => r.type)).toContain('commit.recorded');
   });
 });
+
+describe('after closing and proposals', () => {
+  const commit = () => receive.execute({ source: 'git', event: 'post-commit', payload: '', cwd: API });
+  const closedSession = (session: string) =>
+    bindings.update(SessionId.parse(session), () => ({ session, project: 'api', root: API, everBound: true, closedTask: 'T-1' }));
+
+  it('a session unbound by closing stays without a task until it starts again, and its commit goes to no task', async () => {
+    startedTask('T-3', 'Other');
+    closedSession('s1');
+    await call('Prompt', 'prompt', [], { session: 's1' });
+    expect(bindings.get(SessionId.parse('s1'))?.task).toBeUndefined();
+    expect(journal.readActivity(TaskId.parse('T-3'))).toEqual([]);
+
+    clock.set(day('10:01'));
+    await commit();
+    expect(journal.readRecords(TaskId.parse('T-3'))).toEqual([]);
+    expect(journal.unassigned.get('api')?.map((e) => e.type)).toContain('commit.recorded');
+
+    await call('Start', 'session-start', [], { session: 's1' });
+    expect(bindings.get(SessionId.parse('s1'))?.task).toBe('T-3');
+  });
+
+  it('delivers a pending proposal once, before the reminder, to the session that noticed the completion', async () => {
+    startedTask('T-1', 'estimetry v1');
+    proposals.put('T-1', { change: 'plan-progress', completedAt: day('09:40'), session: 's1' });
+    const first = await call('Prompt', 'prompt', [], { session: 's1' });
+    expect(first).toContain('change plan-progress of task T-1 was completed at 2026-10-27 09:40 UTC; the plan is 51% done, unfinished: release.');
+    expect(first).toContain('(/emt-close)');
+    expect(first).not.toContain('--yes');
+    expect(await call('Prompt', 'prompt', [], { session: 's1' })).toBeUndefined();
+  });
+
+  it('with a reminder pending too, both come on the same prompt, the proposal first', async () => {
+    startedTask('T-1', 'Payments');
+    await call('ToolDone', 'tool-done');
+    clock.set(day('10:21'));
+    await call('Stop', 'turn-end'); // a checkpoint, so the reminder waits for the next prompt
+    proposals.put('T-1', { change: 'a', completedAt: day('10:20'), session: 's1' });
+    const text = JSON.parse((await call('Prompt', 'prompt')) ?? '{}').text as string;
+    expect(text.indexOf('change a of task T-1')).toBeLessThan(text.indexOf('/emt-extra'));
+    expect(text.indexOf('change a of task T-1')).toBeGreaterThanOrEqual(0);
+    expect(await call('Prompt', 'prompt')).toBeUndefined();
+  });
+
+  it('another session gets the proposal only after the first one has been idle past the threshold', async () => {
+    startedTask('T-1', 'estimetry v1');
+    await call('ToolDone', 'tool-done', [tool('t1')], { session: 's1' });
+    proposals.put('T-1', { change: 'a', completedAt: day('09:40'), session: 's1' });
+    expect(await call('Prompt', 'prompt', [], { session: 's2' })).toBeUndefined();
+    clock.set(day('11:00'));
+    expect(await call('Prompt', 'prompt', [], { session: 's2' })).toContain('change a of task T-1');
+  });
+});
+

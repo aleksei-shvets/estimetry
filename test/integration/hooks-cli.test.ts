@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { cliSandbox, type CliSandbox } from '../support/cli.js';
@@ -27,7 +27,7 @@ const journalLines = (name: string) => {
   const file = join(cli.home, 'events', name);
   return existsSync(file) ? readFileSync(file, 'utf8').trim().split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as { type: string; data: Record<string, unknown> }) : [];
 };
-const RECORDS = new Set(['checkpoint.recorded', 'commit.recorded']);
+const RECORDS = new Set(['checkpoint.recorded', 'commit.recorded', 'plan.started']);
 const activity = (task: string) => journalLines(`${task}.jsonl`).filter((e) => !e.type.startsWith('task.') && !RECORDS.has(e.type));
 
 beforeEach(async () => {
@@ -96,6 +96,24 @@ describe('hooks write the journal of the session’s task', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     expect(journalLines('T-1.jsonl').find((e) => e.type === 'commit.recorded')?.data).toMatchObject({ sha: git(repo, 'rev-parse', 'HEAD') });
+  });
+
+  it('two commits in a row are both recorded, each by its own sha', async () => {
+    await emt('task', 'new', 'Payments');
+    await emt('start');
+    await emt('init', '--no-interactive', '--track-commits');
+    writeFileSync(join(repo, 'a.ts'), 'a\n');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-qm', 'code');
+    const first = git(repo, 'rev-parse', 'HEAD');
+    git(repo, 'commit', '-q', '--allow-empty', '-m', 'archive');
+    const second = git(repo, 'rev-parse', 'HEAD');
+    const deadline = Date.now() + 10_000;
+    const recorded = () => journalLines('T-1.jsonl').filter((e) => e.type === 'commit.recorded').map((e) => e.data['sha']);
+    while (recorded().length < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(recorded().sort()).toEqual([first, second].sort());
   });
 
   it('init installs the background hooks asynchronous and keeps three synchronous', () => {

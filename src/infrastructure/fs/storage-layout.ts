@@ -83,6 +83,28 @@ export class StorageLayout {
     return join(this.sessionsDir, `${session}.checkpoint.yaml`);
   }
 
+  get cardsDir(): string {
+    return join(this.root, 'cards');
+  }
+
+  /** The task id is checked before it gets here. */
+  card(taskId: string): string {
+    return join(this.cardsDir, `${taskId}.yaml`);
+  }
+
+  get calibrationFile(): string {
+    return join(this.root, 'calibration.json');
+  }
+
+  get calibrationLock(): string {
+    return join(this.root, 'calibration.lock');
+  }
+
+  /** The pending proposal to close a task; the task id is checked before it gets here. */
+  closeProposal(taskId: string): string {
+    return join(this.root, 'progress', `${taskId}.proposal.yaml`);
+  }
+
   /** Cache of archive directories already looked at for a task; the task id is checked before it gets here. */
   taskProgress(taskId: string): string {
     return join(this.root, 'progress', `${taskId}.yaml`);

@@ -13,6 +13,12 @@ export interface SessionBinding {
   readonly checkedAt?: string;
   /** The session has served some task before; a later automatic binding starts at the binding, not at the task start. */
   readonly everBound?: boolean;
+  /**
+   * The task whose closing unbound the session. Until its next session start
+   * or an explicit attach, it is not bound automatically: the rest of the turn
+   * belongs to the closed task, not to another one.
+   */
+  readonly closedTask?: string;
 }
 
 export interface SessionBindings {

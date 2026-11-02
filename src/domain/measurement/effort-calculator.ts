@@ -92,6 +92,7 @@ export function measureEffort(input: EffortInput): EffortReport {
     sequentialEquivalent: used ? agentWork.plus(userTime) : undefined,
     calendar: Duration.between(input.startedAt, input.now),
     parallel: { used, maxAgents: agentCounts.length === 0 ? undefined : Math.max(...agentCounts) },
+    backgroundAgents: [...timeline.agents.values()].some((agent) => agent.background && agent.intervals.total.millis > 0),
     measured: { agent: agentMeasured, user: userMeasured },
   };
 }

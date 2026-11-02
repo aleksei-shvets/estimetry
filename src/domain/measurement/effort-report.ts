@@ -27,6 +27,8 @@ export interface EffortReport {
   /** From the start of the task to now. */
   readonly calendar: Duration;
   readonly parallel: { readonly used: boolean; readonly maxAgents: number | undefined };
+  /** Some subagent worked in the background: agents overlapped even without parallel mode. */
+  readonly backgroundAgents: boolean;
   /** Measured intervals, without manual time; used to warn about overlapping manual records. */
   readonly measured: { readonly agent: IntervalSet; readonly user: IntervalSet };
 }

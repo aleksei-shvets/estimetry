@@ -1,4 +1,6 @@
 import type { InitReport } from '../../../application/project/init-project.js';
+import type { CloseSummary } from '../../../application/task/close-task.js';
+import type { Card } from '../../../domain/card/card.js';
 import type { StatusView } from '../../../application/task/show-status.js';
 import type { TaskView } from '../../../application/task/task-view.js';
 import type { Presenter } from './presenter.js';
@@ -20,8 +22,8 @@ export const textPresenter: Presenter = {
     return table(rows);
   },
 
-  taskDetails: (task) =>
-    table(
+  taskDetails: (task) => {
+    const details = table(
       [
         ['id', task.id],
         ['title', task.title],
@@ -33,8 +35,13 @@ export const textPresenter: Presenter = {
         ['author', task.author],
         ['created', localTime(task.createdAt)],
         ['started', task.startedAt === undefined ? undefined : localTime(task.startedAt)],
+        ['closed', task.closedAt === undefined ? undefined : `${localTime(task.closedAt)} (${task.outcome ?? 'completed'})`],
+        ['spawned from', task.spawnedFrom],
+        ['spawned', task.spawned],
       ].filter((row): row is [string, string] => row[1] !== undefined),
-    ),
+    );
+    return task.card === undefined ? details : `${details}\n\n${cardText(task.card)}`;
+  },
 
   taskStarted: (task) => `Started ${task.id} "${task.title}"`,
 
@@ -42,7 +49,10 @@ export const textPresenter: Presenter = {
     attached ? `Attached ${task.id} to project ${project}` : `${task.id} is already attached to project ${project}`,
 
   estimateSaved: ({ task, total, parts }) =>
-    `Estimate saved for ${task.id}: ${total.optimistic} / ${total.likely} / ${total.pessimistic} h, ${parts} part${parts === 1 ? '' : 's'}`,
+    `Estimate saved for ${task.id}: ${total.optimistic} / ${total.likely} / ${total.pessimistic} h, ${parts} part${parts === 1 ? '' : 's'}` +
+    (task.status === 'in-progress'
+      ? ''
+      : `\nTime is not measured yet: start the task when work begins with \`emt start ${task.id}\` (or /emt-start); add --at "YYYY-MM-DD HH:MM" if it already began.`),
 
   manualTimeRecorded: ({ task, kind, minutes, at, description }) =>
     `Recorded ${formatMinutes(minutes)} of ${kind === 'agent' ? 'agent' : 'user'} time for ${task.id}` +
@@ -73,7 +83,95 @@ export const textPresenter: Presenter = {
   status: (view) => statusText(view),
 
   initReport: (report) => initText(report),
+
+  taskClosed: (result) =>
+    `Closed ${result.task.id} "${result.task.title}"${result.outcome === 'completed' ? '' : ` (${result.outcome})`}: ` +
+    `${factText(result.fact, result.estimateHours, result.estimateShare)}.\n` +
+    `Now record the retro with the user: emt retro --reason "<why>" --lesson "<one lesson>" (or /emt-retro).`,
+
+  taskReopened: ({ task }) => `Reopened ${task.id} "${task.title}"; it is in progress again.`,
+
+  retroRecorded: ({ task, reasons, lesson }) =>
+    [`Retro recorded for ${task.id}:`, ...reasons.map((r) => `  - ${r.part === undefined ? '' : `[${r.part}] `}${r.text}`), `  lesson: ${lesson}`].join('\n'),
+
+  renegotiated: ({ closed, spawned }) =>
+    `Closed ${closed.task.id} as renegotiated: ${factText(closed.fact, closed.estimateHours, closed.estimateShare)}.\n` +
+    `Created ${spawned.id} "${spawned.title}" for the rest. Next: estimate it (/emt-estimate), start it, and attach sessions with \`emt attach ${spawned.id} --session <id>\`.`,
+
+  rebuildReport: (report) =>
+    [
+      `Rebuilt ${report.tasks} task${report.tasks === 1 ? '' : 's'}, ${report.cards} card${report.cards === 1 ? '' : 's'}.`,
+      ...report.failed.map((f) => `failed: ${f.task}: ${f.error}`),
+      ...(report.calibrationError === undefined ? [] : [`calibration.json not written: ${report.calibrationError}`]),
+    ].join('\n'),
 };
+
+function factText(fact: number, likely: number | null, share: number | null): string {
+  return likely === null
+    ? `${formatMinutes(fact)} (no estimate)`
+    : `${formatMinutes(fact)} of ${formatMinutes(likely * 60)}${share === null ? '' : ` (${percent(share)})`}`;
+}
+
+/** What the user sees before agreeing to close. */
+export function closeSummaryText(summary: CloseSummary): string {
+  return table(
+    [
+      ['task', `${summary.task.id} "${summary.task.title}"`],
+      ['fact', factText(summary.fact, summary.estimateHours, summary.estimateShare)],
+      ['plan', summary.planDone === null ? undefined : `${summary.planDone}% done`],
+      ['unfinished', summary.unfinishedGroups.length === 0 ? undefined : summary.unfinishedGroups.join(', ')],
+    ].filter((row): row is [string, string] => row[1] !== undefined),
+  );
+}
+
+function cardText(card: Card): string {
+  const names = card.text.parts;
+  const rows: [string, string][] = [
+    ['card', `${card.outcome}, ${card.accuracy} accuracy${card.backgroundAgents ? ', background agents' : ''}`],
+    [
+      'fact',
+      card.estimate === null
+        ? `${formatMinutes(card.fact.totalMinutes)} (no estimate)`
+        : `${formatMinutes(card.fact.totalMinutes)} of ${formatMinutes(card.estimate.likelyHours * 60)}`,
+    ],
+  ];
+  card.parts.forEach((part, i) => {
+    const name = names[i]?.name ?? `part ${i}`;
+    const fact = part.factMinutes === null ? `— (${part.reason ?? card.partsFact})` : formatMinutes(part.factMinutes);
+    rows.push([`  ${name}`, `${fact} of ${formatMinutes(part.likelyHours * 60)}${part.groupDone === false ? ', unfinished' : ''}`]);
+  });
+  if (card.parts.length > 0 && card.unattributedMinutes > 0) {
+    rows.push(['  unattributed', formatMinutes(card.unattributedMinutes)]);
+  }
+  const extras = Object.entries(card.extras).flatMap(([category, tally]) =>
+    tally.absorbed.count + tally.renegotiated.count === 0
+      ? []
+      : [`${category} ${tally.absorbed.count + tally.renegotiated.count}${tally.renegotiated.count > 0 ? ` (${tally.renegotiated.count} renegotiated)` : ''}`],
+  );
+  if (extras.length > 0) {
+    rows.push(['extras', extras.join(', ')]);
+  }
+  if (card.code !== null) {
+    const l = card.code.lines;
+    rows.push([
+      'code',
+      `production +${l.production.added} −${l.production.deleted}, tests +${l.tests.added} −${l.tests.deleted}, ` +
+        `config +${l.config.added}, docs +${l.docs.added}` +
+        `${l.generatedFiles > 0 ? `, ${l.generatedFiles} generated files left out` : ''}` +
+        `${card.code.projects.some((p) => p.source === 'unknown') ? ' (some projects unknown)' : ''}`,
+    ]);
+  }
+  if (card.retro === 'pending') {
+    rows.push(['retro', 'pending: run `emt retro`']);
+  } else {
+    const retro = card.text.retro;
+    rows.push(['retro', `${card.retro.status === 'stale' ? '(before reopening) ' : ''}${retro?.lesson ?? ''}`]);
+    for (const reason of retro?.reasons ?? []) {
+      rows.push(['  reason', `${reason.part === undefined ? '' : `[${reason.part}] `}${reason.text}`]);
+    }
+  }
+  return table(rows);
+}
 
 /** `1h 40m`, `9h`, `25m`; zero is `0m`. */
 export function formatMinutes(minutes: number): string {
@@ -123,8 +221,14 @@ function statusText(view: StatusView): string {
     `${view.records.manual} manual, ${view.records.extras} extra${extras.length === 0 ? '' : ` (${extras.join(', ')})`}`,
   ]);
   rows.push(...planRows(view));
-  const since = view.task.startedAt === undefined ? '' : ` since ${localTime(view.task.startedAt)}`;
-  return [`${view.task.id} "${view.task.title}" ${view.task.status}${since}`, table(rows)].join('\n');
+  const since =
+    (view.task.startedAt === undefined ? '' : ` since ${localTime(view.task.startedAt)}`) +
+    (view.task.closedAt === undefined ? '' : `, closed ${localTime(view.task.closedAt)}`);
+  const notStarted =
+    view.task.status === 'new' || view.task.status === 'estimated'
+      ? [`not started: the time of sessions is not counted until \`emt start ${view.task.id}\` (add --at "YYYY-MM-DD HH:MM" if work already began)`]
+      : [];
+  return [`${view.task.id} "${view.task.title}" ${view.task.status}${since}`, ...notStarted, table(rows)].join('\n');
 }
 
 function untrackedText(project: StatusView['untrackedProjects'][number]): string {

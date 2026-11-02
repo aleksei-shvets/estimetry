@@ -20,6 +20,7 @@ import { openSpecFlow } from '../../../src/integrations/flows/openspec/openspec-
 import { FakeAuthorProvider, RecordingErrorReporter, SequentialIdGenerator } from '../../support/fakes.js';
 import { InMemoryProjectConfigFile, InMemoryProjectFiles, ListRegistry } from '../../support/in-memory-files.js';
 import { InMemoryEventJournal, InMemoryProjectRepository } from '../../support/in-memory-repositories.js';
+import { InMemoryCloseProposals } from '../../support/closing-fakes.js';
 
 const START = '2026-10-26T18:57:00.000Z';
 const START_MS = Date.parse(START);
@@ -44,6 +45,7 @@ let errors: RecordingErrorReporter;
 let inProgress: TaskSummary[];
 let completions: ChangeCompletions;
 let plans: FlowProjectPlans;
+let proposals: InMemoryCloseProposals;
 
 function project(id: string, root: string, flow: string | null = 'openspec'): void {
   projects.projects.push(Project.register({ id: ProjectId.parse(id), name: id, path: root }, author, Timestamp.parse(START)));
@@ -95,6 +97,7 @@ beforeEach(() => {
   state = new InMemoryProgressState();
   errors = new RecordingErrorReporter();
   inProgress = [];
+  proposals = new InMemoryCloseProposals();
   plans = new FlowProjectPlans(new InMemoryProjectConfigFile(files), new ListRegistry([openSpecFlow, noneFlow]), files, projects);
   completions = new ChangeCompletions(
     plans,
@@ -105,6 +108,7 @@ beforeEach(() => {
     new SequentialIdGenerator(),
     new FakeAuthorProvider(),
     errors,
+    proposals,
   );
   project('api', '/work/api');
 });
@@ -249,6 +253,17 @@ describe('change completions', () => {
     archive('/work/api', 'b', '2026-11-02');
     completions.check(task, NOW);
     expect({ stats, writes }).toEqual({ stats: ['/work/api/openspec/changes/archive/2026-11-02-b'], writes: 1 });
+  });
+
+  it('leaves a proposal to close the task for an exact completion, with the session that noticed it', () => {
+    const task = summary('T-1', ['a', 'b']);
+    archive('/work/api', 'old', '2026-10-28');
+    completions.check(task, NOW, undefined, 's1');
+    expect(proposals.peek('T-1')).toBeUndefined(); // first run: approximate completions only
+    archive('/work/api', 'a', '2026-11-01');
+    archive('/work/api', 'b', '2026-11-02', START_MS + 9_000_000);
+    completions.check(task, NOW, undefined, 's2');
+    expect(proposals.peek('T-1')).toEqual({ change: 'b', completedAt: new Date(START_MS + 9_000_000).toISOString(), session: 's2' });
   });
 
   it('reports a failure instead of throwing', () => {

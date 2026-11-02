@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { fakeClosing } from '../../support/closing-fakes.js';
 import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
 import { InvalidValue } from '../../../src/domain/shared/domain-error.js';
 import { Project } from '../../../src/domain/project/project.js';
@@ -51,6 +52,7 @@ beforeEach(() => {
     install: fakeInstallDependencies(projectFiles),
     sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(tasks) },
     plans: new FakeProjectPlans(),
+    closing: fakeClosing(),
   });
 });
 

@@ -112,7 +112,8 @@ describe('task lifecycle', () => {
     });
     const again = await cli.run(['start', 'T-1'], api);
     expect(again.code).toBe(1);
-    expect(readFileSync(join(cli.home, 'events', 'T-1.jsonl'), 'utf8').trim().split('\n')).toHaveLength(2);
+    const types = readFileSync(join(cli.home, 'events', 'T-1.jsonl'), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as { type: string }).type);
+    expect(types.filter((type) => type.startsWith('task.'))).toEqual(['task.created', 'task.started']);
   });
 
   it('refuses an ambiguous start and lists the candidates', async () => {

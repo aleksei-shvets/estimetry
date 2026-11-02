@@ -4,8 +4,11 @@ import { Duration } from './duration.js';
 export const EXTRA_CATEGORIES = ['new-requirement', 'missed-analysis', 'rework', 'environment'] as const;
 export type ExtraCategory = (typeof EXTRA_CATEGORIES)[number];
 
-/** How the extra work was settled; `renegotiated` arrives with closing tasks. */
-export type ExtraAccounting = 'absorbed';
+/**
+ * How the extra work was settled: `absorbed` — done inside the task;
+ * `renegotiated` — agreed with the customer and moved into a new task (`spawned`).
+ */
+export type ExtraAccounting = 'absorbed' | 'renegotiated';
 
 export interface ExtraData {
   readonly category: ExtraCategory;
@@ -14,6 +17,8 @@ export interface ExtraData {
   readonly timeMs?: number;
   readonly lines?: number;
   readonly change?: string;
+  /** The task the work moved into, for `renegotiated`. */
+  readonly spawned?: string;
 }
 
 /**
@@ -55,8 +60,22 @@ export class Extra {
     });
   }
 
+  /** Work moved into the task `spawned` by renegotiation (design §3). */
+  static renegotiated(input: { readonly category: string; readonly description: string; readonly spawned: string }): Extra {
+    const extra = Extra.of({ category: input.category, description: input.description });
+    return new Extra({ ...extra.data, accounting: 'renegotiated', spawned: input.spawned });
+  }
+
   static fromData(data: ExtraData): Extra {
     return new Extra({ ...data });
+  }
+
+  get accounting(): ExtraAccounting {
+    return this.data.accounting;
+  }
+
+  get description(): string {
+    return this.data.description;
   }
 
   get category(): ExtraCategory {

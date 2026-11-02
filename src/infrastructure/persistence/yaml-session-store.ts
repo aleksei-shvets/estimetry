@@ -93,6 +93,7 @@ function parseBinding(value: unknown): SessionBinding | undefined {
     ...optional('task'),
     ...optional('since'),
     ...optional('checkedAt'),
+    ...optional('closedTask'),
     ...(v['everBound'] === true ? { everBound: true } : {}),
   };
 }

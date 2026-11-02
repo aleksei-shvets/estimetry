@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import type { ErrorReporter } from '../../application/ports/error-reporter.js';
 import type { CliContext } from './cli-context.js';
 import { registerAttachCommand } from './commands/attach-command.js';
+import { registerCloseCommands } from './commands/close-commands.js';
 import { registerEstimateCommand } from './commands/estimate-command.js';
 import { registerExtraCommand } from './commands/extra-command.js';
 import { registerInitCommand } from './commands/init-command.js';
@@ -42,6 +43,7 @@ export async function runCli(args: readonly string[], options: CliOptions): Prom
   registerExtraCommand(program, options);
   registerParallelCommand(program, options);
   registerStatusCommand(program, options);
+  registerCloseCommands(program, options);
 
   try {
     await program.parseAsync([...args], { from: 'user' });

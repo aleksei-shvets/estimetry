@@ -1,9 +1,9 @@
 import type { CommandContent } from '../../../application/contracts/command-content.js';
 
 /**
- * Starter texts of the estimetry skill and its commands, independent of the AI tool.
- * The full protocol of both modes (similar tasks, calibration) comes with `emt similar`
- * and `emt calibrate`; `/emt-close` and `/emt-retro` come with `emt close` and `emt retro`.
+ * Texts of the estimetry skill and its commands, independent of the AI tool.
+ * The full protocol of estimating (similar tasks, calibration) comes with `emt similar`
+ * and `emt calibrate`.
  */
 export const ESTIMETRY_SKILL: CommandContent = {
   id: 'estimetry',
@@ -24,6 +24,14 @@ Before you name a deadline or an effort for a task, run \`/emt-estimate\`. Give 
 - Several agents on one task: \`emt parallel on\` and \`emt parallel off\` (\`/emt-parallel\`).
 - Time outside agent sessions, such as manual testing: \`emt manual\` (\`/emt-manual\`).
 - \`emt status\` shows the fact so far against the estimate.
+
+## Closing and retro
+
+- When estimetry says a change of the task was completed, ask the user whether it was the last one and whether to close the task. Never close a task on your own.
+- Close only after the user agrees in the conversation: \`emt close --yes\` (\`/emt-close\`). If the task was dropped, add \`--abandoned\`.
+- Right after closing, hold the retro with the user (\`/emt-retro\`): compare the estimate with the fact by parts, agree on the reasons and on one lesson. Write down what the user agrees with, not your own guesses.
+- When the customer agrees to more work than estimated, the task closes as it is and the rest becomes a new task: \`emt renegotiate "<new title>" --yes\`, again only after the user agrees.
+- A task closed by mistake: \`emt reopen <task>\`.
 
 When an \`emt\` command fails, show its message to the user instead of retrying with guessed arguments.
 `,
@@ -54,6 +62,7 @@ export const COMMANDS: readonly CommandContent[] = [
    \`\`\`
 
 5. Save it: \`emt estimate save <file>\`. If it reports errors, fix every listed field and save again.
+6. Tell the user that time is not measured until the task starts, and offer to start it now with \`/emt-start\` (\`emt start\`; \`--at "YYYY-MM-DD HH:MM"\` if work already began). Until then the work of sessions goes to no task.
 
 Estimates are not calibrated by past tasks yet: say so when you give one.
 `,
@@ -111,6 +120,36 @@ estimetry records which share of the budget was spent when the mode was switched
 - \`--agent\` records agent time, e.g. work done before estimetry was installed; without it the time is the user's.
 
 If estimetry warns that the time is already partly measured, ask the user whether to record it again with \`--at\`.
+
+\`--part <id>\` links the time to a part of the estimate, e.g. manual testing; \`emt task show\` lists the parts.
+`,
+  },
+  {
+    id: 'emt-close',
+    description: 'Close a task after the user agrees, then hold the retro',
+    argumentHint: '[task id] [--at <time>] [--abandoned]',
+    body: `Close a task only with the user's consent.
+
+1. Run \`emt status $ARGUMENTS\` and show the user the fact, the share of the estimate and the plan.
+2. Ask the user whether to close the task now. If the work ended earlier, ask when and use \`--at "YYYY-MM-DD HH:MM"\`. If the task was dropped, use \`--abandoned\`.
+3. Only after the user says yes, run \`emt close $ARGUMENTS --yes\`. If they say no, the task stays open and nothing is recorded.
+4. Then go on with \`/emt-retro\`.
+
+Never pass \`--yes\` without the user's explicit agreement in this conversation.
+`,
+  },
+  {
+    id: 'emt-retro',
+    description: 'Record why the fact differs from the estimate, and one lesson',
+    argumentHint: '[task id]',
+    body: `Hold the retro of a closed task with the user.
+
+1. Run \`emt task show <task>\` (the task closed last if $ARGUMENTS is empty: \`emt task list --closed\`) and compare the estimate with the fact, part by part, and the extra work.
+2. Suggest the main reasons for the differences and ask the user to confirm or correct them. A reason about one part starts with its id: \`"manual-testing: two devices instead of one"\`.
+3. Agree with the user on one lesson for the next estimate.
+4. Record what the user agreed with: \`emt retro $ARGUMENTS --reason "<reason>" --reason "<reason>" --lesson "<lesson>"\`.
+
+Running it again replaces the retro.
 `,
   },
 ];

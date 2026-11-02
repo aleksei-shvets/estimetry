@@ -62,6 +62,24 @@ export class EstimateLocked extends DomainError {
   }
 }
 
+/** A closed task takes no more records of work; reopening it is the way back. */
+export class TaskClosed extends DomainError {
+  readonly code = 'task-closed';
+
+  constructor(taskId: string) {
+    super(`${taskId} is closed; reopen it first with \`emt reopen ${taskId}\``);
+  }
+}
+
+/** A retro is about what happened, so it needs the task closed. */
+export class TaskNotClosed extends DomainError {
+  readonly code = 'task-not-closed';
+
+  constructor(taskId: string, status: string) {
+    super(`${taskId} is ${status}; close it first with \`emt close ${taskId}\``);
+  }
+}
+
 export class ParallelModeConflict extends DomainError {
   readonly code = 'parallel-mode-conflict';
 

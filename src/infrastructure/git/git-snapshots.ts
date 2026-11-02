@@ -15,8 +15,8 @@ export class GitSnapshotsCli implements GitSnapshots {
     return { files: numstat(diff), untracked: untracked.split('\n').filter((line) => line !== '').length };
   }
 
-  commit(root: string): CommitInfo | undefined {
-    const shown = git(root, ['show', '--numstat', '--format=%H%x00%P%x00%aI%x00%cI', 'HEAD']);
+  commit(root: string, ref = 'HEAD'): CommitInfo | undefined {
+    const shown = git(root, ['show', '--numstat', '--format=%H%x00%P%x00%aI%x00%cI', ref]);
     if (shown === undefined) {
       return undefined;
     }
@@ -25,7 +25,7 @@ export class GitSnapshotsCli implements GitSnapshots {
     if (!sha || !authoredAt || !committedAt) {
       return undefined;
     }
-    const patch = git(root, ['show', '--format=', 'HEAD']);
+    const patch = git(root, ['show', '--format=', ref]);
     const patchId = patch === undefined || patch.trim() === '' ? undefined : git(root, ['patch-id', '--stable'], patch)?.split(' ')[0];
     return {
       sha,

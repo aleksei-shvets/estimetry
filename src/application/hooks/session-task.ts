@@ -48,6 +48,10 @@ export class SessionTask {
     if (bound) {
       return { project, task: bound, candidates: [] };
     }
+    // A session unbound by closing its task stays without one until it starts again or is attached explicitly.
+    if (current?.task === undefined && current?.closedTask !== undefined && kind !== 'session-start') {
+      return { project, candidates: [] };
+    }
     const fresh = current?.checkedAt !== undefined && now.toMillis() - Timestamp.parse(current.checkedAt).toMillis() < RECHECK_MS;
     if (current?.task === undefined && fresh && kind !== 'session-start' && kind !== 'prompt') {
       return { project, candidates: [] };

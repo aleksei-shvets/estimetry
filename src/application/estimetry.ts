@@ -31,6 +31,22 @@ import { TaskMeasurement } from './task/task-measurement.js';
 import { TaskPlanProgress } from './task/task-plan-progress.js';
 import type { ProjectPlans } from './ports/project-plans.js';
 import type { TaskView } from './task/task-view.js';
+import type { CalibrationSettings } from './ports/calibration-settings.js';
+import type { CalibrationStore } from './ports/calibration-store.js';
+import type { CardStore } from './ports/card-store.js';
+import type { CloseProposals } from './ports/close-proposals.js';
+import type { CodeMeasurer } from './ports/code-measurer.js';
+import type { GitHead } from './ports/git-snapshot.js';
+import { CloseTask, type CloseSummary, type CloseTaskInput, type TaskClosedResult } from './task/close-task.js';
+import { CodeVolumeService } from './task/code-volume-service.js';
+import { PlanSnapshots } from './task/plan-snapshots.js';
+import { Rebuild, type RebuildReport } from './task/rebuild.js';
+import { RecordRetro, type RecordRetroInput, type RetroRecorded } from './task/record-retro.js';
+import { Renegotiate, type Renegotiated, type RenegotiateInput } from './task/renegotiate.js';
+import { ReopenTask, type TaskReopened } from './task/reopen-task.js';
+import type { TaskDetails } from './task/show-task.js';
+import { TaskCards } from './task/task-cards.js';
+import { TaskClosing } from './task/task-closing.js';
 
 /** Everything the application needs from the outside world. */
 export interface EstimetryDependencies {
@@ -49,7 +65,16 @@ export interface EstimetryDependencies {
   /** Bindings of AI tool sessions, for `emt attach --session`. */
   readonly sessions: { readonly bindings: SessionBindings; readonly tasks: TaskStatusReader };
   /** Plans of the flows of a task's projects, for its progress. */
-  readonly plans: Pick<ProjectPlans, 'plans'>;
+  readonly plans: Pick<ProjectPlans, 'plans' | 'archives'>;
+  /** Closing: cards, calibration, pending proposals and git for the code volume. */
+  readonly closing: {
+    readonly cards: CardStore;
+    readonly calibration: CalibrationStore;
+    readonly settings: CalibrationSettings;
+    readonly proposals: CloseProposals;
+    readonly code: CodeMeasurer;
+    readonly head: GitHead;
+  };
   /** The directory the command runs in: of several working copies of a project, its plan is read there. */
   readonly workspaceDir?: string;
 }
@@ -62,13 +87,20 @@ export interface Estimetry {
   createTask(input: CreateTaskInput): TaskView;
   startTask(input: StartTaskInput): TaskView;
   attachTask(input: AttachTaskInput): AttachTaskResult;
-  listTasks(input: { readonly all?: boolean }): TaskView[];
-  showTask(input: { readonly task: TaskId }): TaskView;
+  listTasks(input: { readonly all?: boolean; readonly closed?: boolean }): TaskView[];
+  showTask(input: { readonly task: TaskId }): TaskDetails;
   saveEstimate(input: SaveEstimateInput): EstimateSaved;
   recordManualTime(input: RecordManualTimeInput): ManualTimeRecorded;
   recordExtra(input: RecordExtraInput): ExtraRecorded;
   changeParallelMode(input: ChangeParallelModeInput): ParallelModeChanged;
   showStatus(input: { readonly task?: TaskId }): StatusView;
+  closeSummary(input: { readonly task?: TaskId }): CloseSummary;
+  closeTask(input: CloseTaskInput): TaskClosedResult;
+  reopenTask(input: { readonly task: TaskId }): TaskReopened;
+  recordRetro(input: RecordRetroInput): RetroRecorded;
+  renegotiationTarget(input: { readonly task?: TaskId }): TaskView;
+  renegotiate(input: RenegotiateInput): Renegotiated;
+  rebuild(input: { readonly task?: TaskId }): RebuildReport;
   initChoices(): InitChoices;
   initProject(input: InitInput): InitReport;
 }
@@ -81,17 +113,36 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
   const activeTask = new ResolveActiveTask(deps.tasks, currentProject);
   const measurement = new TaskMeasurement(deps.journal, deps.measurement, deps.clock);
 
-  const startTask = new StartTask(deps.tasks, currentProject, activeTask, meta);
+  const c = deps.closing;
+  const planSnapshots = new PlanSnapshots(deps.plans, c.head, deps.projects);
+  const taskCards = new TaskCards(deps.journal, measurement, c.cards, c.calibration, c.settings);
+  const closing = new TaskClosing(
+    deps.journal,
+    new CodeVolumeService(deps.plans, c.code),
+    planSnapshots,
+    deps.sessions.bindings,
+    c.proposals,
+    taskCards,
+    deps.clock,
+    deps.ids,
+    deps.authors,
+  );
+  const startTask = new StartTask(deps.tasks, currentProject, activeTask, meta, planSnapshots, deps.journal, deps.workspaceDir);
   const bindSession = new BindSession(deps.sessions.bindings, deps.sessions.tasks, deps.journal, deps.ids, deps.authors);
   const attachTask = new AttachTask(deps.tasks, currentProject, meta, bindSession, deps.workspace, deps.clock);
   const listTasks = new ListTasks(deps.tasks, currentProject);
-  const showTask = new ShowTask(deps.tasks);
+  const showTask = new ShowTask(deps.tasks, c.cards, taskCards);
   const saveEstimate = new SaveEstimate(deps.tasks, activeTask, deps.estimates, deps.taskTypes, meta);
   const recordManualTime = new RecordManualTime(deps.tasks, activeTask, measurement, deps.clock, meta);
   const recordExtra = new RecordExtra(deps.tasks, activeTask, meta);
   const planProgress = new TaskPlanProgress(deps.plans, deps.journal, deps.workspaceDir);
   const changeParallelMode = new ChangeParallelMode(deps.tasks, activeTask, measurement, meta, planProgress);
   const showStatus = new ShowStatus(activeTask, measurement, planProgress, deps.journal);
+  const closeTask = new CloseTask(deps.tasks, activeTask, measurement, planSnapshots, closing, meta, deps.workspaceDir);
+  const reopenTask = new ReopenTask(deps.tasks, taskCards, c.proposals, meta);
+  const recordRetro = new RecordRetro(deps.tasks, currentProject, taskCards, meta);
+  const renegotiate = new Renegotiate(deps.tasks, activeTask, deps.taskTypes, measurement, closing, meta, deps.workspaceDir);
+  const rebuild = new Rebuild(deps.tasks, taskCards);
   const initProject = new InitProject(deps.workspace, currentProject, deps.projects, deps.projectConfig, deps.install);
 
   return {
@@ -105,6 +156,13 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
     recordExtra: (input) => recordExtra.execute(input),
     changeParallelMode: (input) => changeParallelMode.execute(input),
     showStatus: (input) => showStatus.execute(input),
+    closeSummary: (input) => closeTask.summary(input),
+    closeTask: (input) => closeTask.execute(input),
+    reopenTask: (input) => reopenTask.execute(input),
+    recordRetro: (input) => recordRetro.execute(input),
+    renegotiationTarget: (input) => renegotiate.original(input),
+    renegotiate: (input) => renegotiate.execute(input),
+    rebuild: (input) => rebuild.execute(input),
     initChoices: () => initProject.choices(),
     initProject: (input) => initProject.execute(input),
   };

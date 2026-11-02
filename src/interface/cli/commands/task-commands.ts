@@ -29,10 +29,11 @@ export function registerTaskCommands(program: Command, ctx: CliContext): void {
     .command('list')
     .description('list tasks of the current project')
     .option('--all', 'list tasks of all projects')
+    .option('--closed', 'include closed tasks')
     .option('--json', 'print JSON')
-    .action(async (options: JsonOption & { all?: boolean }) => {
+    .action(async (options: JsonOption & { all?: boolean; closed?: boolean }) => {
       const all = options.all === true;
-      const views = (await ctx.app()).listTasks({ all });
+      const views = (await ctx.app()).listTasks({ all, closed: options.closed === true });
       ctx.out.print(presenterFor(options).taskList(views, { all }));
     });
 

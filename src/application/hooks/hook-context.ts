@@ -42,6 +42,29 @@ export function sessionStartContext(input: {
   return 'estimetry: no task is in progress in this project, so the time of this session is not counted. Start one with /emt-start.';
 }
 
+/**
+ * A change of the task was completed (task-closing spec). The agent asks; the
+ * text has no ready closing command, so an agent on autopilot cannot close the task by itself.
+ */
+export function closeProposalText(input: {
+  readonly task: string;
+  readonly change: string;
+  readonly completedAt: string;
+  readonly planDone?: number;
+  readonly unfinished: readonly string[];
+}): string {
+  const when = `${input.completedAt.slice(0, 10)} ${input.completedAt.slice(11, 16)} UTC`;
+  const plan = [
+    ...(input.planDone === undefined ? [] : [`the plan is ${input.planDone}% done`]),
+    ...(input.unfinished.length === 0 ? [] : [`unfinished: ${input.unfinished.join(', ')}`]),
+  ];
+  return cut(
+    `estimetry: change ${input.change} of task ${input.task} was completed at ${when}` +
+      (plan.length === 0 ? '' : `; ${plan.join(', ')}`) +
+      `. If it was the last change of the task, ask the user whether to close it (/emt-close); close only after they agree.`,
+  );
+}
+
 export function cut(text: string): string {
   return text.length <= MAX_CONTEXT_LENGTH ? text : `${text.slice(0, MAX_CONTEXT_LENGTH - 1)}…`;
 }

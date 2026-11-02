@@ -4,6 +4,7 @@ import { Timestamp } from '../../domain/shared/timestamp.js';
 import { TaskId } from '../../domain/task/task-id.js';
 import type { ArchivedChange } from '../contracts/flow.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
+import type { CloseProposals } from '../ports/close-proposals.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';
 import type { EventJournal } from '../ports/event-journal.js';
 import type { IdGenerator } from '../ports/id-generator.js';
@@ -30,18 +31,22 @@ export class ChangeCompletions {
     private readonly ids: IdGenerator,
     private readonly authors: AuthorProvider,
     private readonly errors: ErrorReporter,
+    private readonly proposals?: Pick<CloseProposals, 'put'>,
   ) {}
 
-  /** Never throws: a failed check is repeated on the next call. `near` is the working copy of the session. */
-  check(task: TaskSummary, now: Timestamp, near?: string): void {
+  /**
+   * Never throws: a failed check is repeated on the next call. `near` is the
+   * working copy of the session, `session` the one an exact completion is proposed to first.
+   */
+  check(task: TaskSummary, now: Timestamp, near?: string, session?: string): void {
     try {
-      this.run(task, now, near);
+      this.run(task, now, near, session);
     } catch (error) {
       this.errors.report('change completions', error);
     }
   }
 
-  private run(task: TaskSummary, now: Timestamp, near: string | undefined): void {
+  private run(task: TaskSummary, now: Timestamp, near: string | undefined, session: string | undefined): void {
     if (task.startedAt === undefined) {
       return;
     }
@@ -73,6 +78,11 @@ export class ChangeCompletions {
     // Journal first, then the cache: a crash in between repeats a record, it never loses one.
     for (const record of records) {
       this.journal.appendRecord(record);
+    }
+    // The latest exact completion is the one to ask about; approximate ones are old work.
+    const exact = records.filter((record): record is ChangeCompleted => record.type === 'change.completed' && !record.data.approximate).at(-1);
+    if (exact !== undefined && session !== undefined && this.proposals !== undefined) {
+      this.proposals.put(task.id, { change: exact.data.change, completedAt: exact.data.completedAt, session });
     }
     if (changed) {
       this.state.write(task.id, { directories });

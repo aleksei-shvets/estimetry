@@ -15,4 +15,8 @@ export interface TaskRepository {
   save(task: Task): void;
   listByProject(project: ProjectId): Task[];
   listAll(): Task[];
+  /** Ids of every task in storage, without reading any of them. */
+  ids(): TaskId[];
+  /** Builds the task from its journal and writes the snapshot again (`emt rebuild`). */
+  rebuild(id: TaskId): Task | undefined;
 }

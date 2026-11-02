@@ -9,7 +9,13 @@ export const TASK_EVENT_SCHEMA_VERSION = 1;
 
 export type TaskCreated = EventEnvelope<
   'task.created',
-  { readonly title: string; readonly taskType: string; readonly ticket?: string }
+  {
+    readonly title: string;
+    readonly taskType: string;
+    readonly ticket?: string;
+    /** The task this one was spawned from by renegotiation. */
+    readonly spawnedFrom?: string;
+  }
 >;
 
 /** `at` is the moment work started when it was recorded later; otherwise `ts`. */
@@ -27,6 +33,28 @@ export type TaskParallelModeEnabled = EventEnvelope<'task.parallel-mode-enabled'
 
 export type TaskParallelModeDisabled = EventEnvelope<'task.parallel-mode-disabled', Record<string, never>>;
 
+export const TASK_OUTCOMES = ['completed', 'renegotiated', 'abandoned'] as const;
+export type TaskOutcome = (typeof TASK_OUTCOMES)[number];
+
+/** `at` is the moment work ended; parallel mode, if on, ends there too. */
+export type TaskClosed = EventEnvelope<
+  'task.closed',
+  { readonly at: string; readonly outcome: TaskOutcome; readonly spawned?: string }
+>;
+
+export type TaskReopened = EventEnvelope<'task.reopened', Record<string, never>>;
+
+export interface RetroReason {
+  readonly text: string;
+  /** Id of the estimate part the reason is about. */
+  readonly part?: string;
+}
+
+export type TaskRetroRecorded = EventEnvelope<
+  'task.retro-recorded',
+  { readonly reasons: readonly RetroReason[]; readonly lesson: string }
+>;
+
 export type TaskEvent =
   | TaskCreated
   | TaskStarted
@@ -35,7 +63,10 @@ export type TaskEvent =
   | TaskManualTimeRecorded
   | TaskExtraRecorded
   | TaskParallelModeEnabled
-  | TaskParallelModeDisabled;
+  | TaskParallelModeDisabled
+  | TaskClosed
+  | TaskReopened
+  | TaskRetroRecorded;
 
 export const TASK_EVENT_TYPES: readonly TaskEvent['type'][] = [
   'task.created',
@@ -46,6 +77,9 @@ export const TASK_EVENT_TYPES: readonly TaskEvent['type'][] = [
   'task.extra-recorded',
   'task.parallel-mode-enabled',
   'task.parallel-mode-disabled',
+  'task.closed',
+  'task.reopened',
+  'task.retro-recorded',
 ];
 
 export function isTaskEventType(type: string): type is TaskEvent['type'] {
