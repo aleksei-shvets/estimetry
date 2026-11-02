@@ -30,6 +30,10 @@ export interface StatusView {
   readonly estimate: ThreePointData | null;
   /** Fact over the most likely estimate. */
   readonly estimateShare: number | null;
+  readonly counted: CountedFact;
+  /** Minutes of work thrown away by revisions: the whole fact minus the counted one. */
+  readonly lost: number;
+  readonly revisions: readonly RevisionView[];
   readonly agentWork: number;
   readonly calendar: number;
   readonly parallel: {
@@ -59,6 +63,32 @@ export interface PlanView {
   readonly notStarted: readonly string[];
   readonly possibleTypos: PlanProgress['possibleTypos'];
   readonly archivedBeforeStart: readonly string[];
+  readonly archivedBeforeRevision: readonly string[];
+}
+
+/** The fact compared with the estimate: without work thrown away by revisions. Minutes. */
+export interface CountedFact {
+  readonly fact: number;
+  readonly agentTime: number;
+  readonly userTime: number;
+  readonly manualTime: number;
+  readonly uncertainty: number;
+  readonly agentWork: number;
+  readonly uncertaintyShare: number | null;
+  readonly uncertaintyExceedsTarget: boolean;
+  readonly manualShare: number | null;
+}
+
+export interface RevisionView {
+  readonly at: string;
+  readonly lostFrom: string | null;
+  readonly category: string | null;
+  readonly spent: string | null;
+  readonly baseLikelyBefore: number | null;
+  readonly baseLikelyAfter: number;
+  readonly covers: readonly string[];
+  /** The plan snapshot of the revision was not written; `emt estimate revise --repair` writes it. */
+  readonly missingSnapshot: boolean;
 }
 
 export class ShowStatus {
@@ -74,6 +104,11 @@ export class ShowStatus {
     // One read of the journal for the fact and the completions.
     const journal = task.startedAt === undefined ? undefined : this.journal.readAll(task.id);
     const report = this.measurement.measure(task, journal?.activity ?? []);
+    // Without lost windows the counted fact is the whole one: the timeline is built once.
+    const counted = task.lostWindows.length === 0 ? report : this.measurement.counted(task, journal?.activity ?? []);
+    const snapshots = new Set(
+      (journal?.records ?? []).flatMap((record) => (record.type === 'plan.revised' ? [record.data.revision] : [])),
+    );
     const estimate = task.estimate?.total;
     const extras = task.extras;
     const extraMinutesByCategory: Record<string, number> = {};
@@ -102,7 +137,30 @@ export class ShowStatus {
       manualTime: minutes(report.manualTime),
       manualShare: report.manualShare ?? null,
       estimate: estimate?.toData() ?? null,
-      estimateShare: estimate === undefined || report.fact.millis === 0 ? null : report.fact.hours / estimate.likely,
+      // Only the counted fact means anything against the current estimate.
+      estimateShare: estimate === undefined || counted.fact.millis === 0 ? null : counted.fact.hours / estimate.likely,
+      counted: {
+        fact: minutes(counted.fact),
+        agentTime: minutes(counted.agentTime),
+        userTime: minutes(counted.userTime),
+        manualTime: minutes(counted.manualTime),
+        uncertainty: minutes(counted.uncertainty),
+        agentWork: minutes(counted.agentWork),
+        uncertaintyShare: counted.uncertaintyShare ?? null,
+        uncertaintyExceedsTarget: counted.exceedsUncertaintyTarget,
+        manualShare: counted.manualShare ?? null,
+      },
+      lost: Math.max(0, minutes(report.fact) - minutes(counted.fact)),
+      revisions: task.revisions.map((revision) => ({
+        at: revision.at,
+        lostFrom: revision.lostFrom ?? null,
+        category: revision.category ?? null,
+        spent: revision.spent ?? null,
+        baseLikelyBefore: revision.baseLikelyBefore ?? null,
+        baseLikelyAfter: revision.baseLikelyAfter,
+        covers: revision.covers,
+        missingSnapshot: !snapshots.has(revision.id),
+      })),
       agentWork: minutes(report.agentWork),
       calendar: minutes(report.calendar),
       parallel: {
@@ -122,6 +180,7 @@ export class ShowStatus {
               notStarted: plan.notStarted,
               possibleTypos: plan.possibleTypos,
               archivedBeforeStart: plan.archivedBeforeStart,
+              archivedBeforeRevision: plan.archivedBeforeRevision,
             },
       planUnavailable: progress.unavailable ?? null,
       untrackedProjects: progress.untracked,

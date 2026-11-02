@@ -25,6 +25,17 @@ Before you name a deadline or an effort for a task, run \`/emt-estimate\`. Give 
 - Time outside agent sessions, such as manual testing: \`emt manual\` (\`/emt-manual\`).
 - \`emt status\` shows the fact so far against the estimate.
 
+## Revising the estimate
+
+When the plan of a task in progress turns out wrong (a design error, something the analysis missed) but its scope and deadline stay, revise the estimate: \`emt estimate revise <file> --reason "<why>" --category <category> --spent include|exclude\`. If the customer agreed to more scope or time, use \`emt renegotiate\` instead.
+
+Ask the user, do not decide for them:
+- whether the work so far counts (\`--spent include\`) or some of it was thrown away (\`--spent exclude\`);
+- with \`exclude\`, since when the work went the wrong way (\`--lost-from "YYYY-MM-DD HH:MM"\`) and when it was rolled back (\`--at\`, if earlier than now);
+- which extra work the command lists describes the same loss (\`--covers <id>\`); then no separate \`emt extra --time\` for it is needed.
+
+Write the reason as a short summary agreed with the user, never a quote of the conversation.
+
 ## Closing and retro
 
 - When estimetry says a change of the task was completed, ask the user whether it was the last one and whether to close the task. Never close a task on your own.
@@ -62,6 +73,8 @@ export const COMMANDS: readonly CommandContent[] = [
    \`\`\`
 
 5. Save it: \`emt estimate save <file>\`. If it reports errors, fix every listed field and save again.
+If the task is already in progress, \`emt estimate save\` refuses: revise the plan with \`emt estimate revise\` instead (see the estimetry skill), asking the user whether the work so far counts.
+
 6. Tell the user that time is not measured until the task starts, and offer to start it now with \`/emt-start\` (\`emt start\`; \`--at "YYYY-MM-DD HH:MM"\` if work already began). Until then the work of sessions goes to no task.
 
 Estimates are not calibrated by past tasks yet: say so when you give one.

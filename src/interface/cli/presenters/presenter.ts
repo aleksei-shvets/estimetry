@@ -4,6 +4,7 @@ import type { ParallelModeChanged } from '../../../application/task/change-paral
 import type { ExtraRecorded } from '../../../application/task/record-extra.js';
 import type { ManualTimeRecorded } from '../../../application/task/record-manual-time.js';
 import type { EstimateSaved } from '../../../application/task/save-estimate.js';
+import type { EstimateRevised } from '../../../application/task/revise-estimate.js';
 import type { StatusView } from '../../../application/task/show-status.js';
 import type { TaskView } from '../../../application/task/task-view.js';
 import type { TaskClosedResult } from '../../../application/task/close-task.js';
@@ -21,6 +22,7 @@ export interface Presenter {
   taskStarted(task: TaskView): string;
   taskAttached(result: AttachTaskResult): string;
   estimateSaved(result: EstimateSaved): string;
+  estimateRevised(result: EstimateRevised): string;
   manualTimeRecorded(result: ManualTimeRecorded): string;
   extraRecorded(result: ExtraRecorded): string;
   parallelModeChanged(result: ParallelModeChanged): string;

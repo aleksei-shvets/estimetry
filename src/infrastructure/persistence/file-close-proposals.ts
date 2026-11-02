@@ -63,7 +63,12 @@ export class FileCloseProposals implements CloseProposals {
     }
     const v = value as Record<string, unknown>;
     return typeof v['change'] === 'string' && typeof v['completedAt'] === 'string' && typeof v['session'] === 'string'
-      ? { change: v['change'], completedAt: v['completedAt'], session: v['session'] }
+      ? {
+          change: v['change'],
+          ...(typeof v['project'] === 'string' ? { project: v['project'] } : {}),
+          completedAt: v['completedAt'],
+          session: v['session'],
+        }
       : undefined;
   }
 }

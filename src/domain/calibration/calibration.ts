@@ -5,7 +5,13 @@ export const CALIBRATION_SCHEMA_VERSION = 1;
 export const DEFAULT_MIN_TASKS = 5;
 const UNCERTAINTY_LIMIT = 0.05;
 
-export type Exclusion = 'abandoned' | 'zero-fact' | 'manual-only' | 'renegotiated-without-groups';
+export type Exclusion =
+  | 'abandoned'
+  | 'zero-fact'
+  | 'manual-only'
+  | 'renegotiated-without-groups'
+  | 'renegotiated-after-revision'
+  | 'estimated-after-start';
 
 /** One slice of the ratio fact / estimate. */
 export interface RatioStats {
@@ -110,6 +116,13 @@ function forAuthor(cards: readonly Card[], byId: ReadonlyMap<string, Card>, minT
 function exclusion(card: Card): Exclusion | undefined {
   if (card.outcome === 'abandoned') {
     return 'abandoned';
+  }
+  if (card.estimatedAfterStart) {
+    return 'estimated-after-start';
+  }
+  // The completed parts of the first estimate are not known once the plan was revised.
+  if (card.outcome === 'renegotiated' && card.revised) {
+    return 'renegotiated-after-revision';
   }
   if (card.fact.totalMinutes === 0) {
     return 'zero-fact';

@@ -70,10 +70,17 @@ export function openSpecPlan(
         archived: true,
         archivedOn: change.archivedOn.value,
         ...(old ? { done: 0, total: 0 } : count(files, join(change.path, 'tasks.md'))),
+        // Only for the plan of a task: a change rolled back and archived again the same day differs by this.
+        ...(options.archivedSince === undefined || old ? {} : changedAt(files, change.path)),
       });
     }
   }
   return [...byName.values()].sort((a, b) => a.change.localeCompare(b.change));
+}
+
+function changedAt(files: ProjectFiles, path: string): { changedAt?: number } {
+  const value = files.changedAt(path);
+  return value === undefined || value <= 0 ? {} : { changedAt: value };
 }
 
 function count(files: ProjectFiles, path: string): { done: number; total: number } {

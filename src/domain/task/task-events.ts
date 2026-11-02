@@ -1,5 +1,6 @@
 import type { EstimateData } from '../estimate/estimate.js';
-import type { ExtraData } from '../measurement/extra.js';
+import type { ExcludedArchives, SpentPolicy } from '../estimate/estimate-revision.js';
+import type { ExtraCategory, ExtraData } from '../measurement/extra.js';
 import type { ManualTimeData } from '../measurement/manual-time.js';
 import type { ParallelModeChangeData } from '../measurement/parallel-mode.js';
 import type { EventEnvelope, EventMeta } from '../shared/event-envelope.js';
@@ -55,6 +56,27 @@ export type TaskRetroRecorded = EventEnvelope<
   { readonly reasons: readonly RetroReason[]; readonly lesson: string }
 >;
 
+/** A new estimate of a task in progress (estimate-revision spec). */
+export type TaskEstimateRevised = EventEnvelope<
+  'task.estimate-revised',
+  {
+    readonly estimate: EstimateData;
+    readonly taskType?: string;
+    readonly reason: string;
+    /** Absent when a task that started without an estimate gets its first one. */
+    readonly category?: ExtraCategory;
+    readonly spent?: SpentPolicy;
+    /** From when the new estimate holds. */
+    readonly at: string;
+    /** With `exclude`: the work in `[lostFrom, at]` was thrown away. */
+    readonly lostFrom?: string;
+    /** Ids of extra work the user confirmed describes the same loss. */
+    readonly covers: readonly string[];
+    /** With `exclude`: archived changes rolled back, by project; a project not listed was not readable then. */
+    readonly excluded?: readonly ExcludedArchives[];
+  }
+>;
+
 export type TaskEvent =
   | TaskCreated
   | TaskStarted
@@ -66,7 +88,8 @@ export type TaskEvent =
   | TaskParallelModeDisabled
   | TaskClosed
   | TaskReopened
-  | TaskRetroRecorded;
+  | TaskRetroRecorded
+  | TaskEstimateRevised;
 
 export const TASK_EVENT_TYPES: readonly TaskEvent['type'][] = [
   'task.created',
@@ -80,6 +103,7 @@ export const TASK_EVENT_TYPES: readonly TaskEvent['type'][] = [
   'task.closed',
   'task.reopened',
   'task.retro-recorded',
+  'task.estimate-revised',
 ];
 
 export function isTaskEventType(type: string): type is TaskEvent['type'] {

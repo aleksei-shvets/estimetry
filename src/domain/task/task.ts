@@ -1,5 +1,7 @@
 import { Estimate, type EstimateData } from '../estimate/estimate.js';
-import { Extra, type ExtraData } from '../measurement/extra.js';
+import type { EstimateRevision, ExcludedArchives, SpentPolicy } from '../estimate/estimate-revision.js';
+import { exclusionsOf, type PlanExclusions } from '../progress/plan-exclusions.js';
+import { Extra, type ExtraCategory, type ExtraData } from '../measurement/extra.js';
 import { ManualTime, type ManualTimeData } from '../measurement/manual-time.js';
 import type { ParallelModeChange, ParallelPeriod } from '../measurement/parallel-mode.js';
 import { InvalidValue } from '../shared/domain-error.js';
@@ -22,6 +24,7 @@ import {
   type TaskClosed as TaskClosedEvent,
   type TaskCreated,
   type TaskOutcome,
+  type TaskEstimateRevised,
   type TaskReopened,
   type TaskRetroRecorded,
   type TaskEstimated,
@@ -36,7 +39,8 @@ import { TaskId } from './task-id.js';
 import { STARTABLE_STATUSES, type TaskStatus } from './task-status.js';
 import { TaskType } from './task-type.js';
 
-export const TASK_SNAPSHOT_SCHEMA_VERSION = 1;
+/** 2: revisions, the first estimate, ids of extra work. Older snapshots are rebuilt from the journal. */
+export const TASK_SNAPSHOT_SCHEMA_VERSION = 2;
 
 const MAX_TITLE_LENGTH = 200;
 
@@ -46,6 +50,27 @@ export interface TaskClosure {
   readonly outcome: TaskOutcome;
   readonly spawned?: string;
   readonly reopenedAt?: string;
+}
+
+/** One revision of the estimate, as the task remembers it. */
+export interface TaskRevision {
+  readonly id: string;
+  readonly at: string;
+  readonly lostFrom?: string;
+  readonly reason: string;
+  readonly category?: ExtraCategory;
+  readonly spent?: SpentPolicy;
+  /** Most likely hours before calibration, of the estimate before and after; absent before for a task estimated after its start. */
+  readonly baseLikelyBefore?: number;
+  readonly baseLikelyAfter: number;
+  readonly covers: readonly string[];
+  readonly excluded?: readonly ExcludedArchives[];
+}
+
+/** Id and time of the event that recorded an extra work, in the order of `extras`. */
+export interface ExtraRecord {
+  readonly id: string;
+  readonly at: string;
 }
 
 /** The retro as the task remembers it; `recordedAt` tells whether it predates a reopening. */
@@ -77,6 +102,14 @@ export interface TaskSnapshot {
   readonly retro?: TaskRetro;
   /** Latest moment the aggregate knows of: event times and ends of manual time. */
   readonly lastEventAt?: string;
+  readonly firstEstimate?: EstimateData;
+  readonly estimatedAfterStart?: boolean;
+  readonly revisions?: readonly TaskRevision[];
+  readonly extraRecords?: readonly ExtraRecord[];
+  /** When each manual record was made, in the order of `manualTime`. */
+  readonly manualRecordedAt?: readonly string[];
+  /** When manual time of an estimate part was last recorded: a revision cannot start before it. */
+  readonly lastPartRecordAt?: string;
   readonly version: number;
   readonly lastEventId: string;
 }
@@ -100,6 +133,12 @@ interface TaskState {
   closures: TaskClosure[];
   retro: TaskRetro | undefined;
   lastEventAt: string;
+  firstEstimate: EstimateData | undefined;
+  estimatedAfterStart: boolean;
+  revisions: TaskRevision[];
+  extraRecords: ExtraRecord[];
+  manualRecordedAt: string[];
+  lastPartRecordAt: string | undefined;
 }
 
 /**
@@ -185,6 +224,12 @@ export class Task {
         closures: [...(snapshot.closures ?? [])],
         retro: snapshot.retro,
         lastEventAt: snapshot.lastEventAt ?? snapshot.startedAt ?? snapshot.createdAt,
+        firstEstimate: snapshot.firstEstimate,
+        estimatedAfterStart: snapshot.estimatedAfterStart ?? false,
+        revisions: [...(snapshot.revisions ?? [])],
+        extraRecords: [...(snapshot.extraRecords ?? [])],
+        manualRecordedAt: [...(snapshot.manualRecordedAt ?? [])],
+        lastPartRecordAt: snapshot.lastPartRecordAt,
       },
       snapshot.version,
       snapshot.lastEventId,
@@ -244,6 +289,66 @@ export class Task {
 
   get manualTime(): ManualTime[] {
     return this.state.manualTime.map((data) => ManualTime.fromData(data));
+  }
+
+  /** The estimate when work started, before any revision; undefined for a task estimated only after its start. */
+  get firstEstimate(): Estimate | undefined {
+    if (this.state.estimatedAfterStart) {
+      return undefined;
+    }
+    const data = this.state.firstEstimate ?? this.state.estimate;
+    return data === undefined ? undefined : Estimate.fromData(data);
+  }
+
+  get estimatedAfterStart(): boolean {
+    return this.state.estimatedAfterStart;
+  }
+
+  get revisions(): readonly TaskRevision[] {
+    return this.state.revisions;
+  }
+
+  /** The earliest a window of lost work may start: the latest of the start, the previous revision and the last reopening. */
+  get lostWindowFloor(): Timestamp | undefined {
+    const moments = [
+      this.state.startedAt,
+      this.state.revisions.at(-1)?.at,
+      this.state.closures.map((closure) => closure.reopenedAt).filter((v): v is string => v !== undefined).at(-1),
+    ].filter((v): v is string => v !== undefined);
+    if (moments.length === 0) {
+      return undefined;
+    }
+    return Timestamp.fromMillis(Math.max(...moments.map((moment) => Timestamp.parse(moment).toMillis())));
+  }
+
+  /** Windows of work thrown away by revisions with `exclude`, as `[from, to]`. */
+  get lostWindows(): readonly { readonly from: Timestamp; readonly to: Timestamp }[] {
+    return this.state.revisions
+      .filter((revision) => revision.spent === 'exclude' && revision.lostFrom !== undefined)
+      .map((revision) => ({ from: Timestamp.parse(revision.lostFrom as string), to: Timestamp.parse(revision.at) }));
+  }
+
+  /**
+   * What revisions with `exclude` took out of the plan: archived changes by
+   * project, and the moment of the last such revision for projects that were
+   * not readable then (their archive counts from that day).
+   */
+  get planExclusions(): PlanExclusions {
+    return exclusionsOf(this.state.revisions);
+  }
+
+  /** Extra work with the id and time of its event, for `--covers`. */
+  get extraRecords(): readonly (ExtraRecord & { readonly extra: Extra })[] {
+    return this.state.extras.map((data, i) => ({
+      id: this.state.extraRecords[i]?.id ?? '',
+      at: this.state.extraRecords[i]?.at ?? '',
+      extra: Extra.fromData(data),
+    }));
+  }
+
+  /** Manual time with the moment each record was made. */
+  get manualRecords(): readonly { readonly manual: ManualTime; readonly recordedAt: string }[] {
+    return this.state.manualTime.map((data, i) => ({ manual: ManualTime.fromData(data), recordedAt: this.state.manualRecordedAt[i] ?? '' }));
   }
 
   get extras(): Extra[] {
@@ -511,6 +616,79 @@ export class Task {
     );
   }
 
+  /**
+   * A new estimate of a task in progress (estimate-revision spec). The moment
+   * may be backdated, but not before anything that refers to the old plan.
+   */
+  reviseEstimate(revision: EstimateRevision, meta: EventMeta): void {
+    const startedAt = this.requireInProgress();
+    if (this.isParallel) {
+      throw new InvalidValue('parallel mode refers to parts of the current estimate; switch it off first with `emt parallel off`');
+    }
+    const firstOne = this.state.estimate === undefined;
+    if (!firstOne && (revision.spent === undefined || revision.category === undefined)) {
+      throw new InvalidValue('a revision needs --spent include or --spent exclude, and --category');
+    }
+    if (firstOne && (revision.spent !== undefined || revision.lostFrom !== undefined || revision.covers.length > 0)) {
+      throw new InvalidValue('the task has no estimate yet, so this is its first one: --spent, --lost-from and --covers do not apply');
+    }
+    const at = revision.at;
+    if (at.toMillis() > meta.at.toMillis()) {
+      throw new InvalidValue(`the revision moment must not be in the future (${at.toISOString()})`);
+    }
+    const last = this.state.revisions.at(-1)?.at;
+    const reopened = this.state.closures.map((closure) => closure.reopenedAt).filter((v): v is string => v !== undefined).at(-1);
+    const parallelEnd = this.state.parallelMode.at(-1)?.disabledAt;
+    const floors: [string, string | undefined][] = [
+      ['the start', startedAt.toISOString()],
+      ['the previous revision', last],
+      ['the last reopening', reopened],
+      ['the end of parallel mode', parallelEnd],
+      ['the last manual time of an estimate part', this.state.lastPartRecordAt],
+    ];
+    for (const [what, floor] of floors) {
+      if (floor !== undefined && at.toMillis() < Timestamp.parse(floor).toMillis()) {
+        throw new InvalidValue(`the revision moment ${at.toISOString()} is before ${what} (${floor})`);
+      }
+    }
+    let lostFrom = revision.lostFrom;
+    if (revision.spent === 'exclude') {
+      lostFrom ??= this.lostWindowFloor ?? startedAt;
+      for (const [what, floor] of floors.slice(0, 3)) {
+        if (floor !== undefined && lostFrom.toMillis() < Timestamp.parse(floor).toMillis()) {
+          throw new InvalidValue(`--lost-from ${lostFrom.toISOString()} is before ${what} (${floor})`);
+        }
+      }
+      if (lostFrom.toMillis() >= at.toMillis()) {
+        throw new InvalidValue('the window of lost work is empty: --lost-from must be before the revision moment');
+      }
+    }
+    const known = new Set(this.state.extraRecords.map((record) => record.id));
+    const unknown = revision.covers.filter((id) => !known.has(id));
+    if (unknown.length > 0) {
+      throw new InvalidValue(`--covers names no extra work of this task: ${unknown.join(', ')}`);
+    }
+    this.record(
+      taskEvent<TaskEstimateRevised>(
+        'task.estimate-revised',
+        this.state.id,
+        this.homeProject.value,
+        {
+          estimate: revision.estimate.toData(),
+          ...(revision.type === undefined ? {} : { taskType: revision.type }),
+          reason: revision.reason.value,
+          ...(revision.category === undefined || firstOne ? {} : { category: revision.category }),
+          ...(revision.spent === undefined || firstOne ? {} : { spent: revision.spent }),
+          at: at.toISOString(),
+          ...(lostFrom === undefined || firstOne ? {} : { lostFrom: lostFrom.toISOString() }),
+          covers: [...revision.covers],
+          ...(revision.excluded.length === 0 || firstOne ? {} : { excluded: revision.excluded }),
+        },
+        meta,
+      ),
+    );
+  }
+
   pullEvents(): TaskEvent[] {
     const events = this.pending;
     this.pending = [];
@@ -539,6 +717,12 @@ export class Task {
       ...(s.closures.length === 0 ? {} : { closures: [...s.closures] }),
       ...(s.retro === undefined ? {} : { retro: s.retro }),
       lastEventAt: s.lastEventAt,
+      ...(s.firstEstimate === undefined ? {} : { firstEstimate: s.firstEstimate }),
+      ...(s.estimatedAfterStart ? { estimatedAfterStart: true } : {}),
+      ...(s.revisions.length === 0 ? {} : { revisions: [...s.revisions] }),
+      ...(s.extraRecords.length === 0 ? {} : { extraRecords: [...s.extraRecords] }),
+      ...(s.manualRecordedAt.length === 0 ? {} : { manualRecordedAt: [...s.manualRecordedAt] }),
+      ...(s.lastPartRecordAt === undefined ? {} : { lastPartRecordAt: s.lastPartRecordAt }),
       version: this.appliedCount,
       lastEventId: this.lastId,
     };
@@ -599,13 +783,44 @@ export class Task {
         break;
       case 'task.manual-time-recorded':
         this.state.manualTime.push(event.data);
+        this.state.manualRecordedAt.push(event.ts);
+        if (event.data.part !== undefined) {
+          this.state.lastPartRecordAt = event.ts;
+        }
         if (event.data.at !== undefined) {
           this.state.lastEventAt = later(this.state.lastEventAt, event.data.at);
         }
         break;
       case 'task.extra-recorded':
         this.state.extras.push(event.data);
+        this.state.extraRecords.push({ id: event.id, at: event.ts });
         break;
+      case 'task.estimate-revised': {
+        const before = this.state.estimate;
+        if (before === undefined) {
+          this.state.estimatedAfterStart = true;
+        } else {
+          this.state.firstEstimate ??= before;
+          this.state.revisions.push({
+            id: event.id,
+            at: event.data.at,
+            ...(event.data.lostFrom === undefined ? {} : { lostFrom: event.data.lostFrom }),
+            reason: event.data.reason,
+            ...(event.data.category === undefined ? {} : { category: event.data.category }),
+            ...(event.data.spent === undefined ? {} : { spent: event.data.spent }),
+            baseLikelyBefore: Estimate.fromData(before).baseLikely,
+            baseLikelyAfter: Estimate.fromData(event.data.estimate).baseLikely,
+            covers: [...event.data.covers],
+            ...(event.data.excluded === undefined ? {} : { excluded: event.data.excluded }),
+          });
+        }
+        this.state.estimate = event.data.estimate;
+        this.state.estimated = true;
+        if (event.data.taskType !== undefined) {
+          this.state.type = TaskType.restore(event.data.taskType);
+        }
+        break;
+      }
       case 'task.parallel-mode-enabled':
         this.state.parallelMode.push({ enabledAt: event.ts, change: event.data });
         break;
@@ -670,6 +885,12 @@ export class Task {
       closures: [],
       retro: undefined,
       lastEventAt: event.ts,
+      firstEstimate: undefined,
+      estimatedAfterStart: false,
+      revisions: [],
+      extraRecords: [],
+      manualRecordedAt: [],
+      lastPartRecordAt: undefined,
     };
   }
 }

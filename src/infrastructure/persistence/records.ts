@@ -5,7 +5,9 @@ import { MANUAL_TIME_KINDS, type ManualTimeData } from '../../domain/measurement
 import type { ParallelModeChangeData, ParallelPeriod } from '../../domain/measurement/parallel-mode.js';
 import type { ProjectSnapshot } from '../../domain/project/project.js';
 import type { TaskSnapshot } from '../../domain/task/task.js';
-import { isTaskEventType, TASK_OUTCOMES, type TaskEvent, type TaskOutcome } from '../../domain/task/task-events.js';
+import { isSpentPolicy } from '../../domain/estimate/estimate-revision.js';
+import { JournalTooNew } from '../../domain/task/task-errors.js';
+import { isTaskEventType, TASK_EVENT_SCHEMA_VERSION, TASK_OUTCOMES, type TaskEvent, type TaskOutcome } from '../../domain/task/task-events.js';
 import { isTaskStatus } from '../../domain/task/task-status.js';
 
 /*
@@ -47,7 +49,21 @@ function optional(value: unknown, check: (value: unknown) => boolean): boolean {
   return value === undefined || check(value);
 }
 
+/**
+ * An event of the task aggregate, undefined for other records and broken
+ * ones. An unknown `task.*` event or a newer version of one means a newer
+ * estimetry wrote the journal: that throws instead of being skipped.
+ */
 export function parseTaskEvent(value: unknown): TaskEvent | undefined {
+  if (isObject(value) && isString(value['type']) && value['type'].startsWith('task.')) {
+    const task = isString(value['task']) ? value['task'] : '?';
+    if (!isTaskEventType(value['type'])) {
+      throw new JournalTooNew(task, `unknown event ${value['type']}`);
+    }
+    if (typeof value['schemaVersion'] === 'number' && value['schemaVersion'] > TASK_EVENT_SCHEMA_VERSION) {
+      throw new JournalTooNew(task, `event version ${value['schemaVersion']}`);
+    }
+  }
   if (
     !isObject(value) ||
     typeof value['schemaVersion'] !== 'number' ||
@@ -112,6 +128,21 @@ export function parseTaskEvent(value: unknown): TaskEvent | undefined {
         return undefined;
       }
       break;
+    case 'task.estimate-revised':
+      if (
+        !isEstimateData(data['estimate']) ||
+        !optionalString(data['taskType']) ||
+        !isString(data['reason']) ||
+        !optional(data['category'], isExtraCategory) ||
+        !optional(data['spent'], isSpentPolicy) ||
+        !isTime(data['at']) ||
+        !optionalTime(data['lostFrom']) ||
+        !isStringArray(data['covers']) ||
+        !optional(data['excluded'], isExcludedList)
+      ) {
+        return undefined;
+      }
+      break;
     case 'task.retro-recorded':
       if (
         !Array.isArray(data['reasons']) ||
@@ -148,6 +179,12 @@ export function parseTaskSnapshot(value: unknown): TaskSnapshot | undefined {
     !optional(value['closures'], (v) => Array.isArray(v) && v.every(isClosure)) ||
     !optional(value['retro'], (v) => isObject(v) && Array.isArray(v['reasons']) && isString(v['lesson']) && isTime(v['recordedAt'])) ||
     !optional(value['lastEventAt'], isTime) ||
+    !optional(value['firstEstimate'], isEstimateData) ||
+    !optional(value['estimatedAfterStart'], (v) => typeof v === 'boolean') ||
+    !optional(value['revisions'], (v) => Array.isArray(v) && v.every(isRevision)) ||
+    !optional(value['extraRecords'], (v) => Array.isArray(v) && v.every((r) => isObject(r) && isString(r['id']) && isTime(r['at']))) ||
+    !optional(value['lastPartRecordAt'], isTime) ||
+    !optional(value['manualRecordedAt'], (v) => Array.isArray(v) && v.every(isTime)) ||
     typeof value['version'] !== 'number' ||
     !isString(value['lastEventId'])
   ) {
@@ -233,6 +270,35 @@ function isParallelModeChangeData(value: unknown): value is ParallelModeChangeDa
     optional(value['agents'], (n) => Number.isSafeInteger(n) && (n as number) >= 1) &&
     optional(value['budgetShare'], isNonNegative) &&
     optional(value['planShare'], (share) => isNonNegative(share) && (share as number) <= 1)
+  );
+}
+
+function isRevision(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isString(value['id']) &&
+    isTime(value['at']) &&
+    optionalTime(value['lostFrom']) &&
+    isString(value['reason']) &&
+    optional(value['category'], isExtraCategory) &&
+    optional(value['spent'], isSpentPolicy) &&
+    optional(value['baseLikelyBefore'], isNonNegative) &&
+    isNonNegative(value['baseLikelyAfter']) &&
+    isStringArray(value['covers']) &&
+    optional(value['excluded'], isExcludedList)
+  );
+}
+
+function isExcludedList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (project) =>
+        isObject(project) &&
+        isString(project['project']) &&
+        Array.isArray(project['archives']) &&
+        project['archives'].every((archive) => isObject(archive) && isString(archive['change']) && isString(archive['archivedOn'])),
+    )
   );
 }
 

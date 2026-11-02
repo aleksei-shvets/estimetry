@@ -1,7 +1,7 @@
 import { closeSync, mkdirSync, openSync, readdirSync } from 'node:fs';
 import type { ProjectId } from '../../domain/project/project-id.js';
-import { Task } from '../../domain/task/task.js';
-import { ConcurrencyConflict, TaskNotFound } from '../../domain/task/task-errors.js';
+import { Task, TASK_SNAPSHOT_SCHEMA_VERSION } from '../../domain/task/task.js';
+import { ConcurrencyConflict, JournalTooNew, TaskNotFound } from '../../domain/task/task-errors.js';
 import type { TaskEvent } from '../../domain/task/task-events.js';
 import { TaskId } from '../../domain/task/task-id.js';
 import type { TaskRepository } from '../../domain/task/task-repository.js';
@@ -43,7 +43,16 @@ export class FileTaskRepository implements TaskRepository {
       return undefined;
     }
     const snapshot = parseTaskSnapshot(readYaml(this.layout.taskSnapshot(id.toString())));
-    if (snapshot && snapshot.version === events.length && snapshot.lastEventId === events.at(-1)?.id) {
+    if (snapshot && snapshot.schemaVersion > TASK_SNAPSHOT_SCHEMA_VERSION) {
+      throw new JournalTooNew(id.toString(), `snapshot version ${snapshot.schemaVersion}`);
+    }
+    // A snapshot of an older schema lacks fields the journal has: it is rebuilt.
+    if (
+      snapshot &&
+      snapshot.schemaVersion === TASK_SNAPSHOT_SCHEMA_VERSION &&
+      snapshot.version === events.length &&
+      snapshot.lastEventId === events.at(-1)?.id
+    ) {
       return Task.rehydrate(snapshot);
     }
     return this.rebuildById(id.toString());
@@ -85,9 +94,17 @@ export class FileTaskRepository implements TaskRepository {
     const tasks: Task[] = [];
     for (const id of this.taskFiles(this.layout.eventsDir, '.jsonl')) {
       const snapshot = snapshots.has(id) ? parseTaskSnapshot(readYaml(this.layout.taskSnapshot(id))) : undefined;
-      const task = snapshot ? Task.rehydrate(snapshot) : this.find(TaskId.parse(id));
-      if (task) {
-        tasks.push(task);
+      try {
+        // Lists read snapshots only, of any schema: a task is read in full (and rebuilt or refused) when it is opened.
+        const task = snapshot ? Task.rehydrate(snapshot) : this.find(TaskId.parse(id));
+        if (task) {
+          tasks.push(task);
+        }
+      } catch (error) {
+        // A task written by a newer estimetry is left out of lists; reading it alone names the problem.
+        if (!(error instanceof JournalTooNew)) {
+          throw error;
+        }
       }
     }
     return tasks.sort((a, b) => a.id.number - b.id.number);

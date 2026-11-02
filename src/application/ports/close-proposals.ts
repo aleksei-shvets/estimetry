@@ -1,6 +1,8 @@
 /** A change of the task was completed: the agent should ask whether to close the task. */
 export interface CloseProposal {
   readonly change: string;
+  /** The project of the change; absent in proposals written before it was recorded. */
+  readonly project?: string;
   readonly completedAt: string;
   /** The session the completion was noticed in; it gets the proposal first. */
   readonly session: string;

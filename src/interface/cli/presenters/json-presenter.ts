@@ -10,6 +10,7 @@ export const jsonPresenter: Presenter = {
   taskStarted: json,
   taskAttached: json,
   estimateSaved: json,
+  estimateRevised: json,
   manualTimeRecorded: json,
   extraRecorded: json,
   parallelModeChanged: json,

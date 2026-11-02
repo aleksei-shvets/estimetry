@@ -114,6 +114,21 @@ changes         4 done, last hooks-and-flows 2026-11-01 (approx.)
 
 A change is completed when its directory appears in the archive, however it got there: `openspec archive`, a skill moving it, or you in a terminal. The next hook call of a session bound to the task records it, with the time of the move. Changes already archived when estimetry first looks at a task are recorded with their date only, marked `(approx.)`. A change moved back out of the archive no longer counts as completed. The start of a session shows the percent too (`plan 51% done`), and `emt parallel on` records it.
 
+## Revising the estimate
+
+Once a task is started, its estimate is the plan the fact is compared with, and `emt estimate save` refuses to change it. When the plan turns out wrong but the scope and deadline stay — a design error, something the analysis missed — revise it:
+
+```sh
+emt estimate revise plan2.yaml --reason "design was wrong" --category missed-analysis --spent exclude --lost-from "2026-11-02 10:00"
+```
+
+- `--spent include` — the work so far counts toward the new estimate.
+- `--spent exclude` — the work since `--lost-from` (by default since the start or the previous revision) up to the revision (`--at`, by default now) was thrown away. It is not deleted: `emt status` shows it apart as lost and compares only the counted fact with the new estimate.
+- `--covers <id>` — extra work already recorded for the same loss. The command lists the extra work recorded in the window, with ids, so you can name it.
+- Archived changes of the thrown-away work leave the plan: they give no percent, no completion and no proposal to close. A change archived again later counts as usual.
+
+The first estimate stays in the journal and in the card: calibration compares the whole fact with it, so a late revision cannot make an estimate look right. If the customer agreed to more scope or time, use `emt renegotiate` instead.
+
 ## Closing a task
 
 A task closes only when you agree. When a change of the task moves into the archive, the agent gets a note on your next prompt and asks whether it was the last one and whether to close the task. It never closes the task by itself.

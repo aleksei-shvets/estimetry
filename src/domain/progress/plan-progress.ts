@@ -14,6 +14,7 @@ export interface PlanProgress {
   readonly notStarted: readonly string[];
   readonly possibleTypos: readonly { readonly group: string; readonly similar: string }[];
   readonly archivedBeforeStart: readonly string[];
+  readonly archivedBeforeRevision: readonly string[];
 }
 
 /**
@@ -31,7 +32,7 @@ export function planProgress(estimate: Estimate | undefined, plan: TaskPlan): Pl
     return undefined;
   }
   const done = plan.changes.reduce((sum, change) => sum + (change.archived ? change.total : change.done), 0);
-  return { done: percent(done / total), mode: 'checkboxes', notStarted: [], possibleTypos: [], archivedBeforeStart: [] };
+  return { done: percent(done / total), mode: 'checkboxes', notStarted: [], possibleTypos: [], archivedBeforeStart: [], archivedBeforeRevision: [] };
 }
 
 function byChanges(
@@ -58,9 +59,12 @@ function byChanges(
   const notStarted: string[] = [];
   const possibleTypos: { group: string; similar: string }[] = [];
   const archivedBeforeStart: string[] = [];
+  const archivedBeforeRevision: string[] = [];
   for (const group of missing) {
     const similar = names.find((name) => levenshtein(name, group) <= typoDistance(group));
-    if (plan.archivedBeforeStart.has(group)) {
+    if (plan.archivedBeforeRevision.has(group)) {
+      archivedBeforeRevision.push(group);
+    } else if (plan.archivedBeforeStart.has(group)) {
       archivedBeforeStart.push(group);
     } else if (similar !== undefined) {
       possibleTypos.push({ group, similar });
@@ -76,6 +80,7 @@ function byChanges(
     notStarted,
     possibleTypos,
     archivedBeforeStart,
+    archivedBeforeRevision,
   };
 }
 

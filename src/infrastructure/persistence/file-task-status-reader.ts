@@ -1,5 +1,6 @@
 import { readdirSync } from 'node:fs';
 import type { TaskStatusReader, TaskSummary } from '../../application/ports/task-status-reader.js';
+import { exclusionsOf } from '../../domain/progress/plan-exclusions.js';
 import { readYaml } from '../fs/atomic-yaml.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
 import { parseTaskSnapshot } from './records.js';
@@ -48,6 +49,7 @@ export class FileTaskStatusReader implements TaskStatusReader {
       status: snapshot.status,
       projects: snapshot.projects,
       ...groupsOf(snapshot.estimate?.parts),
+      ...((snapshot.revisions ?? []).some((revision) => revision.spent === 'exclude') ? { exclusions: exclusionsOf(snapshot.revisions ?? []) } : {}),
       ...(snapshot.startedAt === undefined ? {} : { startedAt: snapshot.startedAt }),
     };
   }

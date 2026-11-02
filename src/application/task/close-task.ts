@@ -57,7 +57,7 @@ export class CloseTask {
   summary(input: { readonly task?: TaskId }): CloseSummary {
     const task = this.activeTask.inProgress(input.task);
     task.assertCanClose();
-    const fact = Math.round(this.measurement.measure(task).fact.minutes);
+    const fact = Math.round(this.measurement.counted(task).fact.minutes);
     const likely = task.estimate?.total.likely;
     const plan = this.plans.closing(task, this.near);
     return {
@@ -94,7 +94,7 @@ export function closedResult(
   measurement: TaskMeasurement,
   warnings: readonly string[],
 ): TaskClosedResult {
-  const fact = Math.round(measurement.measure(task).fact.minutes);
+  const fact = Math.round(measurement.counted(task).fact.minutes);
   const likely = task.estimate?.total.likely;
   const closure = task.closure;
   return {

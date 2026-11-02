@@ -19,7 +19,7 @@ export class MeasuredTaskFacts implements TaskFacts {
     if (!found) {
       return undefined;
     }
-    const report = this.measurement.measure(found);
+    const report = this.measurement.counted(found);
     const likely = found.estimate?.total.likely;
     const planDone = this.plan.of(found, { completions: false, ...(near === undefined ? {} : { near }) }).plan?.done;
     return {

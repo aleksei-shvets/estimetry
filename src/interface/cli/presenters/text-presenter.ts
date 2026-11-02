@@ -54,6 +54,16 @@ export const textPresenter: Presenter = {
       ? ''
       : `\nTime is not measured yet: start the task when work begins with \`emt start ${task.id}\` (or /emt-start); add --at "YYYY-MM-DD HH:MM" if it already began.`),
 
+  estimateRevised: (r) =>
+    r.firstEstimate
+      ? `Estimate saved for ${r.task.id} after its start: ${r.total.optimistic} / ${r.total.likely} / ${r.total.pessimistic} h. It is not used for calibration.`
+      : `Revised the estimate of ${r.task.id} from ${localTime(r.at)}: ${r.total.optimistic} / ${r.total.likely} / ${r.total.pessimistic} h, ` +
+        (r.spent === 'exclude' && r.lostFrom !== null
+          ? `work from ${localTime(r.lostFrom)} is lost and not counted` +
+            (r.excluded.some((project) => project.archives.length > 0) ? '; archived changes of that time leave the plan' : '')
+          : 'the work so far counts') +
+        '.',
+
   manualTimeRecorded: ({ task, kind, minutes, at, description }) =>
     `Recorded ${formatMinutes(minutes)} of ${kind === 'agent' ? 'agent' : 'user'} time for ${task.id}` +
     `${at === undefined ? '' : ` ending ${localTime(at)}`}: ${description}`,
@@ -189,24 +199,31 @@ function percent(share: number): string {
 }
 
 function statusText(view: StatusView): string {
-  const estimate =
-    view.estimate === null
-      ? ' (no estimate)'
-      : ` of ${formatMinutes(view.estimate.likely * 60)}${view.estimateShare === null ? '' : ` (${percent(view.estimateShare)})`}`;
+  // With revisions every line about the fact is about the counted fact; the whole one is shown apart.
+  const revised = view.revisions.length > 0;
+  const shown = revised ? view.counted : view;
   const uncertainty =
-    `± ${formatMinutes(view.uncertainty)}` +
-    (view.uncertaintyShare === null ? '' : ` (${percent(view.uncertaintyShare)})`) +
-    (view.uncertaintyExceedsTarget ? ', above the 5% target' : '');
+    `± ${formatMinutes(shown.uncertainty)}` +
+    (shown.uncertaintyShare === null ? '' : ` (${percent(shown.uncertaintyShare)})`) +
+    (shown.uncertaintyExceedsTarget ? ', above the 5% target' : '');
   const extras = Object.entries(view.records.extraMinutesByCategory).map(
     ([category, minutes]) => `${category} ${formatMinutes(minutes)}`,
   );
+  const last = view.revisions.at(-1);
+  // Against the estimate goes the counted fact: without work thrown away by revisions.
+  const counted = view.revisions.length === 0 ? view.fact : view.counted.fact;
+  const estimateText =
+    view.estimate === null
+      ? ' (no estimate)'
+      : ` of ${formatMinutes(view.estimate.likely * 60)}${view.estimateShare === null ? '' : ` (${percent(view.estimateShare)})`}`;
   const rows: [string, string][] = [
-    ['fact', `${formatMinutes(view.fact)}${estimate}`],
-    ['  agents', formatMinutes(view.agentTime)],
-    ['  user', formatMinutes(view.userTime)],
+    ['fact', `${formatMinutes(counted)}${estimateText}${last === undefined ? '' : `   revised ${localTime(last.at)}`}`],
+    ['  agents', formatMinutes(shown.agentTime)],
+    ['  user', formatMinutes(shown.userTime)],
+    ...lostRows(view),
     ['uncertainty', uncertainty],
-    ['manual', `${formatMinutes(view.manualTime)}${view.manualShare === null ? '' : ` (${percent(view.manualShare)} of fact)`}`],
-    ['agent work', formatMinutes(view.agentWork)],
+    ['manual', `${formatMinutes(shown.manualTime)}${shown.manualShare === null ? '' : ` (${percent(shown.manualShare)} of fact)`}`],
+    ['agent work', formatMinutes(shown.agentWork)],
     ['calendar', formatMinutes(view.calendar)],
   ];
   if (view.parallel.used) {
@@ -244,6 +261,29 @@ function untrackedText(project: StatusView['untrackedProjects'][number]): string
   }
 }
 
+function lostRows(view: StatusView): [string, string][] {
+  const rows: [string, string][] = [];
+  if (view.lost > 0) {
+    const windows = view.revisions
+      .filter((revision) => revision.spent === 'exclude' && revision.lostFrom !== null)
+      .map((revision) => {
+        const from = localTime(revision.lostFrom as string);
+        const to = localTime(revision.at);
+        // The end keeps its date when the window crosses midnight.
+        const window = `${from}–${to.slice(0, 10) === from.slice(0, 10) ? to.slice(11) : to}`;
+        return revision.category === null ? window : `${revision.category}, ${window}`;
+      });
+    rows.push(['  lost', `${formatMinutes(view.lost)} (${windows.join('; ')})`]);
+  }
+  if (view.revisions.length > 0) {
+    rows.push(['  all', `${formatMinutes(view.fact)} with the lost work`]);
+  }
+  if (view.revisions.some((revision) => revision.missingSnapshot)) {
+    rows.push(['  warning', 'a revision has no plan snapshot; run `emt estimate revise --repair`']);
+  }
+  return rows;
+}
+
 function planRows(view: StatusView): [string, string][] {
   const plan = view.plan;
   if (plan === null) {
@@ -266,6 +306,9 @@ function planRows(view: StatusView): [string, string][] {
   }
   if (plan.archivedBeforeStart.length > 0) {
     rows.push(['  archived before start', plan.archivedBeforeStart.join(', ')]);
+  }
+  if (plan.archivedBeforeRevision.length > 0) {
+    rows.push(['  archived before revision', plan.archivedBeforeRevision.join(', ')]);
   }
   if (view.untrackedProjects.length > 0) {
     rows.push(['  not tracked', view.untrackedProjects.map((project) => `${project.project} (${untrackedText(project)})`).join(', ')]);

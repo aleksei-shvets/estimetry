@@ -22,6 +22,12 @@ export interface EffortInput {
   readonly parallel: readonly ParallelPeriod[];
   readonly policy: IdlePolicy;
   readonly now: Timestamp;
+  /**
+   * Windows of work thrown away by revisions (estimate-revision spec): taken
+   * out of every agent, the user, the doubts and timed manual time. Manual
+   * time without a moment stays: its record says nothing about when the work was done.
+   */
+  readonly lost?: IntervalSet;
 }
 
 /** Bounds for infinite window ends; the same range Timestamp accepts. */
@@ -58,11 +64,11 @@ export interface Timeline {
 }
 
 export function measureEffort(input: EffortInput): EffortReport {
-  const timeline = buildTimeline(input);
+  const timeline = withoutLost(buildTimeline(input), input.lost ?? IntervalSet.EMPTY);
   const agentMeasured = IntervalSet.of([...timeline.agents.values()].flatMap((agent) => agent.intervals.intervals));
   const userMeasured = timeline.user;
 
-  const manual = splitManual(input.manual);
+  const manual = splitManual(input.manual, input.lost ?? IntervalSet.EMPTY);
   const agentTime = agentMeasured.union(manual.agentIntervals).total.plus(manual.agentWithoutTime);
   const userTime = userMeasured.union(manual.userIntervals).total.plus(manual.userWithoutTime);
   const fact = agentTime.plus(userTime);
@@ -74,7 +80,7 @@ export function measureEffort(input: EffortInput): EffortReport {
       const foreground = [...timeline.agents.values()].filter((child) => child.parent === key && !child.background);
       return agent.intervals.minus(IntervalSet.of(foreground.flatMap((child) => child.intervals.intervals))).total;
     }),
-  ).plus(Duration.sum(input.manual.filter((record) => record.kind === 'agent').map((record) => record.duration)));
+  ).plus(manual.agentWork);
 
   const used = input.parallel.length > 0;
   const agentCounts = input.parallel.map((period) => period.change.agents).filter((n) => n !== undefined);
@@ -726,17 +732,23 @@ function interval(start: number, end: number): Interval {
   return Interval.of(Timestamp.fromMillis(start), Timestamp.fromMillis(end));
 }
 
-function splitManual(records: readonly ManualTime[]): {
+function splitManual(
+  records: readonly ManualTime[],
+  lost: IntervalSet,
+): {
   agentIntervals: IntervalSet;
   userIntervals: IntervalSet;
   agentWithoutTime: Duration;
   userWithoutTime: Duration;
+  /** Manual agent time as agent work: each record on its own, timed ones without the lost windows. */
+  agentWork: Duration;
 } {
+  const interval = (record: ManualTime) => IntervalSet.of([Interval.endingAt(record.at as Timestamp, record.duration)]).minus(lost);
   const timed = (kind: 'user' | 'agent'): IntervalSet =>
     IntervalSet.of(
       records
         .filter((record) => record.kind === kind && record.at !== undefined)
-        .map((record) => Interval.endingAt(record.at as Timestamp, record.duration)),
+        .flatMap((record) => interval(record).intervals),
     );
   const untimed = (kind: 'user' | 'agent'): Duration =>
     Duration.sum(records.filter((record) => record.kind === kind && record.at === undefined).map((r) => r.duration));
@@ -745,6 +757,22 @@ function splitManual(records: readonly ManualTime[]): {
     userIntervals: timed('user'),
     agentWithoutTime: untimed('agent'),
     userWithoutTime: untimed('user'),
+    agentWork: Duration.sum(
+      records.filter((record) => record.kind === 'agent').map((record) => (record.at === undefined ? record.duration : interval(record).total)),
+    ),
+  };
+}
+
+/** The timeline without the lost windows: every agent, the user, each session and the doubts. */
+function withoutLost(timeline: Timeline, lost: IntervalSet): Timeline {
+  if (lost.intervals.length === 0) {
+    return timeline;
+  }
+  return {
+    agents: new Map([...timeline.agents].map(([key, agent]) => [key, { ...agent, intervals: agent.intervals.minus(lost) }])),
+    user: timeline.user.minus(lost),
+    userBySession: new Map([...timeline.userBySession].map(([key, set]) => [key, set.minus(lost)])),
+    doubts: { agent: timeline.doubts.agent.minus(lost), user: timeline.doubts.user.minus(lost) },
   };
 }
 

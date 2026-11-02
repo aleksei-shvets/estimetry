@@ -46,7 +46,7 @@ export class ChangeParallelMode {
       }
       const likely = task.estimate?.total.likely;
       const budgetShare =
-        likely === undefined ? undefined : Math.round((this.measurement.measure(task).fact.hours / likely) * 1000) / 1000;
+        likely === undefined ? undefined : Math.round((this.measurement.counted(task).fact.hours / likely) * 1000) / 1000;
       const done = this.plan.of(task, { completions: false }).plan?.done;
       const planShare = done === undefined ? undefined : done / 100;
       task.enableParallelMode(

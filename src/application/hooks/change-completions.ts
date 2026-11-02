@@ -1,5 +1,6 @@
 import type { ChangeCompleted, PlanBaseline, ProgressRecord } from '../../domain/progress/progress-records.js';
 import { CalendarDate } from '../../domain/shared/calendar-date.js';
+import { isExcluded } from '../../domain/progress/plan-exclusions.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
 import { TaskId } from '../../domain/task/task-id.js';
 import type { ArchivedChange } from '../contracts/flow.js';
@@ -82,7 +83,7 @@ export class ChangeCompletions {
     // The latest exact completion is the one to ask about; approximate ones are old work.
     const exact = records.filter((record): record is ChangeCompleted => record.type === 'change.completed' && !record.data.approximate).at(-1);
     if (exact !== undefined && session !== undefined && this.proposals !== undefined) {
-      this.proposals.put(task.id, { change: exact.data.change, completedAt: exact.data.completedAt, session });
+      this.proposals.put(task.id, { change: exact.data.change, project: exact.data.project, completedAt: exact.data.completedAt, session });
     }
     if (changed) {
       this.state.write(task.id, { directories });
@@ -108,6 +109,11 @@ export class ChangeCompletions {
     const baseline: string[] = [];
     let ours: ((change: string) => boolean) | undefined;
     for (const dir of unseen) {
+      // Rolled back by a revision: settled, never a completion.
+      if (task.exclusions !== undefined && isExcluded(task.exclusions, reading.project, dir.change, dir.archivedOn.value, this.files.changedAt(dir.path))) {
+        settled.push(dir.directory);
+        continue;
+      }
       if (dir.archivedOn.isBefore(windowStart)) {
         settled.push(dir.directory);
         if (firstRun) {

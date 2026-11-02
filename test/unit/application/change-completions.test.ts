@@ -263,7 +263,7 @@ describe('change completions', () => {
     archive('/work/api', 'a', '2026-11-01');
     archive('/work/api', 'b', '2026-11-02', START_MS + 9_000_000);
     completions.check(task, NOW, undefined, 's2');
-    expect(proposals.peek('T-1')).toEqual({ change: 'b', completedAt: new Date(START_MS + 9_000_000).toISOString(), session: 's2' });
+    expect(proposals.peek('T-1')).toEqual({ change: 'b', project: 'api', completedAt: new Date(START_MS + 9_000_000).toISOString(), session: 's2' });
   });
 
   it('reports a failure instead of throwing', () => {

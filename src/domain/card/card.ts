@@ -64,6 +64,10 @@ export interface Card {
     readonly agentWorkMinutes: number;
   };
   readonly accuracy: 'partial' | 'minimal';
+  /** The estimate was revised after the start; `estimate` above is the first one. */
+  readonly revised?: boolean;
+  /** The task got its estimate only by a revision after the start. */
+  readonly estimatedAfterStart?: boolean;
   readonly backgroundAgents: boolean;
   readonly parallel: {
     readonly used: boolean;
@@ -83,7 +87,7 @@ export interface Card {
     /** The only part of its group: its fact says something about its kind. */
     readonly soleInGroup: boolean;
   }[];
-  readonly partsFact: PartsFactMode;
+  readonly partsFact: PartsFactMode | 'revised';
   readonly unattributedMinutes: number;
   readonly plan: { readonly done: number | null; readonly unfinishedGroups: number };
   readonly extras: Readonly<Record<ExtraCategory, Readonly<Record<ExtraAccounting, ExtraTally>>>>;
@@ -135,7 +139,9 @@ export function buildCard(input: CardInput): Card {
   const closedAt = Timestamp.parse(closure.at);
   const closing = last<PlanClosing>(input.records, 'plan.closing');
   const measured = last<CodeMeasured>(input.records, 'code.measured');
-  const estimate = task.estimate;
+  // The first estimate: what calibration compares the whole fact with. The revised one comes with card v2.
+  const estimate = task.estimatedAfterStart ? task.estimate : task.firstEstimate;
+  const revised = task.revisions.length > 0;
   const closedMinutes = task.closures
     .filter((c) => c.reopenedAt !== undefined)
     .reduce((sum, c) => sum + (Timestamp.parse(c.reopenedAt as string).toMillis() - Timestamp.parse(c.at).toMillis()) / 60_000, 0);
@@ -193,6 +199,8 @@ export function buildCard(input: CardInput): Card {
       agentWorkMinutes: minutes(report.agentWork.millis),
     },
     accuracy: input.hasActivity ? 'partial' : 'minimal',
+    ...(revised ? { revised: true } : {}),
+    ...(task.estimatedAfterStart ? { estimatedAfterStart: true } : {}),
     backgroundAgents: report.backgroundAgents && !report.parallel.used,
     parallel: {
       used: report.parallel.used,
@@ -202,19 +210,19 @@ export function buildCard(input: CardInput): Card {
       planShare: firstParallel?.planShare ?? null,
     },
     parts: (estimate?.parts ?? []).map((part, i) => {
-      const fact = input.partFacts.parts[i];
+      const fact = revised ? undefined : input.partFacts.parts[i];
       return {
         kind: part.kind,
         ...(part.who === undefined ? {} : { who: part.who }),
         likelyHours: part.hours.likely,
         factMinutes: fact?.minutes ?? null,
-        ...(fact?.reason === undefined ? {} : { reason: fact.reason }),
+        ...(fact?.reason === undefined ? (revised ? { reason: 'revised' } : {}) : { reason: fact.reason }),
         groupDone: part.group === undefined || closing === undefined ? null : completed.has(part.group),
         soleInGroup: part.group !== undefined && groupSizes.get(part.group) === 1,
       };
     }),
-    partsFact: input.partFacts.mode,
-    unattributedMinutes: input.partFacts.unattributed,
+    partsFact: revised ? 'revised' : input.partFacts.mode,
+    unattributedMinutes: revised ? Math.round(report.fact.minutes) : input.partFacts.unattributed,
     plan: { done: closing?.data.done ?? null, unfinishedGroups: closing?.data.unfinishedGroups.length ?? 0 },
     extras,
     code:

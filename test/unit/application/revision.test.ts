@@ -1,0 +1,226 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
+import { ChangeCompletions } from '../../../src/application/hooks/change-completions.js';
+import { MeasuredTaskFacts } from '../../../src/application/hooks/task-facts.js';
+import { TaskMeasurement } from '../../../src/application/task/task-measurement.js';
+import { TaskPlanProgress } from '../../../src/application/task/task-plan-progress.js';
+import { Estimate } from '../../../src/domain/estimate/estimate.js';
+import { EstimatePart } from '../../../src/domain/estimate/estimate-part.js';
+import { ThreePointEstimate } from '../../../src/domain/estimate/three-point-estimate.js';
+import { Duration } from '../../../src/domain/measurement/duration.js';
+import { CalendarDate } from '../../../src/domain/shared/calendar-date.js';
+import { Timestamp } from '../../../src/domain/shared/timestamp.js';
+import { TaskId } from '../../../src/domain/task/task-id.js';
+import { activity } from '../../support/activity.js';
+import { fakeClosing } from '../../support/closing-fakes.js';
+import {
+  FakeAuthorProvider,
+  FakeWorkspaceLocator,
+  FixedClock,
+  FixedMeasurementSettings,
+  InMemoryEstimateReader,
+  InMemoryTaskTypeCatalog,
+  RecordingErrorReporter,
+  SequentialIdGenerator,
+} from '../../support/fakes.js';
+import { FakeProjectPlans, InMemorySessionBindings, RepositoryTaskStatusReader } from '../../support/hook-fakes.js';
+import { fakeInstallDependencies, InMemoryProjectConfigFile, InMemoryProjectFiles } from '../../support/in-memory-files.js';
+import { InMemoryEventJournal, InMemoryProjectRepository, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
+
+let tasks: InMemoryTaskRepository;
+let journal: InMemoryEventJournal;
+let estimates: InMemoryEstimateReader;
+let clock: FixedClock;
+let plans: FakeProjectPlans;
+let closing: ReturnType<typeof fakeClosing>;
+let files: InMemoryProjectFiles;
+let app: Estimetry;
+
+const T = TaskId.parse('T-1');
+const time = (hhmm: string) => Timestamp.parse(`2026-10-27T${hhmm}:00.000Z`);
+const ROOT = '/work/api';
+
+function plan(likely: number, groups: string[] = ['auth', 'billing']): Estimate {
+  return Estimate.of({
+    parts: groups.map((group) =>
+      EstimatePart.of({ id: group, name: group, group, hours: ThreePointEstimate.of({ optimistic: likely, likely, pessimistic: likely }) }),
+    ),
+  });
+}
+
+/** T-1 started at 09:00 with 10 h; agents worked 09:00–09:20 and 10:10–10:30; `auth` archived at 10:00. */
+function startedTask(): void {
+  estimates.files.set('plan.yaml', plan(5));
+  estimates.files.set('plan2.yaml', plan(6));
+  app.createTask({ title: 'Webhook' });
+  app.saveEstimate({ file: 'plan.yaml' });
+  plans.readings = [
+    {
+      project: 'api',
+      root: ROOT,
+      flow: 'openspec',
+      changes: [
+        { change: 'auth', archived: true, archivedOn: '2026-10-27', done: 2, total: 2 },
+        { change: 'billing', archived: false, done: 0, total: 3 },
+      ],
+      archived: [{ change: 'auth', archivedOn: CalendarDate.parse('2026-10-27'), directory: '2026-10-27-auth', path: `${ROOT}/openspec/changes/archive/2026-10-27-auth` }],
+    },
+  ];
+  app.startTask({ at: time('09:00') });
+  for (const [start, end] of [['09:00', '09:20'], ['10:10', '10:30']] as const) {
+    journal.append(activity('turn.started', start, { origin: 'user' }));
+    journal.append(activity('tool.started', start, { toolUseId: `t${start}` }));
+    journal.append(activity('tool.used', end, { toolUseId: `t${start}` }));
+    journal.append(activity('turn.ended', end));
+  }
+  journal.appendRecord({
+    schemaVersion: 1,
+    id: 'done-auth',
+    ts: time('10:00').toISOString(),
+    type: 'change.completed',
+    author: 'dev@example.com',
+    task: 'T-1',
+    project: 'api',
+    data: { source: 'estimetry', project: 'api', change: 'auth', directory: '2026-10-27-auth', flow: 'openspec', completedAt: time('10:00').toISOString(), detectedAt: time('10:00').toISOString(), approximate: false },
+  });
+}
+
+beforeEach(() => {
+  files = new InMemoryProjectFiles();
+  tasks = new InMemoryTaskRepository();
+  journal = new InMemoryEventJournal();
+  estimates = new InMemoryEstimateReader();
+  clock = new FixedClock('2026-10-27T11:00:00.000Z');
+  plans = new FakeProjectPlans();
+  closing = fakeClosing();
+  closing.code.heads.set(ROOT, 'h0');
+  app = createEstimetry({
+    tasks,
+    projects: new InMemoryProjectRepository(),
+    workspace: new FakeWorkspaceLocator(ROOT),
+    authors: new FakeAuthorProvider(),
+    taskTypes: new InMemoryTaskTypeCatalog(['feature']),
+    clock,
+    ids: new SequentialIdGenerator(),
+    journal,
+    measurement: new FixedMeasurementSettings(),
+    estimates,
+    projectConfig: new InMemoryProjectConfigFile(files),
+    install: fakeInstallDependencies(files),
+    sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(tasks) },
+    plans,
+    closing,
+    workspaceDir: ROOT,
+  });
+});
+
+const revise = (input: Partial<Parameters<Estimetry['reviseEstimate']>[0]> = {}) =>
+  app.reviseEstimate({ file: 'plan2.yaml', reason: 'design was wrong', category: 'missed-analysis', spent: 'exclude', lostFrom: time('10:00'), ...input });
+
+describe('revising the estimate', () => {
+  it('records the event, the plan snapshot after it, and the archive of the time as excluded', () => {
+    startedTask();
+    const revised = revise();
+    expect(revised).toMatchObject({ spent: 'exclude', lostFrom: time('10:00').toISOString(), excluded: [{ project: 'api', archives: [{ change: 'auth', archivedOn: '2026-10-27' }] }] });
+    const event = tasks.journals.get('T-1')?.at(-1);
+    expect(event?.type).toBe('task.estimate-revised');
+    expect(journal.readRecords(T).at(-1)).toMatchObject({ type: 'plan.revised', data: { revision: event?.id } });
+  });
+
+  it('compares the counted fact with the estimate in status, close, session start and parallel mode', () => {
+    startedTask();
+    revise();
+    const status = app.showStatus({});
+    // Agents 09:00–09:20 and 10:10–10:30, the user 10:30–11:00 with the session open: 70 in all.
+    // The lost window 10:00–11:00 takes the last agent turn and the user's time out.
+    expect(status).toMatchObject({ fact: 70, counted: { fact: 20 }, lost: 50 });
+    expect(status.estimateShare).toBeCloseTo(20 / 60 / 12);
+    expect(app.closeSummary({}).fact).toBe(20);
+    const facts = new MeasuredTaskFacts(tasks, new TaskMeasurement(journal, new FixedMeasurementSettings(), clock), new TaskPlanProgress(plans, journal));
+    expect(facts.fact('T-1')?.minutes).toBe(20);
+    expect(app.changeParallelMode({ enabled: true }).budgetShare).toBeCloseTo(Math.round((20 / 60 / 12) * 1000) / 1000);
+  });
+
+  it('takes the rolled back change out of the plan and of the completed changes, and drops the proposal about it', () => {
+    startedTask();
+    closing.proposals.put('T-1', { change: 'auth', completedAt: time('10:00').toISOString(), session: 's1' });
+    expect(app.showStatus({}).plan?.done).toBe(50);
+    revise();
+    const status = app.showStatus({});
+    expect(status.plan).toMatchObject({ done: 0, archivedBeforeRevision: ['auth'] });
+    expect(status.completedChanges).toEqual([]);
+    expect(closing.proposals.peek('T-1')).toBeUndefined();
+  });
+
+  it('the hook receiver never records the rolled back archive, also after losing its cache', () => {
+    startedTask();
+    revise();
+    const state = { read: () => undefined, write: () => undefined };
+    const completions = new ChangeCompletions(
+      plans,
+      { changedAt: () => time('10:00').toMillis() },
+      state,
+      journal,
+      new RepositoryTaskStatusReader(tasks),
+      new SequentialIdGenerator(),
+      new FakeAuthorProvider(),
+      new RecordingErrorReporter(),
+      closing.proposals,
+    );
+    const summary = new RepositoryTaskStatusReader(tasks).summary('T-1');
+    expect(summary?.exclusions?.archives).toEqual([{ project: 'api', change: 'auth', archivedOn: '2026-10-27' }]);
+    completions.check({ ...(summary as NonNullable<typeof summary>), groups: ['auth', 'billing'] }, time('11:30'), ROOT, 's1');
+    expect(journal.readRecords(T).filter((r) => r.type === 'change.completed')).toHaveLength(1); // only the one from before
+    expect(closing.proposals.peek('T-1')).toBeUndefined();
+  });
+
+  it('lists extra work since the window and manual time without a moment before writing', () => {
+    startedTask();
+    app.recordExtra({ category: 'missed-analysis', description: 'rolled back', time: Duration.ofMinutes(60) });
+    app.recordManualTime({ kind: 'user', duration: Duration.ofMinutes(15), description: 'review' });
+    const candidates = app.revisionCandidates({ lostFrom: time('10:00'), spent: 'exclude' });
+    expect(candidates.extras.map((e) => e.description)).toEqual(['rolled back']);
+    expect(candidates.untimedManual.map((m) => m.minutes)).toEqual([15]);
+    const id = candidates.extras[0]?.id as string;
+    expect(revise({ covers: [id] }).covers).toEqual([id]);
+  });
+
+  it('repairs a revision whose plan snapshot was lost', () => {
+    startedTask();
+    const append = journal.appendRecord.bind(journal);
+    journal.appendRecord = () => {
+      throw new Error('disk full');
+    };
+    expect(() => revise()).toThrow('disk full');
+    journal.appendRecord = append;
+    expect(app.showStatus({}).revisions[0]?.missingSnapshot).toBe(true);
+    expect(app.repairRevision({}).revision).toBe(tasks.journals.get('T-1')?.at(-1)?.id);
+    expect(app.showStatus({}).revisions[0]?.missingSnapshot).toBe(false);
+    expect(() => app.repairRevision({})).toThrow(/nothing to repair/);
+  });
+
+  it('excludes only what was archived inside the lost window, not before it or after a backdated revision', () => {
+    startedTask();
+    const reading = plans.readings[0]!;
+    const dir = (change: string) => ({ change, archivedOn: CalendarDate.parse('2026-10-27'), directory: `2026-10-27-${change}`, path: `${ROOT}/openspec/changes/archive/2026-10-27-${change}` });
+    plans.readings = [{ ...reading, archived: [dir('auth'), dir('early'), dir('late')] }];
+    files.changed.set(dir('auth').path, time('10:20').toMillis());
+    files.changed.set(dir('early').path, time('09:30').toMillis());
+    files.changed.set(dir('late').path, time('10:50').toMillis());
+    const revised = revise({ lostFrom: time('10:00'), at: time('10:40') });
+    expect(revised.excluded).toEqual([{ project: 'api', archives: [{ change: 'auth', archivedOn: '2026-10-27', changedAt: time('10:20').toMillis() }] }]);
+  });
+
+  it('keeps a proposal about a change of the same name in another project', () => {
+    startedTask();
+    closing.proposals.put('T-1', { change: 'auth', project: 'web', completedAt: time('10:00').toISOString(), session: 's1' });
+    revise();
+    expect(closing.proposals.peek('T-1')?.project).toBe('web');
+  });
+
+  it('renegotiates after a revision with the counted fact', () => {
+    startedTask();
+    revise();
+    expect(app.renegotiate({ title: 'Next' }).closed.fact).toBe(20);
+  });
+});

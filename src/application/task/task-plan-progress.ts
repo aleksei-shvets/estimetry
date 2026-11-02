@@ -1,6 +1,8 @@
 import { planProgress, type PlanProgress } from '../../domain/progress/plan-progress.js';
 import type { ChangeCompleted, ProgressRecord } from '../../domain/progress/progress-records.js';
 import { CalendarDate } from '../../domain/shared/calendar-date.js';
+import { Timestamp } from '../../domain/shared/timestamp.js';
+import { isExcludedDirectory, type PlanExclusions } from '../../domain/progress/plan-exclusions.js';
 import { taskPlan } from '../../domain/progress/task-plan.js';
 import type { Task } from '../../domain/task/task.js';
 import type { EventJournal } from '../ports/event-journal.js';
@@ -77,11 +79,12 @@ export class TaskPlanProgress {
       taskPlan(
         available.map((reading) => ({ project: reading.project, changes: reading.changes ?? [] })),
         startedAt,
+        task.planExclusions,
       ),
     );
     const unavailable = plan === undefined ? untracked[0]?.reason : undefined;
     const completed =
-      options.completions === false ? [] : this.completed(options.records ?? this.journal.readRecords(task.id), readings);
+      options.completions === false ? [] : this.completed(options.records ?? this.journal.readRecords(task.id), readings, task.planExclusions);
     return {
       ...(plan === undefined ? {} : { plan }),
       ...(unavailable === undefined ? {} : { unavailable }),
@@ -94,14 +97,22 @@ export class TaskPlanProgress {
    * Completions still standing: the directory is in the archive and no active
    * change of the same name overrides it. Of duplicate records the first counts.
    */
-  private completed(records: readonly ProgressRecord[], readings: readonly ProjectPlanReading[]): CompletedChange[] {
+  private completed(records: readonly ProgressRecord[], readings: readonly ProjectPlanReading[], exclusions: PlanExclusions): CompletedChange[] {
     const byDirectory = new Map<string, CompletedChange>();
     for (const record of records) {
       if (record.type !== 'change.completed') {
         continue;
       }
       const key = `${record.data.project}\u0000${record.data.directory}`;
-      if (!byDirectory.has(key) && standing(record, readings)) {
+      // A change rolled back by a revision is not completed, though its record stays in the journal.
+      const excluded = isExcludedDirectory(
+        exclusions,
+        record.data.project,
+        record.data.change,
+        record.data.directory,
+        record.data.approximate ? undefined : Timestamp.parse(record.data.completedAt).toMillis(),
+      );
+      if (!byDirectory.has(key) && !excluded && standing(record, readings)) {
         byDirectory.set(key, {
           project: record.data.project,
           change: record.data.change,

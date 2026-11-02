@@ -58,7 +58,19 @@ export class EstimateLocked extends DomainError {
   readonly code = 'estimate-locked';
 
   constructor(taskId: string, status: string) {
-    super(`${taskId} is ${status}: its estimate is already the plan the fact is compared with and cannot change`);
+    super(
+      `${taskId} is ${status}: its estimate is already the plan the fact is compared with; ` +
+        'to change the plan of a task in progress, revise it with `emt estimate revise`',
+    );
+  }
+}
+
+/** The journal of a task was written by a newer estimetry: reading it with this one would be silently wrong. */
+export class JournalTooNew extends DomainError {
+  readonly code = 'journal-too-new';
+
+  constructor(taskId: string, what: string) {
+    super(`the journal of ${taskId} was written by a newer version of estimetry (${what}); update estimetry to read it`);
   }
 }
 

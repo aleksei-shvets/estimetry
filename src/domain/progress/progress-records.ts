@@ -30,6 +30,8 @@ export interface ChangeProgress {
   readonly archived: boolean;
   /** `YYYY-MM-DD` from the name of the archive directory; absent for active changes and in older checkpoints. */
   readonly archivedOn?: string;
+  /** When the archive directory last changed (ms), read for the plan of a task: tells a change archived anew from one rolled back. */
+  readonly changedAt?: number;
   readonly done: number;
   readonly total: number;
 }
@@ -99,6 +101,12 @@ export type PlanStarted = EventEnvelope<
   { readonly source: string; readonly projects: readonly ProjectPlanSnapshot[] }
 >;
 
+/** The plan at a revision: the base the fact by parts of the new estimate counts from. */
+export type PlanRevised = EventEnvelope<
+  'plan.revised',
+  { readonly source: string; readonly revision: string; readonly projects: readonly ProjectPlanSnapshot[] }
+>;
+
 /**
  * The plan when the task closed, with what the card needs of it: the card is
  * built from the journal alone, so it never reads `tasks.md`, the archive or
@@ -148,6 +156,7 @@ export type ProgressRecord =
   | ChangeCompleted
   | PlanBaseline
   | PlanStarted
+  | PlanRevised
   | PlanClosing
   | CodeMeasured;
 export const PROGRESS_RECORD_TYPES: readonly ProgressRecord['type'][] = [
@@ -156,6 +165,7 @@ export const PROGRESS_RECORD_TYPES: readonly ProgressRecord['type'][] = [
   'change.completed',
   'plan.baseline',
   'plan.started',
+  'plan.revised',
   'plan.closing',
   'code.measured',
 ];
@@ -231,8 +241,11 @@ export function parseProgressRecord(value: unknown, options: { readonly withoutT
     if (typeof data['approximate'] !== 'boolean') {
       throw new InvalidProgressRecord('data.approximate', 'must be true or false');
     }
-  } else if (type === 'plan.started' || type === 'plan.closing') {
+  } else if (type === 'plan.started' || type === 'plan.closing' || type === 'plan.revised') {
     list(data['projects'], 'data.projects').forEach((item, i) => projectPlan(item, `data.projects[${i}]`));
+    if (type === 'plan.revised') {
+      text(data, 'revision', 'data.');
+    }
     if (type === 'plan.closing') {
       if (data['done'] !== undefined) {
         count(data, 'done', 'data.');

@@ -41,6 +41,8 @@ import { CloseTask, type CloseSummary, type CloseTaskInput, type TaskClosedResul
 import { CodeVolumeService } from './task/code-volume-service.js';
 import { PlanSnapshots } from './task/plan-snapshots.js';
 import { Rebuild, type RebuildReport } from './task/rebuild.js';
+import { ReviseEstimate, type EstimateRevised, type ReviseEstimateInput, type RevisionCandidates } from './task/revise-estimate.js';
+import type { Timestamp } from '../domain/shared/timestamp.js';
 import { RecordRetro, type RecordRetroInput, type RetroRecorded } from './task/record-retro.js';
 import { Renegotiate, type Renegotiated, type RenegotiateInput } from './task/renegotiate.js';
 import { ReopenTask, type TaskReopened } from './task/reopen-task.js';
@@ -101,6 +103,9 @@ export interface Estimetry {
   renegotiationTarget(input: { readonly task?: TaskId }): TaskView;
   renegotiate(input: RenegotiateInput): Renegotiated;
   rebuild(input: { readonly task?: TaskId }): RebuildReport;
+  revisionCandidates(input: { readonly task?: TaskId; readonly lostFrom?: Timestamp; readonly spent?: string }): RevisionCandidates;
+  reviseEstimate(input: ReviseEstimateInput): EstimateRevised;
+  repairRevision(input: { readonly task?: TaskId }): { readonly task: TaskView; readonly revision: string };
   initChoices(): InitChoices;
   initProject(input: InitInput): InitReport;
 }
@@ -143,6 +148,19 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
   const recordRetro = new RecordRetro(deps.tasks, currentProject, taskCards, meta);
   const renegotiate = new Renegotiate(deps.tasks, activeTask, deps.taskTypes, measurement, closing, meta, deps.workspaceDir);
   const rebuild = new Rebuild(deps.tasks, taskCards);
+  const reviseEstimate = new ReviseEstimate(
+    deps.tasks,
+    activeTask,
+    deps.estimates,
+    deps.taskTypes,
+    deps.plans,
+    deps.install.files,
+    planSnapshots,
+    deps.journal,
+    c.proposals,
+    meta,
+    deps.workspaceDir,
+  );
   const initProject = new InitProject(deps.workspace, currentProject, deps.projects, deps.projectConfig, deps.install);
 
   return {
@@ -163,6 +181,9 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
     renegotiationTarget: (input) => renegotiate.original(input),
     renegotiate: (input) => renegotiate.execute(input),
     rebuild: (input) => rebuild.execute(input),
+    revisionCandidates: (input) => reviseEstimate.candidates(input),
+    reviseEstimate: (input) => reviseEstimate.execute(input),
+    repairRevision: (input) => reviseEstimate.repair(input),
     initChoices: () => initProject.choices(),
     initProject: (input) => initProject.execute(input),
   };
