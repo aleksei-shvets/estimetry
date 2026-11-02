@@ -124,10 +124,10 @@ emt estimate revise plan2.yaml --reason "design was wrong" --category missed-ana
 
 - `--spent include` — the work so far counts toward the new estimate.
 - `--spent exclude` — the work since `--lost-from` (by default since the start or the previous revision) up to the revision (`--at`, by default now) was thrown away. It is not deleted: `emt status` shows it apart as lost and compares only the counted fact with the new estimate.
-- `--covers <id>` — extra work already recorded for the same loss. The command lists the extra work recorded in the window, with ids, so you can name it.
+- `--covers <id>` — extra work already recorded for the same loss, so the loss is not counted twice. Only with `--spent exclude`, and an extra work can be covered by one revision only. The command lists the extra work recorded in the window, with ids, so you can name it.
 - Archived changes of the thrown-away work leave the plan: they give no percent, no completion and no proposal to close. A change archived again later counts as usual.
 
-The first estimate stays in the journal and in the card: calibration compares the whole fact with it, so a late revision cannot make an estimate look right. If the customer agreed to more scope or time, use `emt renegotiate` instead.
+The first estimate stays in the journal and in the card: calibration compares the whole fact with it, so a late revision cannot make an estimate look right. The revised estimate is measured too, against the counted fact (see [Calibration](#calibration)). If the customer agreed to more scope or time, use `emt renegotiate` instead.
 
 ## Closing a task
 
@@ -165,6 +165,8 @@ Every closed task gets a card in `~/.local/share/estimetry/cards/<task>.yaml`, a
 
 Time is split between parts by the checkboxes their changes closed between checkpoints. Time no part can claim is shown as `unattributed`.
 
+A revised task keeps both estimates: `estimate` and `parts` are the first estimate, `currentEstimate` and `currentParts` the one in force at the closing. The card also lists every revision with the work its window lost and how much was counted when it was made, and gives the counted fact next to the whole one. Time is split between the parts of the current estimate from the moment of the last revision; what was counted before it is shown as `before revision`. Extra work named in `--covers` is listed apart, as covered by the revision.
+
 The code volume counts the task's recorded commits still reachable from `HEAD`, plus what is not committed. Without recorded commits it counts your commits since the task started. Generated files (lock files, `*.g.dart`, `dist/` and the like) are left out. Lines are only a self-check: they never change the fact or the coefficients.
 
 Names, descriptions and the retro sit in a separate `text` section of the card, apart from the numbers.
@@ -186,6 +188,13 @@ calibration:
 
 Tasks in parallel mode count with their sequential equivalent. Abandoned tasks and tasks with manual time only are left out.
 
+Revised tasks give two accuracies:
+- the main coefficient compares the whole fact with the **first** estimate, by the type of that estimate: that is the number the PM got;
+- `revised` compares the counted fact with the **current** estimate: how good the estimate made at the revision was, and how far into the work revisions usually come;
+- `revisions` shows, by task type, category and `--spent`, how much revisions grow the estimate and how much work they throw away.
+
+The parts of a revised task count only if no more than 5% of its counted fact was spent before the revision. Tasks with `--spent exclude` stay out of the code volume and lines per hour: rolled back lines say nothing about the size of the task.
+
 `emt rebuild` rebuilds task snapshots, cards and `calibration.json` from the journals, for example after an upgrade changed a formula.
 
 ### What is never stored
@@ -195,4 +204,6 @@ The journal keeps when things happened, not what was said or done: no prompt tex
 ### After upgrading estimetry
 
 Run `estimetry init` again in each project. Most hooks then run in the background, so the agent does not wait for them. Before that they still work, just slower.
+
+Update every installed copy of estimetry at once. Cards written by an older version are rebuilt from the journals on the next closing, `emt task show` or `emt rebuild`. A newer card stops an older estimetry from rewriting `calibration.json` and is reported instead; versions before this check skip such cards silently, so close no task with them.
 

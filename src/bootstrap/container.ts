@@ -53,7 +53,7 @@ export function createContainer(environment: Environment, options: ContainerOpti
   return {
     layout,
     errors,
-    app: () => (app ??= buildApp(layout, environment)),
+    app: () => (app ??= buildApp(layout, environment, errors)),
     hooks: async () => {
       const receiver = await buildHookReceiver(layout, errors, options.startedAt ?? Date.now());
       return { receive: (call) => receiver.execute(call) };
@@ -257,7 +257,7 @@ async function installDependencies(environment: Environment, sharing: SharingPre
   };
 }
 
-async function buildApp(layout: StorageLayout, environment: Environment): Promise<Estimetry> {
+async function buildApp(layout: StorageLayout, environment: Environment, errors: ErrorReporter): Promise<Estimetry> {
   const cwd = environment.cwd;
   const [
     { createEstimetry },
@@ -325,6 +325,7 @@ async function buildApp(layout: StorageLayout, environment: Environment): Promis
       proposals: new FileCloseProposals(layout),
       code: new GitCodeMeasurer(),
       head: new FsGitHead(),
+      errors,
     },
     sessions: { bindings: new YamlSessionStore(layout), tasks: new FileTaskStatusReader(layout) },
   });

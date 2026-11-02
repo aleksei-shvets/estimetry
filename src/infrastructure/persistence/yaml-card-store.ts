@@ -1,6 +1,7 @@
 import { readdirSync, rmSync } from 'node:fs';
-import type { CardStore } from '../../application/ports/card-store.js';
-import type { Card } from '../../domain/card/card.js';
+import type { CardStore, StoredCard } from '../../application/ports/card-store.js';
+import { CARD_SCHEMA_VERSION, type Card } from '../../domain/card/card.js';
+import type { CardV1 } from '../../domain/card/card-v1.js';
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
 
@@ -16,13 +17,12 @@ export class YamlCardStore implements CardStore {
     }
   }
 
-  read(task: string): Card | undefined {
+  read(task: string): StoredCard | undefined {
     if (!TASK_ID.test(task)) {
       return undefined;
     }
     try {
-      const value = readYaml(this.layout.card(task));
-      return isCard(value) ? value : undefined;
+      return stored(task, readYaml(this.layout.card(task)));
     } catch {
       return undefined;
     }
@@ -34,7 +34,7 @@ export class YamlCardStore implements CardStore {
     }
   }
 
-  list(): Card[] {
+  list(): StoredCard[] {
     let names: string[];
     try {
       names = readdirSync(this.layout.cardsDir);
@@ -44,12 +44,34 @@ export class YamlCardStore implements CardStore {
     return names
       .filter((name) => name.endsWith('.yaml'))
       .map((name) => this.read(name.slice(0, -'.yaml'.length)))
-      .filter((card): card is Card => card !== undefined)
-      .sort((a, b) => a.task.id.localeCompare(b.task.id, undefined, { numeric: true }));
+      .filter((card): card is StoredCard => card !== undefined)
+      .sort((a, b) => taskOf(a).localeCompare(taskOf(b), undefined, { numeric: true }));
   }
 }
 
-/** The fields calibration relies on; a card of another schema version is left out. */
+function taskOf(card: StoredCard): string {
+  return card.schema === 'newer' ? card.task : card.card.task.id;
+}
+
+/** Sorts a card by its schema; a card of a newer schema is named, never dropped silently. */
+function stored(task: string, value: unknown): StoredCard | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+  const version = (value as Record<string, unknown>)['schemaVersion'];
+  if (typeof version === 'number' && version > CARD_SCHEMA_VERSION) {
+    return { schema: 'newer', task, version };
+  }
+  if (version === CARD_SCHEMA_VERSION && isCard(value) && isCardV2(value)) {
+    return { schema: 'current', card: value };
+  }
+  if (version === 1 && isCard(value) && typeof (value as unknown as Record<string, unknown>)['parallel'] === 'object') {
+    return { schema: 'v1', card: value as unknown as CardV1 };
+  }
+  return undefined;
+}
+
+/** The fields calibration relies on in every schema. */
 function isCard(value: unknown): value is Card {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -58,7 +80,6 @@ function isCard(value: unknown): value is Card {
   const task = card['task'] as Record<string, unknown> | undefined;
   const fact = card['fact'] as Record<string, unknown> | undefined;
   return (
-    card['schemaVersion'] === 1 &&
     typeof card['author'] === 'string' &&
     typeof task?.['id'] === 'string' &&
     typeof task['type'] === 'string' &&
@@ -66,5 +87,16 @@ function isCard(value: unknown): value is Card {
     typeof fact?.['totalMinutes'] === 'number' &&
     Array.isArray(card['parts']) &&
     typeof card['extras'] === 'object'
+  );
+}
+
+function isCardV2(card: Card): boolean {
+  const counted = (card.fact as unknown as Record<string, unknown>)['counted'] as Record<string, unknown> | undefined;
+  return (
+    Array.isArray(card.revisions) &&
+    Array.isArray(card.currentParts) &&
+    typeof counted?.['totalMinutes'] === 'number' &&
+    typeof card.beforeRevisionMinutes === 'number' &&
+    typeof card.coveredByRevision === 'object'
   );
 }

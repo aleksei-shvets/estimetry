@@ -13,6 +13,7 @@ import type { IdGenerator } from '../ports/id-generator.js';
 import type { SessionBindings } from '../ports/session-bindings.js';
 import type { CodeVolumeService } from './code-volume-service.js';
 import type { PlanSnapshots } from './plan-snapshots.js';
+import { derivedWarning } from './derived-steps.js';
 import type { TaskCards } from './task-cards.js';
 
 /** Steps around `task.closed`, shared by `emt close` and `emt renegotiate`. */
@@ -58,7 +59,7 @@ export class TaskClosing {
       try {
         run();
       } catch (error) {
-        warnings.push(`${what} failed (${error instanceof Error ? error.message : String(error)}); run \`emt rebuild\``);
+        warnings.push(derivedWarning(what, error));
       }
     };
     step('releasing the sessions of the task', () => this.release(task));

@@ -205,8 +205,8 @@ describe('card and calibration of a revised task', () => {
     const task = started(estimate(10));
     task.reviseEstimate(revision({ at: at('11:00') }), meta('11:00'));
     task.close({ at: at('18:00'), outcome: 'completed' }, meta('18:00'));
-    const card = buildCard({ task, report: report(14 * 60), partFacts: { mode: 'by-checkboxes', parts: [{ minutes: 1 }], unattributed: 0 }, records: [], hasActivity: true });
-    expect(card).toMatchObject({ revised: true, estimate: { likelyHours: 10 }, partsFact: 'revised', parts: [{ factMinutes: null, reason: 'revised' }] });
+    const card = buildCard({ task, report: report(14 * 60), partFacts: { mode: 'by-checkboxes', parts: [{ minutes: 1 }], unattributed: 0, beforeRevision: 0 }, records: [], hasActivity: true });
+    expect(card).toMatchObject({ revised: true, estimate: { likelyHours: 10 }, partsFact: 'by-checkboxes', parts: [{ factMinutes: null, reason: 'revised' }], currentParts: [{ factMinutes: 1 }] });
     expect(calibrate([card]).authors['dev@example.com']?.ratio.overall.median).toBe(1.4);
   });
 
@@ -218,7 +218,7 @@ describe('card and calibration of a revised task', () => {
     renegotiated.reviseEstimate(revision({ at: at('11:00') }), meta('11:00'));
     renegotiated.renegotiate({ at: at('18:00'), spawned: TaskId.fromNumber(9), category: 'new-requirement', description: 'more' }, { next: () => meta('18:00') });
     const cards = [late, renegotiated].map((task) =>
-      buildCard({ task, report: report(300), partFacts: { mode: 'no-plan-snapshots', parts: [], unattributed: 300 }, records: [], hasActivity: true }),
+      buildCard({ task, report: report(300), partFacts: { mode: 'no-plan-snapshots', parts: [], unattributed: 300, beforeRevision: 0 }, records: [], hasActivity: true }),
     );
     expect(calibrate(cards).authors['dev@example.com']?.ratio.overall).toMatchObject({
       n: 0,

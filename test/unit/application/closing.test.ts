@@ -116,7 +116,7 @@ describe('close', () => {
     expect(records().map((r) => r.type)).toEqual(['plan.started', 'code.measured', 'plan.closing']);
     expect(records()[2]).toMatchObject({ data: { done: 60, completedGroups: ['a'], unfinishedGroups: ['b'] } });
     expect(events().at(-1)).toBe('task.closed');
-    const card = closing.cards.read('T-1');
+    const card = closing.cards.cards.get('T-1');
     expect(card).toMatchObject({ outcome: 'completed', fact: { totalMinutes: 25 }, retro: 'pending', partsFact: 'by-checkboxes' });
     // Two boxes of `a` and one of `b` closed since the plan at the start: 25 minutes split 2:1.
     expect(card?.parts.map((p) => p.factMinutes)).toEqual([17, 8]);
@@ -155,7 +155,7 @@ describe('close', () => {
     journal.append(activity('turn.started', '09:00', { origin: 'user' }));
     journal.append(activity('turn.ended', '09:30'));
     app.closeTask({ abandoned: true });
-    expect(closing.cards.read('T-1')?.outcome).toBe('abandoned');
+    expect(closing.cards.cards.get('T-1')?.outcome).toBe('abandoned');
     expect(closing.calibration.current?.authors['dev@example.com']?.ratio.overall).toMatchObject({ n: 0, excluded: { abandoned: 1 } });
   });
 
@@ -189,7 +189,7 @@ describe('close', () => {
     closing.code.pending.set(ROOT, [{ path: 'test/a.test.ts', added: 5, deleted: 0 }]);
     closing.code.authored.set(ROOT, [{ sha: 'c2', files: [] }, { sha: 'x9', files: [{ path: 'src/b.ts', added: 4, deleted: 0 }] }]);
     app.closeTask({});
-    const card = closing.cards.read('T-1');
+    const card = closing.cards.cards.get('T-1');
     // c2 recorded and reachable, x9 never recorded but the author's: both count; c1 was rewritten.
     expect(card?.code?.lines).toMatchObject({ production: { added: 16 }, tests: { added: 5 } });
     expect(card?.code?.projects).toEqual([{ source: 'commits', unreachable: 1, uncovered: 1, truncated: false }]);
@@ -212,13 +212,13 @@ describe('reopen and retro', () => {
     startedTask();
     app.closeTask({});
     app.recordRetro({ reasons: ['a: harder than it looked'], lesson: 'split the change' });
-    expect(closing.cards.read('T-1')?.retro).toEqual({ status: 'current', reasons: [{ part: 0 }] });
+    expect(closing.cards.cards.get('T-1')?.retro).toEqual({ status: 'current', reasons: [{ part: 0 }] });
     clock.advanceMinutes(30);
     app.reopenTask({ task: T('T-1') });
-    expect(closing.cards.read('T-1')).toBeUndefined();
+    expect(closing.cards.cards.get('T-1')).toBeUndefined();
     clock.advanceMinutes(30);
     app.closeTask({});
-    expect(closing.cards.read('T-1')).toMatchObject({ retro: { status: 'stale' }, closedMinutes: 30 });
+    expect(closing.cards.cards.get('T-1')).toMatchObject({ retro: { status: 'stale' }, closedMinutes: 30 });
   });
 
   it('records a retro of the task closed last, replaces it, and refuses a task in progress', () => {
@@ -268,6 +268,6 @@ describe('rebuild', () => {
     closing.cards.cards.clear();
     const report = app.rebuild({});
     expect(report).toMatchObject({ tasks: 2, cards: 1, failed: [{ task: 'T-2' }] });
-    expect(closing.cards.read('T-1')).toBeDefined();
+    expect(closing.cards.cards.get('T-1')).toBeDefined();
   });
 });

@@ -3,6 +3,7 @@ import type { TaskRepository } from '../../domain/task/task-repository.js';
 import type { CloseProposals } from '../ports/close-proposals.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
 import { retryOnConflict } from '../shared/retry.js';
+import { derived } from './derived-steps.js';
 import type { TaskCards } from './task-cards.js';
 import { toTaskView, type TaskView } from './task-view.js';
 
@@ -34,17 +35,4 @@ export class ReopenTask {
     ]);
     return { task: toTaskView(task), warnings };
   }
-}
-
-/** Runs derived steps; a failure becomes a warning, since `emt rebuild` can repeat it. */
-export function derived(steps: readonly (readonly [string, () => unknown])[]): string[] {
-  const warnings: string[] = [];
-  for (const [what, run] of steps) {
-    try {
-      run();
-    } catch (error) {
-      warnings.push(`${what} failed (${error instanceof Error ? error.message : String(error)}); run \`emt rebuild\``);
-    }
-  }
-  return warnings;
 }

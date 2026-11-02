@@ -284,6 +284,8 @@ function isRevision(value: unknown): boolean {
     optional(value['spent'], isSpentPolicy) &&
     optional(value['baseLikelyBefore'], isNonNegative) &&
     isNonNegative(value['baseLikelyAfter']) &&
+    optional(value['typeBefore'], isString) &&
+    optional(value['typeAfter'], isString) &&
     isStringArray(value['covers']) &&
     optional(value['excluded'], isExcludedList)
   );

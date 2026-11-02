@@ -39,8 +39,8 @@ import { TaskId } from './task-id.js';
 import { STARTABLE_STATUSES, type TaskStatus } from './task-status.js';
 import { TaskType } from './task-type.js';
 
-/** 2: revisions, the first estimate, ids of extra work. Older snapshots are rebuilt from the journal. */
-export const TASK_SNAPSHOT_SCHEMA_VERSION = 2;
+/** 2: revisions, the first estimate, ids of extra work; 3: task types of revisions. Older snapshots are rebuilt from the journal. */
+export const TASK_SNAPSHOT_SCHEMA_VERSION = 3;
 
 const MAX_TITLE_LENGTH = 200;
 
@@ -63,6 +63,9 @@ export interface TaskRevision {
   /** Most likely hours before calibration, of the estimate before and after; absent before for a task estimated after its start. */
   readonly baseLikelyBefore?: number;
   readonly baseLikelyAfter: number;
+  /** Task type of the estimate before and after; absent in snapshots of schema 2. */
+  readonly typeBefore?: string;
+  readonly typeAfter?: string;
   readonly covers: readonly string[];
   readonly excluded?: readonly ExcludedArchives[];
 }
@@ -300,8 +303,19 @@ export class Task {
     return data === undefined ? undefined : Estimate.fromData(data);
   }
 
+  /** The estimate before any revision, also for a task estimated only after its start. */
+  get originalEstimate(): Estimate | undefined {
+    const data = this.state.firstEstimate ?? this.state.estimate;
+    return data === undefined ? undefined : Estimate.fromData(data);
+  }
+
   get estimatedAfterStart(): boolean {
     return this.state.estimatedAfterStart;
+  }
+
+  /** Task type of the first estimate: what the first number given to the PM was estimated as. */
+  get firstType(): string {
+    return this.state.revisions[0]?.typeBefore ?? this.state.type.value;
   }
 
   get revisions(): readonly TaskRevision[] {
@@ -632,6 +646,9 @@ export class Task {
     if (firstOne && (revision.spent !== undefined || revision.lostFrom !== undefined || revision.covers.length > 0)) {
       throw new InvalidValue('the task has no estimate yet, so this is its first one: --spent, --lost-from and --covers do not apply');
     }
+    if (revision.covers.length > 0 && revision.spent !== 'exclude') {
+      throw new InvalidValue('--covers goes only with --spent exclude: with include nothing is lost, and the covered extra work would leave calibration');
+    }
     const at = revision.at;
     if (at.toMillis() > meta.at.toMillis()) {
       throw new InvalidValue(`the revision moment must not be in the future (${at.toISOString()})`);
@@ -667,6 +684,11 @@ export class Task {
     const unknown = revision.covers.filter((id) => !known.has(id));
     if (unknown.length > 0) {
       throw new InvalidValue(`--covers names no extra work of this task: ${unknown.join(', ')}`);
+    }
+    const covered = new Set(this.state.revisions.filter((r) => r.spent === 'exclude').flatMap((r) => r.covers));
+    const twice = revision.covers.filter((id) => covered.has(id));
+    if (twice.length > 0) {
+      throw new InvalidValue(`--covers names extra work another revision already covers: ${twice.join(', ')}`);
     }
     this.record(
       taskEvent<TaskEstimateRevised>(
@@ -810,6 +832,8 @@ export class Task {
             ...(event.data.spent === undefined ? {} : { spent: event.data.spent }),
             baseLikelyBefore: Estimate.fromData(before).baseLikely,
             baseLikelyAfter: Estimate.fromData(event.data.estimate).baseLikely,
+            typeBefore: this.state.type.value,
+            typeAfter: event.data.taskType ?? this.state.type.value,
             covers: [...event.data.covers],
             ...(event.data.excluded === undefined ? {} : { excluded: event.data.excluded }),
           });

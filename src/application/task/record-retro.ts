@@ -6,7 +6,7 @@ import type { TaskRepository } from '../../domain/task/task-repository.js';
 import type { ResolveCurrentProject } from '../project/resolve-current-project.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
 import { retryOnConflict } from '../shared/retry.js';
-import { derived } from './reopen-task.js';
+import { derived } from './derived-steps.js';
 import type { TaskCards } from './task-cards.js';
 import { toTaskView, type TaskView } from './task-view.js';
 

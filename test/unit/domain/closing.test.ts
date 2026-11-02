@@ -153,7 +153,7 @@ describe('fact by parts', () => {
       points: [point('10:00', 'api', [['a', 0, 5], ['b', 0, 5]]), point('10:40', 'api', [['a', 2, 5], ['b', 1, 5]])],
       measured: { agent: set(['10:05', '10:35']), user: IntervalSet.EMPTY },
     });
-    expect(result).toEqual({ mode: 'by-checkboxes', parts: [{ minutes: 20 }, { minutes: 10 }], unattributed: 0 });
+    expect(result).toEqual({ mode: 'by-checkboxes', parts: [{ minutes: 20 }, { minutes: 10 }], unattributed: 0, beforeRevision: 0 });
   });
 
   it('keeps time without closings in the pool for the next closing', () => {
@@ -198,7 +198,7 @@ describe('fact by parts', () => {
       points: [point('10:00', 'api', [['a', 0, 1]]), point('10:30', 'api', [['a', 1, 1]])],
       measured: { agent: set(['10:00', '10:30'], ['11:00', '11:10']), user: IntervalSet.EMPTY },
     });
-    expect(result).toEqual({ mode: 'by-checkboxes', parts: [{ minutes: 30 }, { minutes: null, reason: 'no-group' }], unattributed: 10 });
+    expect(result).toEqual({ mode: 'by-checkboxes', parts: [{ minutes: 30 }, { minutes: null, reason: 'no-group' }], unattributed: 10, beforeRevision: 0 });
   });
 
   it('gives manual time of a part to it, and the sum always equals the fact', () => {
@@ -221,7 +221,7 @@ describe('fact by parts', () => {
 
   it('says why there is no fact by parts', () => {
     const measured = { agent: set(['10:00', '10:10']), user: IntervalSet.EMPTY };
-    expect(partFacts({ ...base, estimate: undefined, points: [], measured })).toEqual({ mode: 'no-estimate', parts: [], unattributed: 10 });
+    expect(partFacts({ ...base, estimate: undefined, points: [], measured })).toEqual({ mode: 'no-estimate', parts: [], unattributed: 10, beforeRevision: 0 });
     expect(partFacts({ ...base, estimate: estimate([{ id: 'a', group: 'a', likely: 1 }]), points: [], measured }).mode).toBe('no-plan-snapshots');
   });
 
@@ -397,7 +397,7 @@ function closedCard(input: {
         ? {}
         : { parallel: { used: true, maxAgents: 2 }, sequentialEquivalent: Duration.ofMinutes(input.parallelMinutes) },
     ),
-    partFacts: { mode: 'no-plan-snapshots', parts: [], unattributed: input.minutes },
+    partFacts: { mode: 'no-plan-snapshots', parts: [], unattributed: input.minutes, beforeRevision: 0 },
     records: input.records ?? [],
     hasActivity: true,
   });
@@ -417,7 +417,7 @@ describe('card', () => {
     task.recordRetro(['a: slow'], 'lesson', meta('10:10'));
     task.reopen(meta('11:00'));
     task.close({ at: at('12:00'), outcome: 'completed' }, meta('12:00'));
-    const card = buildCard({ task, report: report(60), partFacts: { mode: 'no-estimate', parts: [], unattributed: 60 }, records: [], hasActivity: true });
+    const card = buildCard({ task, report: report(60), partFacts: { mode: 'no-estimate', parts: [], unattributed: 60, beforeRevision: 0 }, records: [], hasActivity: true });
     expect(card.retro).toEqual({ status: 'stale', reasons: [{ part: 0 }] });
     expect(card.closedMinutes).toBe(60);
   });

@@ -34,6 +34,7 @@ import type { TaskView } from './task/task-view.js';
 import type { CalibrationSettings } from './ports/calibration-settings.js';
 import type { CalibrationStore } from './ports/calibration-store.js';
 import type { CardStore } from './ports/card-store.js';
+import type { ErrorReporter } from './ports/error-reporter.js';
 import type { CloseProposals } from './ports/close-proposals.js';
 import type { CodeMeasurer } from './ports/code-measurer.js';
 import type { GitHead } from './ports/git-snapshot.js';
@@ -76,6 +77,8 @@ export interface EstimetryDependencies {
     readonly proposals: CloseProposals;
     readonly code: CodeMeasurer;
     readonly head: GitHead;
+    /** Where a card newer than this binary, or a card that could not be rebuilt, is reported. */
+    readonly errors: ErrorReporter;
   };
   /** The directory the command runs in: of several working copies of a project, its plan is read there. */
   readonly workspaceDir?: string;
@@ -120,7 +123,7 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
 
   const c = deps.closing;
   const planSnapshots = new PlanSnapshots(deps.plans, c.head, deps.projects);
-  const taskCards = new TaskCards(deps.journal, measurement, c.cards, c.calibration, c.settings);
+  const taskCards = new TaskCards(deps.journal, measurement, c.cards, c.calibration, c.settings, deps.tasks, c.errors);
   const closing = new TaskClosing(
     deps.journal,
     new CodeVolumeService(deps.plans, c.code),
@@ -136,7 +139,7 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
   const bindSession = new BindSession(deps.sessions.bindings, deps.sessions.tasks, deps.journal, deps.ids, deps.authors);
   const attachTask = new AttachTask(deps.tasks, currentProject, meta, bindSession, deps.workspace, deps.clock);
   const listTasks = new ListTasks(deps.tasks, currentProject);
-  const showTask = new ShowTask(deps.tasks, c.cards, taskCards);
+  const showTask = new ShowTask(deps.tasks, taskCards);
   const saveEstimate = new SaveEstimate(deps.tasks, activeTask, deps.estimates, deps.taskTypes, meta);
   const recordManualTime = new RecordManualTime(deps.tasks, activeTask, measurement, deps.clock, meta);
   const recordExtra = new RecordExtra(deps.tasks, activeTask, meta);

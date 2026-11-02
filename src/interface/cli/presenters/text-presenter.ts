@@ -135,22 +135,42 @@ export function closeSummaryText(summary: CloseSummary): string {
 }
 
 function cardText(card: Card): string {
-  const names = card.text.parts;
+  const names = card.text.currentParts;
+  const revised = card.revisions.length > 0;
+  const counted = card.fact.counted;
+  const of = (estimate: Card['estimate']) => (estimate === null ? '' : ` of ${formatMinutes(estimate.likelyHours * 60)}`);
   const rows: [string, string][] = [
     ['card', `${card.outcome}, ${card.accuracy} accuracy${card.backgroundAgents ? ', background agents' : ''}`],
-    [
-      'fact',
-      card.estimate === null
-        ? `${formatMinutes(card.fact.totalMinutes)} (no estimate)`
-        : `${formatMinutes(card.fact.totalMinutes)} of ${formatMinutes(card.estimate.likelyHours * 60)}`,
-    ],
   ];
-  card.parts.forEach((part, i) => {
+  if (card.estimate === null) {
+    rows.push(['fact', `${formatMinutes(card.fact.totalMinutes)} (no estimate)`]);
+  } else if (!revised) {
+    rows.push(['fact', `${formatMinutes(card.fact.totalMinutes)}${of(card.estimate)}`]);
+  } else {
+    // Two comparisons: the whole fact with the first estimate, the counted one with the estimate in force.
+    rows.push(['fact', `${formatMinutes(card.fact.totalMinutes)}${of(card.estimate)} first estimate`]);
+    rows.push(['counted', `${formatMinutes(counted.totalMinutes)}${of(card.currentEstimate)} current estimate`]);
+    if (card.fact.totalMinutes > counted.totalMinutes) {
+      rows.push(['lost', formatMinutes(card.fact.totalMinutes - counted.totalMinutes)]);
+    }
+    card.revisions.forEach((revision, i) => {
+      const lost = revision.spent === 'exclude' ? `, lost ${formatMinutes(revision.lostMinutes)}` : '';
+      rows.push([
+        `revision ${i + 1}`,
+        `${revision.category ?? '—'}, ${revision.spent ?? '—'}, at ${formatMinutes(revision.countedAtMinutes)}${lost}: ` +
+          `${card.text.revisions[i]?.reason ?? ''}`,
+      ]);
+    });
+  }
+  card.currentParts.forEach((part, i) => {
     const name = names[i]?.name ?? `part ${i}`;
     const fact = part.factMinutes === null ? `— (${part.reason ?? card.partsFact})` : formatMinutes(part.factMinutes);
     rows.push([`  ${name}`, `${fact} of ${formatMinutes(part.likelyHours * 60)}${part.groupDone === false ? ', unfinished' : ''}`]);
   });
-  if (card.parts.length > 0 && card.unattributedMinutes > 0) {
+  if (card.currentParts.length > 0 && card.beforeRevisionMinutes > 0) {
+    rows.push(['  before revision', formatMinutes(card.beforeRevisionMinutes)]);
+  }
+  if (card.currentParts.length > 0 && card.unattributedMinutes > 0) {
     rows.push(['  unattributed', formatMinutes(card.unattributedMinutes)]);
   }
   const extras = Object.entries(card.extras).flatMap(([category, tally]) =>
@@ -160,6 +180,10 @@ function cardText(card: Card): string {
   );
   if (extras.length > 0) {
     rows.push(['extras', extras.join(', ')]);
+  }
+  const covered = Object.entries(card.coveredByRevision).flatMap(([category, tally]) => (tally.count === 0 ? [] : [`${category} ${tally.count}`]));
+  if (covered.length > 0) {
+    rows.push(['covered by revision', covered.join(', ')]);
   }
   if (card.code !== null) {
     const l = card.code.lines;

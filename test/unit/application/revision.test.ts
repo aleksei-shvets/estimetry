@@ -4,6 +4,8 @@ import { ChangeCompletions } from '../../../src/application/hooks/change-complet
 import { MeasuredTaskFacts } from '../../../src/application/hooks/task-facts.js';
 import { TaskMeasurement } from '../../../src/application/task/task-measurement.js';
 import { TaskPlanProgress } from '../../../src/application/task/task-plan-progress.js';
+import type { Card } from '../../../src/domain/card/card.js';
+import type { CardV1 } from '../../../src/domain/card/card-v1.js';
 import { Estimate } from '../../../src/domain/estimate/estimate.js';
 import { EstimatePart } from '../../../src/domain/estimate/estimate-part.js';
 import { ThreePointEstimate } from '../../../src/domain/estimate/three-point-estimate.js';
@@ -223,4 +225,91 @@ describe('revising the estimate', () => {
     revise();
     expect(app.renegotiate({ title: 'Next' }).closed.fact).toBe(20);
   });
+
+  it('closes into a card v2: the counted fact, the work of the window and the counted fact at the revision', () => {
+    startedTask();
+    revise();
+    closing.code.heads.set(ROOT, 'h1');
+    app.closeTask({});
+    const card = closing.cards.cards.get('T-1');
+    expect(card).toMatchObject({
+      schemaVersion: 2,
+      estimate: { likelyHours: 10 },
+      currentEstimate: { likelyHours: 12 },
+      fact: { totalMinutes: 70, counted: { totalMinutes: 20 } },
+      revisions: [{ spent: 'exclude', lostMinutes: 50, countedAtMinutes: 20 }],
+    });
+    expect(closing.calibration.current?.schemaVersion).toBe(2);
+  });
+
+  it('in parallel mode the work of the window is measured as the sequential equivalent, like the main ratio', () => {
+    startedTask();
+    app.changeParallelMode({ enabled: true, agents: 2 });
+    app.changeParallelMode({ enabled: false });
+    revise();
+    app.closeTask({});
+    const card = closing.cards.cards.get('T-1') as Card;
+    expect(card.parallel.used).toBe(true);
+    expect(card.revisions[0]?.lostMinutes).toBe((card.parallel.sequentialMinutes ?? 0) - (card.fact.counted.sequentialMinutes ?? 0));
+  });
+
+  it('refuses --covers with include', () => {
+    startedTask();
+    app.recordExtra({ category: 'rework', description: 'x', time: Duration.ofMinutes(10) });
+    const id = tasks.journals.get('T-1')?.at(-1)?.id as string;
+    expect(() => app.reviseEstimate({ file: 'plan2.yaml', reason: 'x', category: 'rework', spent: 'include', covers: [id] })).toThrow(/only with --spent exclude/);
+  });
 });
+
+describe('cards of other schemas', () => {
+  const closeT1 = () => {
+    startedTask();
+    revise();
+    app.closeTask({});
+  };
+
+  it('a card of schema 1 is rebuilt from the journal and written again on recalculation and in task show', () => {
+    closeT1();
+    const current = closing.cards.cards.get('T-1') as Card;
+    closing.cards.cards.delete('T-1');
+    closing.cards.others.set('T-1', { schema: 'v1', card: { ...current, schemaVersion: 1 } as unknown as CardV1 });
+    app.rebuild({ task: TaskId.parse('T-2') });
+    expect(closing.cards.cards.get('T-1')?.schemaVersion).toBe(2);
+    expect(closing.calibration.current?.authors['dev@example.com']?.revised.overall.n).toBe(1);
+    closing.cards.cards.delete('T-1');
+    closing.cards.others.set('T-1', { schema: 'v1', card: { ...current, schemaVersion: 1 } as unknown as CardV1 });
+    expect(app.showTask({ task: T }).card?.schemaVersion).toBe(2);
+    expect(closing.cards.cards.has('T-1')).toBe(true);
+  });
+
+  it('a card newer than this binary stops the recalculation and is reported', () => {
+    closeT1();
+    const before = closing.calibration.current;
+    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 3 });
+    const report = app.rebuild({ task: T });
+    expect(report.calibrationError).toMatch(/T-9 were written by a newer version of estimetry/);
+    expect(closing.calibration.current).toBe(before);
+    expect((closing.errors as RecordingErrorReporter).reports.map((r) => r.context)).toContain('calibration');
+  });
+
+  it('a rebuilt card that cannot be written still counts as rebuilt; a broken card of schema 1 is left out', () => {
+    closeT1();
+    const current = closing.cards.cards.get('T-1') as Card;
+    closing.cards.cards.delete('T-1');
+    closing.cards.others.set('T-1', { schema: 'v1', card: { ...current, schemaVersion: 1 } as unknown as CardV1 });
+    closing.cards.others.set('T-5', { schema: 'v1', card: { ...current, schemaVersion: 1, task: { ...current.task, id: 'T-5' }, parallel: undefined } as unknown as CardV1 });
+    closing.cards.failWrite = true;
+    app.rebuild({ task: TaskId.parse('T-2') });
+    expect(closing.calibration.current?.authors['dev@example.com']).toMatchObject({ tasks: 1, revised: { overall: { n: 1 } } });
+    const contexts = (closing.errors as RecordingErrorReporter).reports.map((r) => r.context);
+    expect(contexts).toEqual(expect.arrayContaining(['writing the card of T-1', 'reading the card of T-5']));
+  });
+
+  it('closing next to a newer card warns to update estimetry, not to rebuild', () => {
+    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 3 });
+    startedTask();
+    const closed = app.closeTask({});
+    expect(closed.warnings).toEqual([expect.stringMatching(/newer version of estimetry.*update estimetry\)$/)]);
+  });
+});
+

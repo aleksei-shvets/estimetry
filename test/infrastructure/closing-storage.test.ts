@@ -117,15 +117,20 @@ describe('close proposals', () => {
 describe('cards and calibration', () => {
   const card = (id: string): Card =>
     ({
-      schemaVersion: 1,
+      schemaVersion: 2,
       author: 'dev@example.com',
       task: { id, type: 'feature', stack: ['go'] },
       outcome: 'completed',
-      fact: { totalMinutes: 60, uncertaintyShare: 0 },
-      estimate: { likelyHours: 1, baseLikelyHours: 1 },
+      fact: { totalMinutes: 60, uncertaintyShare: 0, counted: { totalMinutes: 60, uncertaintyShare: 0, sequentialMinutes: null, minimal: false } },
+      estimate: { likelyHours: 1, baseLikelyHours: 1, type: 'feature' },
+      currentEstimate: { likelyHours: 1, baseLikelyHours: 1, type: 'feature' },
+      revisions: [],
       accuracy: 'partial',
       parallel: { used: false, sequentialMinutes: null },
       parts: [],
+      currentParts: [],
+      beforeRevisionMinutes: 0,
+      coveredByRevision: {},
       extras: {
         'new-requirement': { absorbed: { count: 0, timed: 0, minutes: 0 }, renegotiated: { count: 0, timed: 0, minutes: 0 } },
         'missed-analysis': { absorbed: { count: 0, timed: 0, minutes: 0 }, renegotiated: { count: 0, timed: 0, minutes: 0 } },
@@ -142,14 +147,28 @@ describe('cards and calibration', () => {
     cards.write(card('T-1'));
     cards.write(card('T-2'));
     writeFileSync(layout.card('T-3'), 'schemaVersion: [oops');
-    expect(cards.list().map((c) => c.task.id)).toEqual(['T-1', 'T-2']);
+    expect(cards.list().map((c) => (c.schema === 'current' ? c.card.task.id : undefined))).toEqual(['T-1', 'T-2']);
     cards.remove('T-2');
     const store = new JsonCalibrationStore(layout, () => '2026-11-02T00:00:00.000Z');
-    store.recalculate(() => calibrate(cards.list()));
+    store.recalculate(() => calibrate(cards.list().flatMap((c) => (c.schema === 'current' ? [c.card] : []))));
     const written = JSON.parse(readFileSync(layout.calibrationFile, 'utf8')) as { generatedAt: string; authors: Record<string, { tasks: number }> };
     expect(written.generatedAt).toBe('2026-11-02T00:00:00.000Z');
     expect(written.authors['dev@example.com']?.tasks).toBe(1);
     expect(existsSync(layout.calibrationLock)).toBe(false);
+  });
+
+  it('tells a card of schema 1 and a card of a newer schema from a current one', () => {
+    const layout = new StorageLayout(join(tempDir(), 'home'));
+    const cards = new YamlCardStore(layout);
+    const { currentEstimate: _e, revisions: _r, currentParts: _p, beforeRevisionMinutes: _b, coveredByRevision: _c, ...old } = card('T-1') as unknown as Record<string, unknown>;
+    cards.write({ ...old, schemaVersion: 1 } as unknown as Card);
+    cards.write({ ...card('T-2'), schemaVersion: 3 });
+    cards.write(card('T-3'));
+    expect(cards.list().map((c) => c.schema)).toEqual(['v1', 'newer', 'current']);
+    expect(cards.read('T-2')).toEqual({ schema: 'newer', task: 'T-2', version: 3 });
+    const { parallel: _parallel, ...broken } = old;
+    cards.write({ ...broken, schemaVersion: 1, task: { id: 'T-4', type: 'feature', stack: [] } } as unknown as Card);
+    expect(cards.read('T-4')).toBeUndefined();
   });
 
   it('parallel closings leave a calibration built from every card', async () => {
@@ -166,7 +185,7 @@ describe('cards and calibration', () => {
       const card = JSON.parse(${JSON.stringify(template)});
       card.task.id = 'T-' + (Number(process.argv[1]) + 1);
       cards.write(card);
-      new JsonCalibrationStore(layout, () => new Date().toISOString()).recalculate(() => calibrate(cards.list()));
+      new JsonCalibrationStore(layout, () => new Date().toISOString()).recalculate(() => calibrate(cards.list().flatMap((c) => (c.schema === 'current' ? [c.card] : []))));
     `;
     const codes = await Promise.all(Array.from({ length: 6 }, (_, n) => spawnNode(['--input-type=module', '-e', script, String(n)])));
     expect(codes).toEqual(Array(6).fill(0));

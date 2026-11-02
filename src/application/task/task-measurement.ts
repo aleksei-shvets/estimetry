@@ -22,7 +22,7 @@ export class TaskMeasurement {
    * closed task is measured up to its closing moment: later events do not count.
    */
   measure(task: Task, activity?: readonly ActivityEvent[]): EffortReport {
-    return this.report(task, activity, false);
+    return this.report(task, activity);
   }
 
   /**
@@ -30,24 +30,53 @@ export class TaskMeasurement {
    * away by revisions (estimate-revision spec). Equal to `measure` without them.
    */
   counted(task: Task, activity?: readonly ActivityEvent[]): EffortReport {
-    return this.report(task, activity, true);
+    return this.report(task, activity, { lost: task.lostWindows });
   }
 
-  private report(task: Task, activity: readonly ActivityEvent[] | undefined, counted: boolean): EffortReport {
-    const closedAt = task.closedAt;
+  /**
+   * The counted fact as it stood at a revision: activity and manual records up
+   * to that moment, without the windows of lost work that ended by then.
+   */
+  countedAt(task: Task, at: Timestamp, activity?: readonly ActivityEvent[]): EffortReport {
+    return this.report(task, activity, {
+      lost: task.lostWindows.filter((window) => window.to.toMillis() <= at.toMillis()),
+      until: at,
+    });
+  }
+
+  /** The fact without one window of lost work: the work of that window is the difference with `measure`. */
+  without(task: Task, window: { readonly from: Timestamp; readonly to: Timestamp }, activity?: readonly ActivityEvent[]): EffortReport {
+    return this.report(task, activity, { lost: [window] });
+  }
+
+  private report(
+    task: Task,
+    activity: readonly ActivityEvent[] | undefined,
+    options: { readonly lost?: readonly { readonly from: Timestamp; readonly to: Timestamp }[]; readonly until?: Timestamp } = {},
+  ): EffortReport {
+    const closedAt = options.until ?? task.closedAt;
     const now = closedAt ?? this.clock.now();
     const startedAt = task.startedAt;
     const all = startedAt ? (activity ?? this.journal.readActivity(task.id)) : [];
+    const until = options.until;
+    const manual =
+      until === undefined
+        ? task.manualTime
+        : task.manualRecords
+            .filter(({ manual: record, recordedAt }) => {
+              const made = recordedAt === '' ? undefined : Timestamp.parse(recordedAt);
+              return (made === undefined || made.toMillis() <= until.toMillis()) && (record.at === undefined || record.at.toMillis() <= until.toMillis());
+            })
+            .map(({ manual: record }) => record);
+    const lost = options.lost ?? [];
     return measureEffort({
       activity: closedAt === undefined ? all : all.filter((event) => Timestamp.parse(event.ts).toMillis() <= closedAt.toMillis()),
       startedAt: startedAt ?? now,
-      manual: task.manualTime,
+      manual,
       parallel: task.parallelMode,
       policy: this.settings.idlePolicy(),
       now,
-      ...(counted && task.lostWindows.length > 0
-        ? { lost: IntervalSet.of(task.lostWindows.map((window) => Interval.of(window.from, window.to))) }
-        : {}),
+      ...(lost.length > 0 ? { lost: IntervalSet.of(lost.map((window) => Interval.of(window.from, window.to))) } : {}),
     });
   }
 }
