@@ -17,7 +17,8 @@ export const JSON_DESCRIPTION = 'print JSON';
  */
 export const EXAMPLES: readonly string[] = [
   'init --track-commits',
-  'task new "Payments" && estimate save plan.yaml',
+  'task new "Payments" && similar --type feature --hours 8 && calibrate --type feature',
+  'estimate save plan.yaml',
   'start',
   'status',
   'close && retro --reason "<why>" --lesson "<one lesson>"',

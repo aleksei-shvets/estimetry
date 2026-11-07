@@ -21,4 +21,6 @@ export const jsonPresenter: Presenter = {
   retroRecorded: json,
   renegotiated: json,
   rebuildReport: json,
+  similarTasks: json,
+  calibration: json,
 };

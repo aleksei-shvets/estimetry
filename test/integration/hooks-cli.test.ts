@@ -44,7 +44,7 @@ describe('hooks write the journal of the session’s task', () => {
   it('a turn with a tool lands in the only task in progress, with context at the start and no prompt text', async () => {
     await emt('task', 'new', 'Payments');
     await emt('start');
-    expect(hook('SessionStart', { source: 'startup' })).toMatch(/^estimetry: task T-1 "Payments"/);
+    expect(hook('SessionStart', { source: 'startup' })).toMatch(/^estimetry: before you name an effort or a deadline for a task, run \/emt-estimate\.\nestimetry: task T-1 "Payments"/);
     expect(hook('UserPromptSubmit', { prompt: 'deploy with password hunter2' })).toBeUndefined();
     hook('PreToolUse', { tool_name: 'Bash', tool_use_id: 'tu-1', tool_input: { command: 'echo hunter2' } });
     hook('PostToolUse', { tool_name: 'Bash', tool_use_id: 'tu-1', duration_ms: 12, tool_response: { stdout: 'hunter2' } });

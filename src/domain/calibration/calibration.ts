@@ -1,5 +1,9 @@
 import type { Card } from '../card/card.js';
+import { stackLabels } from '../estimate/stack-labels.js';
+import { exclusion, ratioOf, revisedExclusion, revisedRatioOf, type Exclusion } from './task-ratio.js';
 import { EXTRA_CATEGORIES, type ExtraAccounting, type ExtraCategory } from '../measurement/extra.js';
+
+export type { Exclusion } from './task-ratio.js';
 
 /** 2: the sections of revised tasks and revisions (estimate-revision-cards); readers check the version. */
 export const CALIBRATION_SCHEMA_VERSION = 2;
@@ -8,14 +12,6 @@ const UNCERTAINTY_LIMIT = 0.05;
 /** A revised task tells about the parts of its current estimate only if little was done before the revision. */
 const BEFORE_REVISION_LIMIT = 0.05;
 
-export type Exclusion =
-  | 'abandoned'
-  | 'zero-fact'
-  | 'manual-only'
-  | 'renegotiated-without-groups'
-  | 'renegotiated-after-revision'
-  | 'estimated-after-start'
-  | 'card-v1';
 
 /** One slice of the ratio fact / estimate. */
 export interface RatioStats {
@@ -97,14 +93,30 @@ interface Sample {
 }
 
 /** Calibration from the cards of closed tasks, by author (design §10, calibration spec). */
-export function calibrate(cards: readonly Card[], options: { readonly minTasks?: number } = {}): Calibration {
+export function calibrate(
+  all: readonly Card[],
+  options: { readonly minTasks?: number; readonly aliases?: ReadonlyMap<string, string> } = {},
+): Calibration {
   const minTasks = options.minTasks ?? DEFAULT_MIN_TASKS;
+  const cards = normalized(all, options.aliases);
   const authors: Record<string, AuthorCalibration> = {};
   const byId = new Map(cards.map((card) => [card.task.id, card]));
   for (const author of [...new Set(cards.map((card) => card.author))].sort()) {
     authors[author] = forAuthor(cards.filter((card) => card.author === author), byId, minTasks);
   }
   return { schemaVersion: CALIBRATION_SCHEMA_VERSION, minTasks, authors };
+}
+
+/**
+ * Cards as calibration compares them: a card of an alias is the author's
+ * (`author.aliases`), stack labels in lower case. The cards themselves stay as written.
+ */
+export function normalized(cards: readonly Card[], aliases: ReadonlyMap<string, string> = new Map()): Card[] {
+  return cards.map((card) => ({
+    ...card,
+    author: aliases.get(card.author) ?? card.author,
+    task: { ...card.task, stack: stackLabels(card.task.stack) },
+  }));
 }
 
 function forAuthor(cards: readonly Card[], byId: ReadonlyMap<string, Card>, minTasks: number): AuthorCalibration {
@@ -192,79 +204,6 @@ function slices<T>(
     byType: Object.fromEntries(types.map((type) => [type, slice((card) => typeOf(card) === type)])),
     byStack: Object.fromEntries(stacks.map((tech) => [tech, slice((card) => card.task.stack.includes(tech))])),
   };
-}
-
-function exclusion(card: Card): Exclusion | undefined {
-  if (card.outcome === 'abandoned') {
-    return 'abandoned';
-  }
-  if (card.estimatedAfterStart) {
-    return 'estimated-after-start';
-  }
-  // The completed parts of the first estimate are not known once the plan was revised.
-  if (card.outcome === 'renegotiated' && card.revised) {
-    return 'renegotiated-after-revision';
-  }
-  if (card.fact.totalMinutes === 0) {
-    return 'zero-fact';
-  }
-  if (card.accuracy === 'minimal') {
-    return 'manual-only';
-  }
-  return undefined;
-}
-
-/** Exclusions of the slice of revised tasks: by the counted fact, which they are compared by. */
-function revisedExclusion(card: Card): Exclusion | undefined {
-  if (card.outcome === 'abandoned') {
-    return 'abandoned';
-  }
-  if (card.estimatedAfterStart) {
-    return 'estimated-after-start';
-  }
-  // A card of schema 1 has neither the current estimate nor the counted fact.
-  if (card.convertedFrom === 1) {
-    return 'card-v1';
-  }
-  if (card.fact.counted.totalMinutes === 0) {
-    return 'zero-fact';
-  }
-  if (card.fact.counted.minimal) {
-    return 'manual-only';
-  }
-  return undefined;
-}
-
-/**
- * Fact over the estimate before calibration. A parallel task counts with its
- * sequential equivalent; a renegotiated original only against the parts it did.
- */
-function ratioOf(card: Card): number | undefined {
-  const minutes = card.parallel.used && card.parallel.sequentialMinutes !== null ? card.parallel.sequentialMinutes : card.fact.totalMinutes;
-  return against(card.estimate, card.parts, card.outcome, minutes);
-}
-
-/** Counted fact over the current estimate: how good the estimate made at the revision was. */
-function revisedRatioOf(card: Card): number | undefined {
-  const counted = card.fact.counted;
-  const minutes = card.parallel.used && counted.sequentialMinutes !== null ? counted.sequentialMinutes : counted.totalMinutes;
-  return against(card.currentEstimate, card.currentParts, card.outcome, minutes);
-}
-
-function against(estimate: Card['estimate'], parts: Card['parts'], outcome: Card['outcome'], minutes: number): number | undefined {
-  if (estimate === null) {
-    return undefined;
-  }
-  let base = estimate.baseLikelyHours;
-  if (outcome === 'renegotiated') {
-    const done = parts.filter((part) => part.groupDone === true);
-    if (done.length === 0) {
-      return undefined;
-    }
-    const coefficient = estimate.coefficient ?? 1;
-    base = done.reduce((sum, part) => sum + part.likelyHours, 0) / coefficient;
-  }
-  return base > 0 ? minutes / 60 / base : undefined;
 }
 
 function revisionStats(cards: readonly Card[]): AuthorCalibration['revisions'] {

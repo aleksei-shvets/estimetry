@@ -13,6 +13,7 @@ import type { TaskRepository } from '../../domain/task/task-repository.js';
 import type { Task } from '../../domain/task/task.js';
 import type { CalibrationSettings } from '../ports/calibration-settings.js';
 import type { CalibrationStore } from '../ports/calibration-store.js';
+import type { AuthorProvider } from '../ports/author-provider.js';
 import type { CardStore } from '../ports/card-store.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';
 import type { EventJournal } from '../ports/event-journal.js';
@@ -28,6 +29,7 @@ export class TaskCards {
     private readonly settings: CalibrationSettings,
     private readonly tasks: Pick<TaskRepository, 'find'>,
     private readonly errors: ErrorReporter,
+    private readonly authors: AuthorProvider,
   ) {}
 
   /** The card of a closed task, built from its journal alone. */
@@ -107,19 +109,49 @@ export class TaskCards {
       // A card that cannot be read even by its fields is left out, as a broken file is.
       return calibrate(
         cards.filter((card): card is Card => card !== undefined),
-        { minTasks: this.settings.minTasks() },
+        { minTasks: this.settings.minTasks(), aliases: this.aliases() },
       );
     });
   }
 
+  /**
+   * Every card for a query (`emt similar`, `emt calibrate`), in memory: a card
+   * of schema 1 is rebuilt from its journal but not written, a card newer than
+   * this binary is named in `skipped`. Nothing is written.
+   */
+  allCards(): { readonly cards: readonly Card[]; readonly skipped: readonly string[] } {
+    const cards: Card[] = [];
+    const skipped: string[] = [];
+    for (const stored of this.cards.list()) {
+      if (stored.schema === 'newer') {
+        skipped.push(stored.task);
+        continue;
+      }
+      const card = stored.schema === 'current' ? stored.card : this.upgrade(stored.card, false);
+      if (card !== undefined) {
+        cards.push(card);
+      }
+    }
+    return { cards, skipped };
+  }
+
+  /** The author's earlier ids, each to the current one. */
+  aliases(): ReadonlyMap<string, string> {
+    const author = this.authors.current().id;
+    return new Map(this.settings.authorAliases().map((alias) => [alias, author]));
+  }
+
   /** A card of schema 1 again from the journal of its task; by its fields when the journal is not here. */
-  private upgrade(card: CardV1): Card | undefined {
+  private upgrade(card: CardV1, write = true): Card | undefined {
     let rebuilt: Card | undefined;
     try {
       const task = this.tasks.find(TaskId.parse(card.task.id));
       rebuilt = task?.status === 'closed' ? this.build(task) : undefined;
     } catch (error) {
       this.errors.report(`rebuilding the card of ${card.task.id}`, error);
+    }
+    if (rebuilt !== undefined && !write) {
+      return rebuilt;
     }
     if (rebuilt !== undefined) {
       try {

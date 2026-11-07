@@ -1,3 +1,5 @@
+import type { CalibrationView } from '../../../application/task/show-calibration.js';
+import type { SimilarTasksView } from '../../../application/task/find-similar-tasks.js';
 import type { InitReport } from '../../../application/project/init-project.js';
 import type { AttachTaskResult } from '../../../application/task/attach-task.js';
 import type { ParallelModeChanged } from '../../../application/task/change-parallel-mode.js';
@@ -33,4 +35,6 @@ export interface Presenter {
   retroRecorded(result: RetroRecorded): string;
   renegotiated(result: Renegotiated): string;
   rebuildReport(report: RebuildReport): string;
+  similarTasks(view: SimilarTasksView): string;
+  calibration(view: CalibrationView): string;
 }

@@ -91,7 +91,7 @@ describe('plan progress', () => {
   });
 
   it('the session start line carries the plan, and parallel on records its share', async () => {
-    expect(hook('SessionStart', { source: 'startup' })).toMatch(/^estimetry: task T-1 "Payments" — .*, plan 40% done\./);
+    expect(hook('SessionStart', { source: 'startup' })).toMatch(/^estimetry: task T-1 "Payments" — .*, plan 40% done\./m);
     const on = await emt('parallel', 'on', '--json');
     expect(JSON.parse(on.stdout)).toMatchObject({ enabled: true, planShare: 0.4 });
     const enabled = readFileSync(join(cli.home, 'events', 'T-1.jsonl'), 'utf8')

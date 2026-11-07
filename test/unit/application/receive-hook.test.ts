@@ -147,7 +147,8 @@ describe('which task a session serves', () => {
     startedTask('T-2', 'Webhooks');
     const out = await call('Start', 'session-start', [{ type: 'session.started', data: {} }]);
     expect(JSON.parse(out ?? '{}').text).toBe(
-      'estimetry: several tasks are in progress in this project: T-1 "Payments", T-2 "Webhooks". ' +
+      'estimetry: before you name an effort or a deadline for a task, run /emt-estimate.\n' +
+        'estimetry: several tasks are in progress in this project: T-1 "Payments", T-2 "Webhooks". ' +
         'Ask the user which one this session serves, then run: emt attach <task> --session s1',
     );
     expect(journal.readUnassigned('api').map((e) => e.type)).toEqual(['session.started']);
@@ -240,11 +241,24 @@ describe('checkpoints and context', () => {
     expect(journal.readRecords(TaskId.parse('T-1'))).toHaveLength(2);
   });
 
+  it('starts every session with the reminder of estimate mode; the limit shortens the list of tasks, never the command', async () => {
+    for (let i = 1; i <= 30; i++) {
+      startedTask(`T-${i}`, `A rather long title of task number ${i} to fill the context`);
+    }
+    const out = await call('Start', 'session-start', [{ type: 'session.started', data: {} }]);
+    const text = JSON.parse(out ?? '{}').text as string;
+    expect(text.length).toBeLessThanOrEqual(1000);
+    expect(text.split('\n')[0]).toBe('estimetry: before you name an effort or a deadline for a task, run /emt-estimate.');
+    expect(text.endsWith('then run: emt attach <task> --session s1')).toBe(true);
+    expect(text).toMatch(/and \d+ more \(emt task list\)/);
+  });
+
   it('starts a session with the task and its fact', async () => {
     startedTask('T-1', 'estimetry v1');
     const out = await call('Start', 'session-start', [{ type: 'session.started', data: {} }]);
     expect(JSON.parse(out ?? '{}').text).toBe(
-      'estimetry: task T-1 "estimetry v1" — 3h 30m of 58h 30m (6%), plan 51% done. If the work has gone beyond the plan, record it with /emt-extra.',
+      'estimetry: before you name an effort or a deadline for a task, run /emt-estimate.\n' +
+        'estimetry: task T-1 "estimetry v1" — 3h 30m of 58h 30m (6%), plan 51% done. If the work has gone beyond the plan, record it with /emt-extra.',
     );
   });
 

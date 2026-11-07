@@ -77,6 +77,18 @@ export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, Measure
     return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : DEFAULT_MIN_TASKS;
   }
 
+  /** `author.aliases`: strings other than the author's own id; anything but a list counts as none. */
+  authorAliases(): readonly string[] {
+    const aliases = this.read().author?.aliases;
+    if (!Array.isArray(aliases)) {
+      return [];
+    }
+    const own = this.current().id;
+    return [...new Set(aliases.filter((alias): alias is string => typeof alias === 'string').map((alias) => alias.trim()))].filter(
+      (alias) => alias !== '' && alias !== own,
+    );
+  }
+
   /** `sharing.mode`; an unknown value counts as not chosen. */
   mode(): ShareMode | undefined {
     const sharing = this.read()['sharing'];

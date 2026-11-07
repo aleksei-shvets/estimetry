@@ -1,0 +1,51 @@
+{
+  "skill_name": "emt-estimate",
+  "store": "node evals/estimate-mode/make-store.mjs <dir>; run each eval in <dir>/project with ESTIMETRY_HOME=<dir>/home and HOME=<dir>/user",
+  "pass": "an eval passes when at least 2 of 3 runs meet every expectation",
+  "evals": [
+    {
+      "id": "calibrated",
+      "prompt": "Сколько займёт новая задача: экспорт счетов в PDF в нашем API на TypeScript и Node? Оцени.",
+      "expected_output": "The agent agrees on type feature and stack typescript, node, runs emt similar and emt calibrate, applies the coefficient 1.275 of type feature to all three points of every part, names the similar tasks, puts any reserve only into pessimistic hours, and waits for approval before saving.",
+      "expectations": [
+        "runs `emt similar` with --type feature and a stack including typescript before naming any hours",
+        "runs `emt calibrate` with --type feature",
+        "says the estimate is calibrated with ×1.275 from the slice type feature (6 tasks)",
+        "the estimate file has type: feature, stack with typescript, basedOn with ids of similar tasks, calibrated: true, calibration.coefficient: 1.275",
+        "every part's optimistic, likely and pessimistic hours are multiplied by the coefficient",
+        "no reserve part is added; a reserve, if any, is only in pessimistic hours and is named in rationale",
+        "does not run `emt estimate save` before the user approves"
+      ]
+    },
+    {
+      "id": "without-calibration",
+      "prompt": "Нужно исследовать, какую библиотеку для разбора PDF взять в Python-сервисе. Сколько это займёт?",
+      "expected_output": "The agent agrees on type research and stack python, runs emt similar and emt calibrate, gets coefficient null, says plainly the estimate is without calibration (2 of 5 tasks), does not apply the overall ×1.275, and writes calibrated: false.",
+      "expectations": [
+        "runs `emt similar` and `emt calibrate` with --type research before naming any hours",
+        "says the estimate is without calibration and that there are too few closed tasks",
+        "does not multiply the hours by 1.275 or by any other coefficient",
+        "the estimate file has type: research, stack with python and calibrated: false"
+      ]
+    },
+    {
+      "id": "no-guess",
+      "prompt": "Быстро, без подробностей: сколько часов уйдёт на кэширование ответов в нашем API? Просто цифру.",
+      "expected_output": "The agent does not give a number before running emt similar and emt calibrate, explains briefly that the estimate rests on past tasks, then gives an estimate by parts.",
+      "expectations": [
+        "the first number of hours in the answer comes after `emt similar` and `emt calibrate` were run",
+        "the answer gives the estimate by parts, not a single bare number"
+      ]
+    },
+    {
+      "id": "in-progress",
+      "prompt": "Задача T-9 «Bulk import of products» уже в работе, и оказалось, что нужен ещё импорт картинок. Объём и срок с заказчиком не меняем. Переоцени её.",
+      "expected_output": "The agent treats it as a revision: runs emt calibrate with --revise, uses emt estimate revise (not save), and asks the user whether the work so far counts (--spent include or exclude).",
+      "expectations": [
+        "runs `emt calibrate` with --revise",
+        "uses `emt estimate revise`, never `emt estimate save` for T-9",
+        "asks the user whether the work so far counts (--spent include or exclude) before revising"
+      ]
+    }
+  ]
+}

@@ -47,6 +47,15 @@ describe('YamlConfigStore', () => {
     expect(detections).toBe(1);
   });
 
+  it('reads author aliases: strings other than the own id, a non-list as none', () => {
+    const layout = new StorageLayout(join(tempDir(), 'home'));
+    const store = new YamlConfigStore(layout, () => 'x');
+    writeYamlAtomic(layout.configFile, { author: { id: 'new@example.com', aliases: ['old@example.com', ' ', 'new@example.com', 7, 'old@example.com'] } });
+    expect(store.authorAliases()).toEqual(['old@example.com']);
+    writeYamlAtomic(layout.configFile, { author: { id: 'new@example.com', aliases: 'old@example.com' } });
+    expect(store.authorAliases()).toEqual([]);
+  });
+
   it('extends the built-in task types from config without creating files on read', () => {
     const layout = new StorageLayout(join(tempDir(), 'home'));
     const store = new YamlConfigStore(layout, () => 'x');

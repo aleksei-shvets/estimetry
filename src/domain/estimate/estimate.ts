@@ -1,3 +1,4 @@
+import { stackLabels } from './stack-labels.js';
 import { CodeVolume, type CodeVolumeData } from './code-volume.js';
 import { EstimatePart, type EstimatePartData } from './estimate-part.js';
 import { InvalidEstimate, type EstimateIssue } from './invalid-estimate.js';
@@ -71,7 +72,7 @@ export class Estimate {
     return new Estimate(
       [...input.parts],
       input.type?.trim() || undefined,
-      [...(input.stack ?? [])],
+      stackLabels(input.stack ?? []),
       input.codeVolume,
       rationale,
       [...(input.basedOn ?? [])],

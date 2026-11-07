@@ -8,7 +8,7 @@ The CLI is `estimetry`, with the short alias `emt`. It needs Node.js 20.19 or ne
 npm install -g estimetry
 ```
 
-> estimetry is in early development. Estimating with past tasks (`emt similar`, `emt calibrate`) is still being built.
+> estimetry is in early development.
 
 ## Help
 
@@ -68,6 +68,32 @@ A repeated run keeps what is installed: once the git hook or the shared install 
 - **`settings.local.json` may not be ignored by git.** Claude Code adds `**/.claude/settings.local.json` to your global git excludes only when it writes that file itself. If init creates it and git does not ignore it, init offers to add the same line. With `--no-interactive` it only warns.
 - **Hooks need `estimetry` on `PATH`.** When run through `npx`, the hooks will not find it, and init warns about that.
 
+## Estimating a task
+
+Ask the agent how long a task will take, or run `/emt-estimate`. Before it names any number, the agent:
+1. agrees with you on the task type and the technologies the task really touches;
+2. sketches the parts of the plan and runs `emt similar` — closed tasks like this one, with their estimates, fact, extra work and lessons;
+3. runs `emt calibrate` — your coefficients and the one the estimate may apply;
+4. shows the estimate by parts with what it rests on, and saves it with `emt estimate save` only after you approve it.
+
+```sh
+emt similar --type feature --stack typescript,node --hours 8
+emt calibrate --type feature --stack typescript,node
+emt calibrate --type feature --revise     # for a revision of a task in progress
+```
+
+- **Similarity** weighs the shared technologies (half), the type of the first estimate and, with `--hours`, the size. Each task shows what its similarity is made of. Without `--stack`, the stack of the project counts.
+- **The coefficient** is the median of fact over estimate of the first slice with enough closed tasks: by type, then by technology. The overall slice mixes every kind of work and is shown for reference only. With fewer tasks than `calibration.minTasks` (5 by default) the estimate is **without calibration**, and the agent says so.
+- **A calibrated estimate** multiplies all three numbers of every part by the coefficient and records it (`calibrated: true`, `calibration.coefficient`), so the next coefficient is computed from the estimate before it. A reserve goes only into the pessimistic hours: extra work you absorbed is already in the coefficient.
+- **Nothing is written** by `emt similar` and `emt calibrate`; `calibration.json` is updated by closings and `emt rebuild`.
+- **A changed email.** Calibration is personal, by `author.id` in `config.yaml`. List earlier ids so that their cards stay yours:
+
+  ```yaml
+  author:
+    id: new@example.com
+    aliases: [old@example.com]
+  ```
+
 ## Measuring a task
 
 Once a task is started (`emt start`), the Claude Code hooks record its sessions into the task's journal. `emt status` shows the fact measured so far: the time of the agents, your own time, and how certain the numbers are.
@@ -83,6 +109,25 @@ Once a task is started (`emt start`), the Claude Code hooks record its sessions 
 - **One task in progress** — a session binds to it by itself.
 - **Several tasks in progress** — the agent gets the session id at the start of the session and asks you which task it is. It then runs `emt attach <task> --session <id>`. The same command switches a running session to another task; the time before and after the switch goes to the right task.
 - **No task in progress** — the session's time is kept in a journal of the project and counts for no task. Start a task, even with `emt start --at "<when you began>"`, and the session's work since then moves into it.
+
+### Restarts and parallel sessions
+
+The hooks find the project by the directory Claude Code runs in, not by the session id.
+
+- **After a restart** (VS Code, a crash, a reboot) the new session has a new id and binds again by the rules above: with one task in progress, time goes on into it without anything to do. With several, answer the agent which task it is. Work the new session did before `emt attach` stays in the project's journal and does not count.
+- **A turn cut off by a crash** gets no end. Its tail is closed by the idle threshold and shows as uncertainty (`± …` in `emt status`). The time between the crash and the restart does not count.
+- **Two sessions on one task** both write into its journal. Overlapping agent time counts once, so the fact is shorter than the work of both agents together. Switch on parallel mode (`emt parallel on --agents 2`): calibration then uses the sequential equivalent, the sum of the agents' work.
+- **Two sessions on two tasks** each serve their own task after `emt attach`. A commit goes to the task of the session active last: the git hook does not know which session made it. When both commit at the same moment, one commit may land in the other task. This affects only the code volume of the card, not the time.
+
+### Code in another working copy or repository
+
+The agent may run in one repository, where the OpenSpec artifacts are, and write code elsewhere.
+
+- **Time and plan progress** are not affected: time goes to the task of the session, and the plan is read where the artifacts are.
+- **Another worktree of the same repository** shares the git hooks: with `init --track-commits`, its commits are recorded into the task. The code volume is measured at closing in the working copy `emt close` runs in. Commits not yet reachable from the branch checked out there are shown as unreachable and not counted, and uncommitted changes of the other worktree are not seen. Before closing, merge the worktree's branch into the branch of the working copy you close from. Run `emt` commands from the main working copy.
+- **Another repository** belongs to the task only when you add it: run `estimetry init --track-commits` and `emt attach <task>` in it. Then its commits are recorded and its code is measured at closing.
+
+The code volume is a self-check only: it never changes the fact or the coefficients.
 
 ### Checkpoints
 
@@ -121,6 +166,8 @@ Once a task is started, its estimate is the plan the fact is compared with, and 
 ```sh
 emt estimate revise plan2.yaml --reason "design was wrong" --category missed-analysis --spent exclude --lost-from "2026-11-02 10:00"
 ```
+
+`emt task show <task>` gives the parts of the estimate in force (with `--json`, in the format of an estimate file): start the new one from them.
 
 - `--spent include` — the work so far counts toward the new estimate.
 - `--spent exclude` — the work since `--lost-from` (by default since the start or the previous revision) up to the revision (`--at`, by default now) was thrown away. It is not deleted: `emt status` shows it apart as lost and compares only the counted fact with the new estimate.

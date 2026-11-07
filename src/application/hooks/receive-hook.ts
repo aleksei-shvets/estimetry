@@ -18,7 +18,7 @@ import type { SessionBindings } from '../ports/session-bindings.js';
 import type { TaskStatusReader } from '../ports/task-status-reader.js';
 import type { ChangeCompletions } from './change-completions.js';
 import type { Checkpoints } from './checkpoints.js';
-import { closeProposalText, cut, EXTRA_REMINDER, sessionStartContext, type TaskFact } from './hook-context.js';
+import { closeProposalText, cut, ESTIMATE_REMINDER, EXTRA_REMINDER, MAX_CONTEXT_LENGTH, sessionStartContext, type TaskFact } from './hook-context.js';
 import { journalEntry } from './journal-entry.js';
 import type { SessionTask } from './session-task.js';
 
@@ -126,13 +126,17 @@ export class ReceiveHook {
       const fact = resolved.task === undefined ? undefined : (await this.deps.facts()).fact(resolved.task.id, resolved.project.root);
       const reminder = this.deps.checkpoints.takeReminder(translation.session);
       const proposal = resolved.task === undefined ? undefined : await this.proposal(resolved.task.id, translation.session, resolved.project.root, now);
+      // The reminder of estimate mode and a proposal go first; the status line gets what is left of the limit.
+      const before = [ESTIMATE_REMINDER, ...(proposal === undefined ? [] : [proposal])].join('\n').length + 1;
       const text = sessionStartContext({
+        budget: MAX_CONTEXT_LENGTH - before,
         session: translation.session,
         ...(resolved.task === undefined ? {} : { task: resolved.task }),
         ...(fact === undefined ? {} : { fact }),
         candidates: resolved.candidates,
       });
-      const lines = [...(proposal === undefined ? [] : [proposal]), text, ...(reminder && resolved.task === undefined ? [EXTRA_REMINDER] : [])];
+      // The reminder of estimate mode goes first, so the length limit never cuts it.
+      const lines = [ESTIMATE_REMINDER, ...(proposal === undefined ? [] : [proposal]), text, ...(reminder && resolved.task === undefined ? [EXTRA_REMINDER] : [])];
       return adapter.renderContext(event, cut(lines.join('\n')));
     }
     if (translation.kind === 'prompt') {

@@ -1,10 +1,6 @@
 import type { CommandContent } from '../../../application/contracts/command-content.js';
 
-/**
- * Texts of the estimetry skill and its commands, independent of the AI tool.
- * The full protocol of estimating (similar tasks, calibration) comes with `emt similar`
- * and `emt calibrate`.
- */
+/** Texts of the estimetry skill and its commands, independent of the AI tool. */
 export const ESTIMETRY_SKILL: CommandContent = {
   id: 'estimetry',
   description:
@@ -15,7 +11,11 @@ estimetry compares estimates with the actual effort of AI-agent development and 
 
 ## Estimating
 
-Before you name a deadline or an effort for a task, run \`/emt-estimate\`. Give the estimate by parts of the plan, each with an optimistic, a most likely and a pessimistic number of hours, and save it only after the user approves it.
+Never name an effort or a deadline for a task before \`/emt-estimate\` is done, even when asked casually. The estimate rests on the user's own past tasks, not on a general sense of how long things take:
+- agree with the user on the task type and the technologies the task really touches;
+- \`emt similar\` shows closed tasks like it, \`emt calibrate\` the user's coefficients and the one the estimate may apply;
+- with a coefficient, multiply the hours of every part by it; without one, say plainly that the estimate is without calibration;
+- give the estimate by parts of the plan, each with optimistic, most likely and pessimistic hours, and save it only after the user approves it.
 
 ## Measuring
 
@@ -51,33 +51,42 @@ When an \`emt\` command fails, show its message to the user instead of retrying 
 export const COMMANDS: readonly CommandContent[] = [
   {
     id: 'emt-estimate',
-    description: 'Estimate a task by parts of the plan and save the approved estimate as its plan',
+    description: 'Estimate a task by parts of the plan from past tasks and calibration, and save the approved estimate as its plan',
     argumentHint: '[task title]',
-    body: `Estimate the task the user describes ($ARGUMENTS) and save the approved estimate with estimetry.
+    body: `Estimate the task the user describes ($ARGUMENTS) from the user's own past tasks, and save the approved estimate with estimetry. Do not name an effort or a deadline before step 7.
 
-1. If the task does not exist yet, create it: \`emt task new "<title>"\` (add \`--type <type>\` when the type is clear). \`emt task list\` shows existing tasks.
-2. Split the work into parts of the plan. For each part give hours as optimistic ≤ most likely ≤ pessimistic. Include manual testing and review when the work needs them.
-3. Show the estimate as a table and wait for the user to approve or change it.
-4. Write the approved estimate to a YAML file outside the repository, for example in a temporary directory:
+1. **Type and stack.** Agree with the user on the task type (feature, integration, bugfix, refactor, infra, migration, research) and on the technologies the task really touches — not every technology of the project. They go into the estimate as \`type\` and \`stack\`.
+2. **The task.** \`emt task list\` shows existing tasks. A new one: \`emt task new "<title>" --type <type>\`, after the type is agreed. A task already in progress is a revision: \`emt task show <task>\` gives the parts of the estimate in force — start from them, keep the parts that stay and add or change the rest; use \`--revise\` in step 5 and \`emt estimate revise\` in step 8.
+3. **Parts.** Split the work into parts of the plan with hours as optimistic ≤ most likely ≤ pessimistic. Include manual testing and review when the work needs them. Add up a preliminary most likely total.
+   With a development flow (OpenSpec), link every part to its change: \`group\` is the name of the change. When the change does not exist yet, agree its kebab-case name with the user now, put it into \`group\`, and create the change under exactly that name later — otherwise progress, completion of changes and the fact by parts cannot follow the estimate. Several changes give several groups.
+4. **Similar tasks.** \`emt similar --type <type> --stack <a,b> --hours <preliminary total> --json\`. Compare the parts with the facts of the similar tasks, their extra work and lessons; adjust the parts. Name the tasks you rely on — they go into \`basedOn\`. If there are none, say so.
+5. **Calibration.** \`emt calibrate --type <type> --stack <a,b> --json\`.
+   - If \`coefficient\` is not null, multiply the optimistic, most likely and pessimistic hours of every part by \`coefficient.value\` and write \`calibrated: true\` and \`calibration: { coefficient: <value> }\`. Say which slice it comes from and how many tasks.
+   - If \`coefficient\` is null, say plainly that the estimate is **without calibration** and why (too few closed tasks), and write \`calibrated: false\`. Never apply the overall slice or a coefficient of your own.
+6. **Reserve.** Put a reserve only into the pessimistic hours, never into the most likely hours or a part of its own, and name its source in \`rationale\`:
+   - with calibration, only for missed scope (\`missedScope\`): extra work absorbed by tasks is already in the coefficient;
+   - without calibration, for extra work (\`extras\`, absorbed) and missed scope.
+   Cross-check with lines per hour (\`linesPerHour\`, \`codeVolume\`) only as a self-check: if it disagrees strongly, say so and explain, but do not recompute the estimate from lines.
+7. **Approval.** Show the estimate as a table: parts, hours, what it rests on (similar tasks, coefficient or "without calibration", reserve). Wait for the user to approve or change it.
+8. **Save.** Write the approved estimate to a YAML file outside the repository, for example in a temporary directory, and save it: \`emt estimate save <file>\` (for a task in progress: \`emt estimate revise <file> ...\`, see the estimetry skill). If it reports errors, fix every listed field and save again.
 
    \`\`\`yaml
    schemaVersion: 1
    type: feature
-   calibrated: false
-   rationale: Why the numbers are what they are.
+   stack: [typescript, node]
+   basedOn: [T-12, T-17]
+   calibrated: true
+   calibration: { coefficient: 1.3 }
+   rationale: Why the numbers are what they are, what they rest on, where the reserve is.
    parts:
      - name: implementation
        kind: implementation        # analysis, implementation, auto-tests, manual-testing, review, docs, other
        who: agents                 # agents, user or both
-       hours: { optimistic: 2, likely: 3, pessimistic: 5 }
+       group: export-invoices-pdf  # the change of the part, with a development flow
+       hours: { optimistic: 2.6, likely: 3.9, pessimistic: 6.5 }
    \`\`\`
 
-5. Save it: \`emt estimate save <file>\`. If it reports errors, fix every listed field and save again.
-If the task is already in progress, \`emt estimate save\` refuses: revise the plan with \`emt estimate revise\` instead (see the estimetry skill), asking the user whether the work so far counts.
-
-6. Tell the user that time is not measured until the task starts, and offer to start it now with \`/emt-start\` (\`emt start\`; \`--at "YYYY-MM-DD HH:MM"\` if work already began). Until then the work of sessions goes to no task.
-
-Estimates are not calibrated by past tasks yet: say so when you give one.
+9. Tell the user that time is not measured until the task starts, and offer to start it now with \`/emt-start\` (\`emt start\`; \`--at "YYYY-MM-DD HH:MM"\` if work already began).
 `,
   },
   {

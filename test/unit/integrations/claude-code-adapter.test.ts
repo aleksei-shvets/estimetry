@@ -117,6 +117,16 @@ describe('Claude Code skills', () => {
     expect(files.read(skill(HOME, 'estimetry'))).toContain('Never close a task on your own');
   });
 
+  it('the estimate command carries the whole protocol of estimate mode', () => {
+    install();
+    const text = files.read(skill(HOME, 'emt-estimate')) ?? '';
+    for (const needle of ['emt similar', 'emt calibrate', 'type:', 'stack:', 'basedOn', 'calibration: { coefficient', '**without calibration**', 'only into the pessimistic hours', '--revise', 'emt task new "<title>" --type <type>', 'emt task show <task>', '`group` is the name of the change']) {
+      expect(text).toContain(needle);
+    }
+    expect(text).not.toContain('not calibrated by past tasks yet');
+    expect(files.read(skill(HOME, 'estimetry'))).toContain('Never name an effort or a deadline for a task before `/emt-estimate` is done');
+  });
+
   it('a shared install puts them into the project; a personal one takes them out again', () => {
     install({ shared: true });
     expect(files.read(skill(`${ROOT}/.claude`, 'emt-start'))).toBeDefined();

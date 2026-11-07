@@ -111,7 +111,7 @@ function defaults() {
   return {
     cards: new InMemoryCardStore(),
     calibration: new InMemoryCalibrationStore(),
-    settings: { minTasks: () => 5 },
+    settings: { minTasks: () => 5, authorAliases: (): readonly string[] => [] },
     proposals: new InMemoryCloseProposals(),
     code: git,
     head: git,

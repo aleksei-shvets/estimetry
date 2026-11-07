@@ -50,6 +50,8 @@ import { ReopenTask, type TaskReopened } from './task/reopen-task.js';
 import type { TaskDetails } from './task/show-task.js';
 import { TaskCards } from './task/task-cards.js';
 import { TaskClosing } from './task/task-closing.js';
+import { FindSimilarTasks, type SimilarTasksInput, type SimilarTasksView } from './task/find-similar-tasks.js';
+import { ShowCalibration, type CalibrationInput, type CalibrationView } from './task/show-calibration.js';
 
 /** Everything the application needs from the outside world. */
 export interface EstimetryDependencies {
@@ -106,6 +108,8 @@ export interface Estimetry {
   renegotiationTarget(input: { readonly task?: TaskId }): TaskView;
   renegotiate(input: RenegotiateInput): Renegotiated;
   rebuild(input: { readonly task?: TaskId }): RebuildReport;
+  similarTasks(input: SimilarTasksInput): SimilarTasksView;
+  calibration(input: CalibrationInput): CalibrationView;
   revisionCandidates(input: { readonly task?: TaskId; readonly lostFrom?: Timestamp; readonly spent?: string }): RevisionCandidates;
   reviseEstimate(input: ReviseEstimateInput): EstimateRevised;
   repairRevision(input: { readonly task?: TaskId }): { readonly task: TaskView; readonly revision: string };
@@ -123,7 +127,7 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
 
   const c = deps.closing;
   const planSnapshots = new PlanSnapshots(deps.plans, c.head, deps.projects);
-  const taskCards = new TaskCards(deps.journal, measurement, c.cards, c.calibration, c.settings, deps.tasks, c.errors);
+  const taskCards = new TaskCards(deps.journal, measurement, c.cards, c.calibration, c.settings, deps.tasks, c.errors, deps.authors);
   const closing = new TaskClosing(
     deps.journal,
     new CodeVolumeService(deps.plans, c.code),
@@ -151,6 +155,8 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
   const recordRetro = new RecordRetro(deps.tasks, currentProject, taskCards, meta);
   const renegotiate = new Renegotiate(deps.tasks, activeTask, deps.taskTypes, measurement, closing, meta, deps.workspaceDir);
   const rebuild = new Rebuild(deps.tasks, taskCards);
+  const findSimilar = new FindSimilarTasks(taskCards, currentProject, deps.authors, deps.taskTypes);
+  const showCalibration = new ShowCalibration(taskCards, currentProject, deps.authors, deps.taskTypes, c.settings);
   const reviseEstimate = new ReviseEstimate(
     deps.tasks,
     activeTask,
@@ -184,6 +190,8 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
     renegotiationTarget: (input) => renegotiate.original(input),
     renegotiate: (input) => renegotiate.execute(input),
     rebuild: (input) => rebuild.execute(input),
+    similarTasks: (input) => findSimilar.execute(input),
+    calibration: (input) => showCalibration.execute(input),
     revisionCandidates: (input) => reviseEstimate.candidates(input),
     reviseEstimate: (input) => reviseEstimate.execute(input),
     repairRevision: (input) => reviseEstimate.repair(input),

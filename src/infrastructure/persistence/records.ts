@@ -342,13 +342,13 @@ export function parseProjectSnapshot(value: unknown): ProjectSnapshot | undefine
 
 export interface ConfigDocument {
   readonly schemaVersion?: number;
-  readonly author?: { readonly id?: string };
+  readonly author?: { readonly id?: string; readonly aliases?: unknown };
   readonly taskTypes?: readonly string[];
   readonly measurement?: { readonly idleMinutes?: unknown; readonly [key: string]: unknown };
   readonly [key: string]: unknown;
 }
 
-function withStringId(section: Record<string, unknown>): { readonly id?: string } {
+function withStringId(section: Record<string, unknown>): { readonly id?: string; readonly aliases?: unknown } {
   const { id, ...rest } = section;
   return { ...rest, ...(isString(id) ? { id } : {}) };
 }

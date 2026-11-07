@@ -77,7 +77,7 @@ describe('help of the root', () => {
         }
       }
     }
-    expect(help).toContain('emt task new "Payments" && emt estimate save plan.yaml');
+    expect(help).toContain('emt task new "Payments" && emt similar --type feature --hours 8 && emt calibrate --type feature');
     expect(program('estimetry').helpInformation()).toContain('estimetry close && estimetry retro');
   });
 });

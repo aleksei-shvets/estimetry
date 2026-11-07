@@ -44,3 +44,18 @@ export function parseCount(text: string, option: string, min: number): number {
 export function parseTaskOption(text: string | undefined): { task?: TaskId } {
   return text === undefined ? {} : { task: TaskId.parse(text) };
 }
+
+/** A number greater than zero, like the preliminary hours of `emt similar --hours`. */
+export function parsePositive(text: string, option: string): number {
+  const value = Number(text.trim());
+  if (text.trim() === '' || !Number.isFinite(value) || value <= 0) {
+    throw new InvalidValue(`${option} must be a number greater than 0, got "${text}"`);
+  }
+  return value;
+}
+
+/** Comma-separated labels of a stack: `flutter,bloc`. */
+export function parseLabels(text: string): string[] {
+  return text.split(',').map((label) => label.trim()).filter((label) => label !== '');
+}
+
