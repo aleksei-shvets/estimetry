@@ -3,8 +3,7 @@ import type { CodeMeasured, PlanClosing } from '../../domain/progress/progress-r
 import { SessionId } from '../../domain/measurement/session-id.js';
 import type { Timestamp } from '../../domain/shared/timestamp.js';
 import type { Task } from '../../domain/task/task.js';
-import { journalEntry } from '../hooks/journal-entry.js';
-import { CORE_SOURCE } from '../hooks/session-task.js';
+import { CORE_SOURCE, journalEntry } from '../shared/journal-entry.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
 import type { Clock } from '../ports/clock.js';
 import type { CloseProposals } from '../ports/close-proposals.js';

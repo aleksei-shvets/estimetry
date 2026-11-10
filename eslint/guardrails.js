@@ -3,7 +3,8 @@
  * Architecture checks beyond the layer boundaries, and the list of debt: the
  * violations that existed when a check was introduced. The list only shrinks.
  * A fixed violation must leave the list, and a smaller file must lower its
- * ceiling (test/lint/guardrails.test.ts checks both). See CLAUDE.md, "Architecture".
+ * ceiling (test/lint/guardrails.test.ts checks both). A rule is off in a file of
+ * the list, so the test also keeps the number of violations from growing. See CLAUDE.md, "Architecture".
  */
 
 /** The statuses of a task, as in src/domain/task/task-status.ts (the test keeps them equal). */
@@ -11,33 +12,31 @@ export const TASK_STATUS_VALUES = ['new', 'estimated', 'in-progress', 'closed'];
 
 /**
  * @typedef {object} Debt
- * @property {string[]} statusLiteral files of src/application comparing a task status with a string
- * @property {string[]} taskImportsHooks files of src/application/task importing src/application/hooks
- * @property {string[]} nodePath files of src/application importing node:path
+ * @property {Record<string, number>} statusLiteral files of src/application comparing a task status with a string, with how many times
+ * @property {Record<string, number>} taskImportsHooks files of src/application/task importing src/application/hooks, with how many imports
+ * @property {Record<string, number>} nodePath files of src/application importing node:path, with how many imports
  * @property {Record<string, number>} maxLines files over 400 lines, with their current length as the ceiling
  * @property {Record<string, number>} maxFunctionLines files with a function over 80 lines, with the longest one as the ceiling
  */
 
 /** @type {Debt} */
 export const DEBT = {
-  statusLiteral: [
-    'src/application/hooks/bind-session.ts',
-    'src/application/hooks/receive-hook.ts',
-    'src/application/hooks/session-task.ts',
-    'src/application/task/list-tasks.ts',
-    'src/application/task/record-retro.ts',
-    'src/application/task/resolve-active-task.ts',
-    'src/application/task/show-task.ts',
-    'src/application/task/task-cards.ts',
-  ],
-  taskImportsHooks: [
-    'src/application/task/attach-task.ts',
-    'src/application/task/import-session-logs.ts',
-    'src/application/task/revise-estimate.ts',
-    'src/application/task/start-task.ts',
-    'src/application/task/task-closing.ts',
-  ],
-  nodePath: ['src/application/hooks/flow-plans.ts', 'src/application/project/init-project.ts', 'src/application/project/stack.ts'],
+  statusLiteral: {
+    'src/application/hooks/receive-hook.ts': 1,
+    'src/application/hooks/session-task.ts': 1,
+    'src/application/task/bind-session.ts': 2,
+    'src/application/task/list-tasks.ts': 1,
+    'src/application/task/record-retro.ts': 1,
+    'src/application/task/resolve-active-task.ts': 2,
+    'src/application/task/show-task.ts': 1,
+    'src/application/task/task-cards.ts': 2,
+  },
+  taskImportsHooks: {},
+  nodePath: {
+    'src/application/hooks/flow-plans.ts': 1,
+    'src/application/project/init-project.ts': 1,
+    'src/application/project/stack.ts': 1,
+  },
   maxLines: {
     'src/domain/card/card.ts': 422,
     'src/domain/measurement/effort-calculator.ts': 935,
@@ -83,7 +82,7 @@ function statusRule(debt) {
   return [
     {
       files: ['src/application/**'],
-      ignores: debt.statusLiteral,
+      ignores: Object.keys(debt.statusLiteral),
       rules: { 'no-restricted-syntax': ['error', ...statusSelectors.map((selector) => ({ selector, message: STATUS_MESSAGE }))] },
     },
   ];
@@ -127,12 +126,12 @@ export function applicationImports(debt, boundary) {
   const restrictions = (file) => {
     const inTask = file === undefined || file.startsWith('src/application/task/');
     return {
-      patterns: [...boundary.patterns, ...(inTask && !debt.taskImportsHooks.includes(file ?? '') ? [TASK_IMPORTS_HOOKS] : [])],
-      paths: [...boundary.paths, ...(debt.nodePath.includes(file ?? '') ? [] : NODE_PATH)],
+      patterns: [...boundary.patterns, ...(inTask && !((file ?? '') in debt.taskImportsHooks) ? [TASK_IMPORTS_HOOKS] : [])],
+      paths: [...boundary.paths, ...((file ?? '') in debt.nodePath ? [] : NODE_PATH)],
     };
   };
   const base = { patterns: boundary.patterns, paths: [...boundary.paths, ...NODE_PATH] };
-  const debtFiles = [...new Set([...debt.taskImportsHooks, ...debt.nodePath])];
+  const debtFiles = [...new Set([...Object.keys(debt.taskImportsHooks), ...Object.keys(debt.nodePath)])];
   return [
     { files: ['src/application/**'], rules: { 'no-restricted-imports': ['error', base] } },
     { files: ['src/application/task/**'], rules: { 'no-restricted-imports': ['error', restrictions(undefined)] } },

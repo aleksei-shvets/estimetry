@@ -1,6 +1,6 @@
 import type { TaskId } from '../../domain/task/task-id.js';
 import type { TaskRepository } from '../../domain/task/task-repository.js';
-import type { BindSession } from '../hooks/bind-session.js';
+import type { BindSession } from './bind-session.js';
 import type { Clock } from '../ports/clock.js';
 import type { WorkspaceLocator } from '../ports/workspace-locator.js';
 import type { ResolveCurrentProject } from '../project/resolve-current-project.js';

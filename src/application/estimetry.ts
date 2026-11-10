@@ -18,7 +18,7 @@ import type { WorkspaceLocator } from './ports/workspace-locator.js';
 import { InitProject, type InitChoices, type InitInput, type InitReport, type InstallDependencies } from './project/init-project.js';
 import { ResolveCurrentProject } from './project/resolve-current-project.js';
 import { EventMetaSource } from './shared/event-meta-source.js';
-import { BindSession } from './hooks/bind-session.js';
+import { BindSession } from './task/bind-session.js';
 import { AttachTask, type AttachTaskInput, type AttachTaskResult } from './task/attach-task.js';
 import { ChangeParallelMode, type ChangeParallelModeInput, type ParallelModeChanged } from './task/change-parallel-mode.js';
 import { CreateTask, type CreateTaskInput } from './task/create-task.js';

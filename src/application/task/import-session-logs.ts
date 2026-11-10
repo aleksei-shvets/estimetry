@@ -7,7 +7,7 @@ import {
   type SessionLogFingerprint,
   type SessionLogReaders,
 } from '../contracts/session-logs.js';
-import { journalEntry } from '../hooks/journal-entry.js';
+import { journalEntry } from '../shared/journal-entry.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
 import type { Clock } from '../ports/clock.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';

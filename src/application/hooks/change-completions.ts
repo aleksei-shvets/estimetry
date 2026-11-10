@@ -13,7 +13,7 @@ import type { ProgressSeen, ProgressState } from '../ports/progress-state.js';
 import type { ProjectFiles } from '../ports/project-files.js';
 import type { ProjectPlanReading, ProjectPlans } from '../ports/project-plans.js';
 import type { TaskStatusReader, TaskSummary } from '../ports/task-status-reader.js';
-import { journalEntry } from './journal-entry.js';
+import { journalEntry } from '../shared/journal-entry.js';
 
 const SOURCE = 'estimetry';
 

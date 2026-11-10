@@ -2,6 +2,9 @@ import { ACTIVITY_EVENT_SCHEMA_VERSION } from '../../domain/measurement/activity
 import type { Author } from '../../domain/shared/author.js';
 import type { Timestamp } from '../../domain/shared/timestamp.js';
 
+/** The source of the records estimetry writes itself, not translated from a tool. */
+export const CORE_SOURCE = 'estimetry';
+
 export interface EntryMeta {
   readonly id: string;
   readonly at: Timestamp;
