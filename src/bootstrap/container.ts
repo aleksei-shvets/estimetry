@@ -55,7 +55,7 @@ export function createContainer(environment: Environment, options: ContainerOpti
     errors,
     app: () => (app ??= buildApp(layout, environment, errors)),
     hooks: async () => {
-      const receiver = await buildHookReceiver(layout, errors, options.startedAt ?? Date.now());
+      const receiver = await buildHookReceiver(layout, errors, options.startedAt ?? Date.now(), claudeConfigDir(environment));
       return { receive: (call) => receiver.execute(call) };
     },
   };
@@ -65,7 +65,7 @@ export function createContainer(environment: Environment, options: ContainerOpti
  * Only what a hook needs. The author comes from config.yaml alone: detecting it
  * would run git, and init has written the profile already.
  */
-async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, startedAt: number) {
+async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, startedAt: number, claudeConfig: string) {
   const [
     { ReceiveHook },
     { SessionTask },
@@ -195,6 +195,24 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     clock: { now: () => started },
     ids,
     authors: config,
+    // Only the session end parses a log, and only it loads the reader.
+    logs: async () => {
+      const [{ ImportSessionLogs }, { SessionLogReaderRegistry }, { ClaudeCodeLogs }, { YamlLogImportState }] = await Promise.all([
+        import('../application/task/import-session-logs.js'),
+        import('../integrations/tools/session-log-readers.js'),
+        import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
+        import('../infrastructure/persistence/yaml-log-import-state.js'),
+      ]);
+      return new ImportSessionLogs({
+        readers: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(claudeConfig)),
+        state: new YamlLogImportState(layout),
+        journal,
+        ids,
+        clock: { now: () => Timestamp.fromMillis(Date.now()) },
+        authors: config,
+        errors,
+      });
+    },
   });
 }
 
@@ -278,6 +296,9 @@ async function buildApp(layout: StorageLayout, environment: Environment, errors:
     { FileCloseProposals },
     { GitCodeMeasurer },
     { FsGitHead },
+    { SessionLogReaderRegistry },
+    { ClaudeCodeLogs },
+    { YamlLogImportState },
   ] = await Promise.all([
     import('../application/estimetry.js'),
     import('../infrastructure/git/git-cli.js'),
@@ -297,6 +318,9 @@ async function buildApp(layout: StorageLayout, environment: Environment, errors:
     import('../infrastructure/persistence/file-close-proposals.js'),
     import('../infrastructure/git/git-code-measurer.js'),
     import('../infrastructure/git/fs-git-head.js'),
+    import('../integrations/tools/session-log-readers.js'),
+    import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
+    import('../infrastructure/persistence/yaml-log-import-state.js'),
   ]);
   const git = new GitCli(cwd);
   const config = new YamlConfigStore(layout, () => git.userEmail() ?? userInfo().username);
@@ -326,6 +350,10 @@ async function buildApp(layout: StorageLayout, environment: Environment, errors:
       code: new GitCodeMeasurer(),
       head: new FsGitHead(),
       errors,
+      logs: {
+        readers: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(claudeConfigDir(environment))),
+        state: new YamlLogImportState(layout),
+      },
     },
     sessions: { bindings: new YamlSessionStore(layout), tasks: new FileTaskStatusReader(layout) },
   });

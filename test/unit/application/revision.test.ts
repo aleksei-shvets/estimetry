@@ -226,14 +226,14 @@ describe('revising the estimate', () => {
     expect(app.renegotiate({ title: 'Next' }).closed.fact).toBe(20);
   });
 
-  it('closes into a card v2: the counted fact, the work of the window and the counted fact at the revision', () => {
+  it('closes into a card v3: the counted fact, the work of the window and the counted fact at the revision', () => {
     startedTask();
     revise();
     closing.code.heads.set(ROOT, 'h1');
     app.closeTask({});
     const card = closing.cards.cards.get('T-1');
     expect(card).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       estimate: { likelyHours: 10 },
       currentEstimate: { likelyHours: 12 },
       fact: { totalMinutes: 70, counted: { totalMinutes: 20 } },
@@ -274,18 +274,18 @@ describe('cards of other schemas', () => {
     closing.cards.cards.delete('T-1');
     closing.cards.others.set('T-1', { schema: 'v1', card: { ...current, schemaVersion: 1 } as unknown as CardV1 });
     app.rebuild({ task: TaskId.parse('T-2') });
-    expect(closing.cards.cards.get('T-1')?.schemaVersion).toBe(2);
+    expect(closing.cards.cards.get('T-1')?.schemaVersion).toBe(3);
     expect(closing.calibration.current?.authors['dev@example.com']?.revised.overall.n).toBe(1);
     closing.cards.cards.delete('T-1');
     closing.cards.others.set('T-1', { schema: 'v1', card: { ...current, schemaVersion: 1 } as unknown as CardV1 });
-    expect(app.showTask({ task: T }).card?.schemaVersion).toBe(2);
+    expect(app.showTask({ task: T }).card?.schemaVersion).toBe(3);
     expect(closing.cards.cards.has('T-1')).toBe(true);
   });
 
   it('a card newer than this binary stops the recalculation and is reported', () => {
     closeT1();
     const before = closing.calibration.current;
-    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 3 });
+    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
     const report = app.rebuild({ task: T });
     expect(report.calibrationError).toMatch(/T-9 were written by a newer version of estimetry/);
     expect(closing.calibration.current).toBe(before);
@@ -306,7 +306,7 @@ describe('cards of other schemas', () => {
   });
 
   it('closing next to a newer card warns to update estimetry, not to rebuild', () => {
-    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 3 });
+    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
     startedTask();
     const closed = app.closeTask({});
     expect(closed.warnings).toEqual([expect.stringMatching(/newer version of estimetry.*update estimetry\)$/)]);

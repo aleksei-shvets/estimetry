@@ -10,7 +10,8 @@ import { Timestamp } from '../../../src/domain/shared/timestamp.js';
 import { TaskClosed, TaskNotClosed } from '../../../src/domain/task/task-errors.js';
 import { TaskId } from '../../../src/domain/task/task-id.js';
 import { activity } from '../../support/activity.js';
-import { fakeClosing } from '../../support/closing-fakes.js';
+import { fakeClosing, type FakeSessionLogs } from '../../support/closing-fakes.js';
+import type { SessionLogRead } from '../../../src/application/contracts/session-logs.js';
 import {
   FakeAuthorProvider,
   FakeWorkspaceLocator,
@@ -204,6 +205,59 @@ describe('close', () => {
     expect(app.listTasks({ closed: true }).map((t) => t.id)).toEqual(['T-1']);
     expect(app.showStatus({ task: T('T-1') }).task.closedAt).toBe(time('10:00').toISOString());
     expect(app.showTask({ task: T('T-1') }).card?.outcome).toBe('completed');
+  });
+});
+
+describe('session logs at the closing', () => {
+  const ms = (hhmm: string) => time(hhmm).toMillis();
+  const reader = () => closing.logs.readers.get('claude-code') as FakeSessionLogs;
+  const logRead = (end: string, size: number): SessionLogRead => ({
+    status: 'read',
+    from: 0,
+    next: 0,
+    turns: [{ key: 0, start: ms('09:00'), end: ms(end), tokens: [{ at: ms('09:00'), model: 'm', input: 0, output: 100, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 }] }],
+    agents: [],
+    cost: [{ startTime: 1, totalUSD: 3, unknown: false }],
+    skipped: 0,
+    fingerprint: { main: { size, mtimeMs: size }, agents: {} },
+  });
+
+  it('imports the log of every session of the task before task.closed; the card has its tokens and cost', () => {
+    startedTask();
+    journal.append(activity('turn.started', '09:00', { origin: 'user', source: 'claude-code' }));
+    journal.append(activity('tool.used', '09:10', { source: 'claude-code' }));
+    reader().logs.set('s1', logRead('09:25', 10));
+    const closed = app.closeTask({});
+    expect(closed).toMatchObject({ fact: 25, warnings: [] }); // the turn without its end closes where the log ends it
+    expect(records().map((r) => r.type)).toEqual(['plan.started', 'log.session', 'code.measured', 'plan.closing']);
+    expect(closing.cards.cards.get('T-1')?.usage).toMatchObject({ costUSD: 3, approximate: false, sessions: 1, withLogs: 1, tokens: { m: { output: 100 } } });
+  });
+
+  it('writes nothing into a closed task, and a reopened task gets the rest of the log at its next closing', () => {
+    startedTask();
+    journal.append(activity('turn.started', '09:00', { origin: 'user', source: 'claude-code' }));
+    journal.append(activity('turn.ended', '09:05', { source: 'claude-code' }));
+    reader().logs.set('s1', logRead('09:05', 10));
+    app.closeTask({});
+    reader().logs.set('s1', logRead('09:06', 20));
+    clock.advanceMinutes(30);
+    app.reopenTask({ task: T('T-1') });
+    clock.advanceMinutes(30);
+    app.closeTask({});
+    expect(records().filter((r) => r.type === 'log.session')).toHaveLength(2);
+  });
+
+  it('a log that cannot be read is a warning, not a refusal', () => {
+    startedTask();
+    journal.append(activity('turn.started', '09:00', { origin: 'user', source: 'claude-code' }));
+    journal.append(activity('turn.ended', '09:05', { source: 'claude-code' }));
+    reader().logs.set('s1', logRead('09:05', 10));
+    reader().read = () => {
+      throw new Error('broken');
+    };
+    const closed = app.closeTask({});
+    expect(closed.outcome).toBe('completed');
+    expect(closed.warnings).toEqual(['the log of session s1 was not imported (failed); the fact goes without it']);
   });
 });
 

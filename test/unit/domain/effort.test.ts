@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityEvent } from '../../../src/domain/measurement/activity-events.js';
 import { Duration } from '../../../src/domain/measurement/duration.js';
-import { measureEffort } from '../../../src/domain/measurement/effort-calculator.js';
+import { buildTimeline, measureEffort } from '../../../src/domain/measurement/effort-calculator.js';
 import { IdlePolicy } from '../../../src/domain/measurement/idle-policy.js';
+import type { LogBoundaries } from '../../../src/domain/measurement/log-boundaries.js';
 import { ManualTime } from '../../../src/domain/measurement/manual-time.js';
 import type { ParallelPeriod } from '../../../src/domain/measurement/parallel-mode.js';
 import { activity, at, ev } from '../../support/activity.js';
@@ -13,6 +14,7 @@ interface Options {
   readonly idle?: number;
   readonly manual?: readonly ManualTime[];
   readonly parallel?: readonly ParallelPeriod[];
+  readonly logs?: ReadonlyMap<string, LogBoundaries>;
 }
 
 /** Report with durations in minutes; the task starts at 08:00 and "now" is late in the evening by default. */
@@ -24,12 +26,15 @@ function measure(events: readonly ActivityEvent[], options: Options = {}) {
     parallel: options.parallel ?? [],
     policy: IdlePolicy.ofMinutes(options.idle ?? 30),
     now: at(options.now ?? '23:00'),
+    ...(options.logs === undefined ? {} : { logs: options.logs }),
   });
   const min = (d: Duration) => d.minutes;
   return {
     agents: min(report.agentTime),
     user: min(report.userTime),
     fact: min(report.fact),
+    low: min(report.factLow),
+    high: min(report.factHigh),
     uncertainty: min(report.uncertainty),
     work: min(report.agentWork),
     report,
@@ -512,5 +517,145 @@ describe('subagents that stop, resume and turn out to run in the background', ()
   it('agent.detached does not open or move an interval of the subagent', () => {
     const result = measure([activity('agent.detached', '09:00', { agent: 'a1' }), ev.agentStarted('10:00', 'a1'), ev.agentStopped('10:10', 'a1')]);
     expect(result.agents).toBe(10);
+  });
+});
+
+describe('range of the fact', () => {
+  it('lowers by the counted doubts and raises by the discarded ones', () => {
+    const events = [ev.prompt('09:00'), ev.stop('09:10'), ev.prompt('09:30'), ev.stop('09:40'), ev.prompt('10:20'), ev.stop('10:30')];
+    expect(measure(events, { now: '10:30' })).toMatchObject({ fact: 50, low: 45, high: 90, uncertainty: 45 });
+  });
+
+  it('a long tool may be no work at all', () => {
+    const result = measure([ev.prompt('10:00'), ev.toolStarted('10:00'), ev.toolUsed('13:00'), ev.stop('13:00')], { now: '13:00' });
+    expect(result).toMatchObject({ fact: 180, low: 0, high: 180 });
+  });
+
+  it('a turn without its end may have gone on up to the threshold', () => {
+    const events = [ev.prompt('10:00'), ev.toolUsed('10:10'), ev.prompt('11:00'), ev.stop('11:05')];
+    expect(measure(events, { now: '11:05' })).toMatchObject({ fact: 15, low: 15, high: 45 });
+  });
+
+  it('a counted doubt does not lower the fact while another session surely works', () => {
+    const events = [
+      ev.prompt('10:00'),
+      ev.stop('10:20'), // 20 silent minutes of s1: 10:15–10:20 doubtful
+      ev.prompt('10:00', { session: 's2' }),
+      ev.toolStarted('10:00', { session: 's2' }),
+      ev.toolUsed('10:40', { session: 's2' }),
+      ev.stop('10:40', { session: 's2' }),
+    ];
+    const result = measure(events, { now: '10:40' });
+    expect(result.fact).toBe(60); // agents 10:00–10:40, the user of s1 10:20–10:40
+    expect(result.low).toBe(55); // only the user's 10:35–10:40; the agents stay 40 minutes
+  });
+
+  it('a discarded pause of a background subagent leaves the user as is', () => {
+    const events = [
+      ev.agentStarted('09:55', 'a1', { background: true }),
+      ev.toolUsed('09:58', { agent: 'a1' }),
+      ev.agentStopped('10:40', 'a1'),
+      ev.prompt('10:00'),
+      ev.stop('10:05'),
+      ev.prompt('10:20'),
+      ev.stop('10:25'),
+    ];
+    const timeline = buildTimeline({
+      activity: events,
+      startedAt: at('08:00'),
+      manual: [],
+      parallel: [],
+      policy: IdlePolicy.ofMinutes(30),
+      now: at('10:40'),
+    });
+    expect(timeline.bounds.high.user.total.minutes).toBe(timeline.user.total.minutes);
+    expect(timeline.bounds.high.agents.total.minutes).toBe(45); // 09:55–10:40
+  });
+});
+
+/** Log boundaries of session `s1` from local times. */
+function logOf(turns: readonly [string, string][], agents: Record<string, readonly [string, string][]> = {}): ReadonlyMap<string, LogBoundaries> {
+  const ms = (time: string) => at(time).toMillis();
+  return new Map([
+    [
+      's1',
+      {
+        turns: turns.map(([start, end]) => ({ start: ms(start), end: ms(end) })),
+        agents: new Map(Object.entries(agents).map(([agent, spans]) => [agent, spans.map(([a, b]) => [ms(a), ms(b)] as const)])),
+      },
+    ],
+  ]);
+}
+
+describe('refining by the session log', () => {
+  const abandoned = [ev.prompt('10:00'), ev.toolUsed('10:10'), ev.prompt('10:50'), ev.stop('10:55')];
+
+  it('closes a turn without its end where the log ends it, and the user time after it counts as usual', () => {
+    const without = measure(abandoned, { now: '10:55' });
+    expect(without).toMatchObject({ agents: 15, user: 0, uncertainty: 30 });
+    const result = measure(abandoned, { now: '10:55', logs: logOf([['10:00', '10:25'], ['10:50', '10:55']]) });
+    expect(result).toMatchObject({ agents: 30, user: 25, uncertainty: 10 }); // 10:40–10:50 of the user's 25 minutes
+  });
+
+  it('never closes a turn before its last event of the hooks, nor after the next event of the main agent', () => {
+    // A log turn that ended before the last event of the hooks does not hold it: the heuristics decide.
+    expect(measure(abandoned, { now: '10:55', logs: logOf([['10:00', '10:05']]) })).toMatchObject({ agents: 15, uncertainty: 30 });
+    // Ended at that event: the turn closes there, and the 40 minutes to the next prompt are a pause of the user.
+    expect(measure(abandoned, { now: '10:55', logs: logOf([['10:00', '10:10']]) })).toMatchObject({ agents: 15, user: 0, uncertainty: 40 });
+    // Past the next prompt the end is cut there; the 10:10–10:50 silence is then a discarded pause of the agent.
+    expect(measure(abandoned, { now: '10:55', logs: logOf([['10:00', '11:30']]) })).toMatchObject({ agents: 15, uncertainty: 40 });
+  });
+
+  it('an event of a background subagent does not cut the turn short', () => {
+    const events = [...abandoned, ev.agentStarted('10:12', 'a1', { background: true }), ev.toolUsed('10:15', { agent: 'a1' }), ev.agentStopped('10:16', 'a1')];
+    const result = measure(events, { now: '10:55', logs: logOf([['10:00', '10:25'], ['10:50', '10:55']]) });
+    expect(result.agents).toBe(30);
+  });
+
+  it('starts a restored turn where the log starts it, within the threshold', () => {
+    const events = [ev.toolUsed('14:58'), ev.stop('15:00')];
+    expect(measure(events, { start: '14:00', now: '15:00' })).toMatchObject({ agents: 32, uncertainty: 30 });
+    expect(measure(events, { start: '14:00', now: '15:00', logs: logOf([['14:33', '15:00']]) })).toMatchObject({ agents: 27, uncertainty: 0 });
+    expect(measure(events, { start: '14:00', now: '15:00', logs: logOf([['13:00', '15:00']]) })).toMatchObject({ agents: 32, uncertainty: 30 });
+  });
+
+  it('ends a subagent without its stop at its last record before its next start', () => {
+    const events = [ev.agentStarted('10:10', 'a1'), ev.toolUsed('10:20', { agent: 'a1' }), ev.agentStarted('11:00', 'a1'), ev.agentStopped('11:10', 'a1')];
+    expect(measure(events, { now: '11:10' })).toMatchObject({ agents: 20, uncertainty: 30 });
+    const logs = logOf([], { a1: [['10:10', '10:35'], ['11:00', '11:10']] });
+    expect(measure(events, { now: '11:10', logs })).toMatchObject({ agents: 35, uncertainty: 0 });
+  });
+
+  it('leaves a subagent run without its stop to the heuristics when its log has no records of that run', () => {
+    const events = [ev.agentStarted('10:10', 'a1'), ev.toolUsed('10:20', { agent: 'a1' }), ev.agentStarted('11:00', 'a1'), ev.agentStopped('11:10', 'a1')];
+    // Records of earlier and later runs only: the run that lost its stop has no pair in the log.
+    const logs = logOf([], { a1: [['09:00', '09:30'], ['11:00', '11:10']] });
+    expect(measure(events, { now: '11:10', logs })).toMatchObject({ agents: 20, uncertainty: 30 });
+  });
+
+  it('leaves a long tool, a wait and a turn the log does not hold to the heuristics', () => {
+    const tool = [ev.prompt('10:00'), ev.toolStarted('10:00'), ev.toolUsed('13:00'), ev.stop('13:00')];
+    expect(measure(tool, { now: '13:00', logs: logOf([['10:00', '13:01']]) })).toMatchObject({ fact: 180, low: 0, high: 180 });
+    const wait = [ev.prompt('10:00'), ev.toolStarted('10:00', { toolUseId: 't1' }), ev.waiting('10:00'), ev.toolUsed('12:00', { toolUseId: 't1' }), ev.stop('12:00')];
+    expect(measure(wait, { now: '12:00', logs: logOf([['10:00', '12:00']]) })).toEqual({ ...measure(wait, { now: '12:00' }), report: expect.anything() });
+    const early = [ev.prompt('09:00'), ev.toolUsed('09:10'), ev.prompt('11:00'), ev.stop('11:05')];
+    expect(measure(early, { now: '11:05', logs: logOf([['11:00', '11:05']]) }).uncertainty).toBe(30);
+  });
+});
+
+describe('the range always holds the fact', () => {
+  it('a discarded stretch of the main agent covered by a background subagent does not take the user time out of the upper bound', () => {
+    const events = [
+      ev.prompt('10:00'),
+      ev.toolUsed('10:10'),
+      ev.prompt('10:25'), // the first turn never ended: 10:10–10:25 is doubtful, and the user's quiet gap counts it
+      ev.stop('10:30'),
+      ev.agentStarted('10:05', 'a1', { background: true }),
+      ev.toolUsed('10:20', { agent: 'a1' }),
+      ev.agentStopped('10:30', 'a1'),
+    ];
+    const result = measure(events, { now: '10:30' });
+    expect(result.high).toBeGreaterThanOrEqual(result.fact);
+    expect(result.low).toBeLessThanOrEqual(result.fact);
   });
 });

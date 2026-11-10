@@ -83,7 +83,7 @@ describe('emt similar', () => {
 
   it('names cards of a newer estimetry and compares the rest', () => {
     put(syntheticCard({ id: 'T-1' }));
-    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 3 });
+    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
     expect(app.similarTasks({ type: 'feature' })).toMatchObject({ tasks: [{ id: 'T-1' }], skipped: ['T-9'] });
   });
 });
@@ -112,7 +112,7 @@ describe('emt calibrate', () => {
 
   it('gives no coefficient next to a card of a newer estimetry, without failing', () => {
     put(...six());
-    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 3 });
+    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
     expect(app.calibration({ type: 'feature' })).toMatchObject({ coefficient: null, skipped: ['T-9'] });
   });
 

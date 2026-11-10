@@ -19,11 +19,39 @@ export interface SessionBinding {
    * belongs to the closed task, not to another one.
    */
   readonly closedTask?: string;
+  /** Every task the session has served, in order; absent in bindings written before it was kept. */
+  readonly tasks?: readonly string[];
+  /** Path of the session log the tool reported in its hooks. */
+  readonly transcript?: string;
+}
+
+/**
+ * What `update` keeps whatever the change builds: every task the session has
+ * served and the path of its log. Callers build a binding anew on every switch.
+ */
+export function carryOver(current: SessionBinding | undefined, next: SessionBinding): SessionBinding {
+  const served = [
+    ...(current?.tasks ?? []),
+    ...(current?.task === undefined ? [] : [current.task]),
+    ...(next.tasks ?? []),
+    ...(next.task === undefined ? [] : [next.task]),
+  ];
+  const tasks = [...new Set(served)];
+  const transcript = next.transcript ?? current?.transcript;
+  return { ...next, ...(tasks.length === 0 ? {} : { tasks }), ...(transcript === undefined ? {} : { transcript }) };
+}
+
+/** Every task the session has served, as far as the binding remembers. */
+export function servedTasks(binding: SessionBinding | undefined): string[] {
+  if (binding === undefined) {
+    return [];
+  }
+  return [...new Set([...(binding.tasks ?? []), ...(binding.task === undefined ? [] : [binding.task]), ...(binding.closedTask === undefined ? [] : [binding.closedTask])])];
 }
 
 export interface SessionBindings {
   get(session: SessionId): SessionBinding | undefined;
-  /** Reads, decides and writes in one locked step; returning undefined leaves the binding as it was. */
+  /** Reads, decides and writes in one locked step; returning undefined leaves the binding as it was. The result keeps `carryOver`. */
   update(session: SessionId, change: (current: SessionBinding | undefined) => SessionBinding | undefined): SessionBinding | undefined;
   /** Bindings of the sessions of a project, for commits made outside any session. */
   ofProject(project: string): SessionBinding[];

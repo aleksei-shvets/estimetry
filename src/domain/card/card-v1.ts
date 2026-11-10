@@ -1,13 +1,14 @@
-import { noExtraTallies, type Card, type CardEstimate, type CardFact, type CardPart } from './card.js';
+import { noExtraTallies, type Card, type CardEstimate, type CardPart } from './card.js';
+import { upgradeCardV2, type CardFactV2, type CardV2 } from './card-v2.js';
 
 /** A card of schema 1, as `estimate-revision` and earlier wrote it. */
 export interface CardV1 extends Omit<
   Card,
-  'schemaVersion' | 'estimate' | 'currentEstimate' | 'revisions' | 'fact' | 'currentParts' | 'beforeRevisionMinutes' | 'coveredByRevision' | 'convertedFrom' | 'text'
+  'schemaVersion' | 'estimate' | 'currentEstimate' | 'revisions' | 'fact' | 'currentParts' | 'beforeRevisionMinutes' | 'coveredByRevision' | 'convertedFrom' | 'text' | 'usage'
 > {
   readonly schemaVersion: 1;
   readonly estimate: Omit<CardEstimate, 'type'> | null;
-  readonly fact: CardFact;
+  readonly fact: CardFactV2;
   readonly parts: readonly CardPart[];
   readonly text: Omit<Card['text'], 'currentParts' | 'revisions'>;
 }
@@ -19,7 +20,7 @@ export interface CardV1 extends Omit<
  */
 export function upgradeCardV1(card: CardV1): Card {
   const estimate = card.estimate === null ? null : { ...card.estimate, type: card.task.type };
-  return {
+  const v2: CardV2 = {
     ...card,
     schemaVersion: 2,
     estimate,
@@ -35,4 +36,5 @@ export function upgradeCardV1(card: CardV1): Card {
     convertedFrom: 1,
     text: { ...card.text, currentParts: card.text.parts, revisions: [] },
   };
+  return upgradeCardV2(v2);
 }

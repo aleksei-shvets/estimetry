@@ -1,4 +1,6 @@
+import type { CardUsage } from '../../domain/card/card.js';
 import type { Duration } from '../../domain/measurement/duration.js';
+import { usageSummary, type TaskUsage } from '../../domain/usage/task-usage.js';
 import type { ThreePointData } from '../../domain/estimate/three-point-estimate.js';
 import type { TaskId } from '../../domain/task/task-id.js';
 import type { PlanProgress } from '../../domain/progress/plan-progress.js';
@@ -21,6 +23,10 @@ export interface StatusView {
   readonly fact: number;
   readonly agentTime: number;
   readonly userTime: number;
+  /** Bounds of the fact: without the counted doubtful stretches and with the discarded ones. */
+  readonly factLow: number;
+  readonly factHigh: number;
+  /** Width of the range. */
   readonly uncertainty: number;
   readonly uncertaintyShare: number | null;
   readonly uncertaintyExceedsTarget: boolean;
@@ -53,7 +59,12 @@ export interface StatusView {
   /** Projects of the task whose plan cannot be read here; with a plan their groups may look not started. */
   readonly untrackedProjects: readonly UntrackedProject[];
   readonly completedChanges: readonly CompletedChange[];
+  /** Tokens and cost from the logs of the task's sessions; null when none has a log. */
+  readonly usage: UsageView | null;
 }
+
+/** The same shape as the usage of a card. */
+export type UsageView = CardUsage;
 
 export interface PlanView {
   readonly done: number;
@@ -72,6 +83,8 @@ export interface CountedFact {
   readonly agentTime: number;
   readonly userTime: number;
   readonly manualTime: number;
+  readonly factLow: number;
+  readonly factHigh: number;
   readonly uncertainty: number;
   readonly agentWork: number;
   readonly uncertaintyShare: number | null;
@@ -103,9 +116,9 @@ export class ShowStatus {
     const task = this.activeTask.inProgress(input.task);
     // One read of the journal for the fact and the completions.
     const journal = task.startedAt === undefined ? undefined : this.journal.readAll(task.id);
-    const report = this.measurement.measure(task, journal?.activity ?? []);
+    const report = this.measurement.measure(task, journal);
     // Without lost windows the counted fact is the whole one: the timeline is built once.
-    const counted = task.lostWindows.length === 0 ? report : this.measurement.counted(task, journal?.activity ?? []);
+    const counted = task.lostWindows.length === 0 ? report : this.measurement.counted(task, journal);
     const snapshots = new Set(
       (journal?.records ?? []).flatMap((record) => (record.type === 'plan.revised' ? [record.data.revision] : [])),
     );
@@ -131,6 +144,8 @@ export class ShowStatus {
       fact: minutes(report.fact),
       agentTime: minutes(report.agentTime),
       userTime: minutes(report.userTime),
+      factLow: minutes(report.factLow),
+      factHigh: minutes(report.factHigh),
       uncertainty: minutes(report.uncertainty),
       uncertaintyShare: report.uncertaintyShare ?? null,
       uncertaintyExceedsTarget: report.exceedsUncertaintyTarget,
@@ -144,6 +159,8 @@ export class ShowStatus {
         agentTime: minutes(counted.agentTime),
         userTime: minutes(counted.userTime),
         manualTime: minutes(counted.manualTime),
+        factLow: minutes(counted.factLow),
+        factHigh: minutes(counted.factHigh),
         uncertainty: minutes(counted.uncertainty),
         agentWork: minutes(counted.agentWork),
         uncertaintyShare: counted.uncertaintyShare ?? null,
@@ -185,10 +202,15 @@ export class ShowStatus {
       planUnavailable: progress.unavailable ?? null,
       untrackedProjects: progress.untracked,
       completedChanges: progress.completed,
+      usage: usageView(this.measurement.usage(task, journal)),
     };
   }
 }
 
 function minutes(duration: Duration): number {
   return Math.round(duration.minutes);
+}
+
+function usageView(usage: TaskUsage | undefined): UsageView | null {
+  return usage === undefined ? null : usageSummary(usage);
 }

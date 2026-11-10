@@ -45,9 +45,11 @@ export const claudeCodeHooks: HookAdapter = {
     }
     const session = SessionId.parse(p['session_id']);
     const cwd = typeof p['cwd'] === 'string' ? p['cwd'] : undefined;
+    const transcript = typeof p['transcript_path'] === 'string' && p['transcript_path'] !== '' ? p['transcript_path'] : undefined;
     return {
       session,
       ...(cwd === undefined ? {} : { cwd }),
+      ...(transcript === undefined ? {} : { transcript }),
       kind: KINDS[event] ?? 'other',
       events: translateEvent(event, p),
     };

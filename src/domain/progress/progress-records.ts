@@ -1,6 +1,7 @@
 import { CalendarDate } from '../shared/calendar-date.js';
 import { DomainError } from '../shared/domain-error.js';
 import type { EventEnvelope } from '../shared/event-envelope.js';
+import type { LogSession } from './session-log.js';
 
 /*
  * Records of progress written next to activity in the journal of a task:
@@ -158,7 +159,8 @@ export type ProgressRecord =
   | PlanStarted
   | PlanRevised
   | PlanClosing
-  | CodeMeasured;
+  | CodeMeasured
+  | LogSession;
 export const PROGRESS_RECORD_TYPES: readonly ProgressRecord['type'][] = [
   'checkpoint.recorded',
   'commit.recorded',
@@ -168,6 +170,7 @@ export const PROGRESS_RECORD_TYPES: readonly ProgressRecord['type'][] = [
   'plan.revised',
   'plan.closing',
   'code.measured',
+  'log.session',
 ];
 
 export function isProgressRecordType(type: unknown): type is ProgressRecord['type'] {
@@ -271,6 +274,8 @@ export function parseProgressRecord(value: unknown, options: { readonly withoutT
         }
       }
     });
+  } else if (type === 'log.session') {
+    logSession(data);
   } else if (type === 'plan.baseline') {
     text(data, 'project', 'data.');
     list(data['directories'], 'data.directories').forEach((directory, i) => {
@@ -293,6 +298,62 @@ export function parseProgressRecord(value: unknown, options: { readonly withoutT
     files(data, 'data');
   }
   return record as unknown as ProgressRecord;
+}
+
+function logSession(data: Json): void {
+  text(data, 'session', 'data.');
+  text(data, 'importId', 'data.');
+  for (const key of ['from', 'part', 'parts', 'skipped']) {
+    count(data, key, 'data.');
+  }
+  list(data['turns'], 'data.turns').forEach((item, i) => {
+    const turn = object(item, `data.turns[${i}]`);
+    count(turn, 'key', `data.turns[${i}].`);
+    for (const key of ['start', 'end']) {
+      if (turn[key] !== undefined) {
+        moment(turn, key, `data.turns[${i}].`);
+      }
+    }
+    buckets(turn['tokens'], `data.turns[${i}].tokens`);
+  });
+  list(data['agents'], 'data.agents').forEach((item, i) => {
+    const agent = object(item, `data.agents[${i}]`);
+    text(agent, 'agent', `data.agents[${i}].`);
+    list(agent['spans'], `data.agents[${i}].spans`).forEach((span, j) => {
+      const path = `data.agents[${i}].spans[${j}]`;
+      if (!Array.isArray(span) || span.length !== 2 || !span.every((at) => Number.isSafeInteger(at))) {
+        throw new InvalidProgressRecord(path, 'must be a pair of times in milliseconds');
+      }
+    });
+    buckets(agent['tokens'], `data.agents[${i}].tokens`);
+  });
+  list(data['cost'], 'data.cost').forEach((item, i) => {
+    const total = object(item, `data.cost[${i}]`);
+    moment(total, 'startTime', `data.cost[${i}].`);
+    if (typeof total['totalUSD'] !== 'number' || !Number.isFinite(total['totalUSD']) || total['totalUSD'] < 0) {
+      throw new InvalidProgressRecord(`data.cost[${i}].totalUSD`, 'must be a non-negative number');
+    }
+    if (typeof total['unknown'] !== 'boolean') {
+      throw new InvalidProgressRecord(`data.cost[${i}].unknown`, 'must be true or false');
+    }
+  });
+}
+
+function buckets(value: unknown, path: string): void {
+  list(value, path).forEach((item, i) => {
+    const bucket = object(item, `${path}[${i}]`);
+    moment(bucket, 'at', `${path}[${i}].`);
+    text(bucket, 'model', `${path}[${i}].`);
+    for (const key of ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h']) {
+      count(bucket, key, `${path}[${i}].`);
+    }
+  });
+}
+
+function moment(record: Json, key: string, prefix: string): void {
+  if (!Number.isSafeInteger(record[key])) {
+    throw new InvalidProgressRecord(`${prefix}${key}`, 'must be a time in milliseconds');
+  }
 }
 
 function change(value: unknown, path: string): void {

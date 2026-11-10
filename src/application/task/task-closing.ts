@@ -14,6 +14,7 @@ import type { SessionBindings } from '../ports/session-bindings.js';
 import type { CodeVolumeService } from './code-volume-service.js';
 import type { PlanSnapshots } from './plan-snapshots.js';
 import { derivedWarning } from './derived-steps.js';
+import type { ImportSessionLogs } from './import-session-logs.js';
 import type { TaskCards } from './task-cards.js';
 
 /** Steps around `task.closed`, shared by `emt close` and `emt renegotiate`. */
@@ -28,14 +29,20 @@ export class TaskClosing {
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
     private readonly authors: AuthorProvider,
+    /** The importer of session logs; only the closing calls it. */
+    private readonly logs?: () => ImportSessionLogs,
   ) {}
 
   /**
    * What cannot be measured later goes into the journal before the task
-   * closes: the code volume and the plan. A closing that fails after this
-   * leaves records that the next closing supersedes.
+   * closes: the logs of its sessions, the code volume and the plan. A closing
+   * that fails after this leaves records that the next closing supersedes.
+   * `recordedAt` is the moment `task.closed` is written: the records of the
+   * logs carry it, so they never fall after the closing. Returns warnings of
+   * logs that could not be imported.
    */
-  prepare(task: Task, near: string | undefined): void {
+  prepare(task: Task, near: string | undefined, recordedAt: Timestamp): string[] {
+    const warnings = this.importLogs(task, recordedAt);
     const now = this.clock.now();
     const records = this.journal.readRecords(task.id);
     this.journal.appendRecord(
@@ -46,6 +53,42 @@ export class TaskClosing {
       ),
     );
     this.journal.appendRecord(journalEntry<PlanClosing>('plan.closing', { source: CORE_SOURCE, ...this.plans.closing(task, near) }, this.meta(task, now)));
+    return warnings;
+  }
+
+  /** Every session of the task, without a time budget: the user waits for the closing anyway. */
+  private importLogs(task: Task, recordedAt: Timestamp): string[] {
+    if (this.logs === undefined) {
+      return [];
+    }
+    const importer = this.logs();
+    const sessions = new Map<string, string>();
+    for (const event of this.journal.readActivity(task.id)) {
+      if (!sessions.has(event.data.session) && event.data.source !== CORE_SOURCE) {
+        sessions.set(event.data.session, event.data.source);
+      }
+    }
+    const warnings: string[] = [];
+    for (const [session, source] of sessions) {
+      let id: SessionId;
+      try {
+        id = SessionId.parse(session);
+      } catch {
+        continue; // not an id a tool gives: it never names a log, and it must not name a file
+      }
+      const path = this.bindings.get(id)?.transcript;
+      const [result] = importer.execute({
+        session,
+        source,
+        at: recordedAt,
+        ...(path === undefined ? {} : { path }),
+        tasks: [{ id: task.id.toString(), project: task.homeProject.value }],
+      });
+      if (result !== undefined && (result.outcome === 'failed' || result.outcome === 'unrecognized')) {
+        warnings.push(`the log of session ${session} was not imported (${result.outcome}); the fact goes without it`);
+      }
+    }
+    return warnings;
   }
 
   /**

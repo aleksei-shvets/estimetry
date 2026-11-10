@@ -110,6 +110,15 @@ export class StorageLayout {
     return join(this.root, 'progress', `${taskId}.yaml`);
   }
 
+  /** Cache of the imports of a session's log, by task; the session id is checked before it gets here. */
+  logImport(session: string): string {
+    return join(this.root, 'log-import', `${session}.yaml`);
+  }
+
+  logImportLock(session: string): string {
+    return join(this.root, 'log-import', `${session}.lock`);
+  }
+
   unassignedJournal(project: string): string {
     return join(this.eventsDir, 'unassigned', `${project}.jsonl`);
   }

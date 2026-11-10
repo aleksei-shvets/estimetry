@@ -43,7 +43,7 @@ describe('emt similar', () => {
 
   it('a card of a newer estimetry is skipped; nothing to compare by is an error', async () => {
     cards(...six());
-    writeFileSync(join(cli.home, 'cards', 'T-9.yaml'), stringify({ schemaVersion: 3, task: { id: 'T-9' } }));
+    writeFileSync(join(cli.home, 'cards', 'T-9.yaml'), stringify({ schemaVersion: 4, task: { id: 'T-9' } }));
     const json = JSON.parse((await emt('similar', '--type', 'feature', '--json')).stdout) as { skipped: string[] };
     expect(json.skipped).toEqual(['T-9']);
     const none = await emt('similar');
@@ -75,7 +75,7 @@ describe('emt calibrate', () => {
   it('next to a card of a newer estimetry gives no coefficient and leaves calibration.json as it was', async () => {
     cards(...six());
     writeFileSync(join(cli.home, 'calibration.json'), '{"kept":true}\n');
-    writeFileSync(join(cli.home, 'cards', 'T-9.yaml'), stringify({ schemaVersion: 3, task: { id: 'T-9' } }));
+    writeFileSync(join(cli.home, 'cards', 'T-9.yaml'), stringify({ schemaVersion: 4, task: { id: 'T-9' } }));
     const result = await emt('calibrate', '--type', 'feature');
     expect(result.code).toBe(0);
     expect(result.stdout).toMatch(/^Without calibration/);

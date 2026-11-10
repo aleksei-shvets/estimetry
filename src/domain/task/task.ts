@@ -50,6 +50,8 @@ export interface TaskClosure {
   readonly outcome: TaskOutcome;
   readonly spawned?: string;
   readonly reopenedAt?: string;
+  /** When `task.closed` was written; `at` may be backdated. Absent in snapshots written before it was kept. */
+  readonly recordedAt?: string;
 }
 
 /** One revision of the estimate, as the task remembers it. */
@@ -865,6 +867,7 @@ export class Task {
           at: event.data.at,
           outcome: event.data.outcome,
           ...(event.data.spawned === undefined ? {} : { spawned: event.data.spawned }),
+          recordedAt: event.ts,
         });
         break;
       }

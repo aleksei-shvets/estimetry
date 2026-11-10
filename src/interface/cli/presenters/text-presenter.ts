@@ -4,7 +4,7 @@ import type { SimilarTasksView } from '../../../application/task/find-similar-ta
 import type { RatioStats } from '../../../domain/calibration/calibration.js';
 import type { InitReport } from '../../../application/project/init-project.js';
 import type { CloseSummary } from '../../../application/task/close-task.js';
-import type { Card } from '../../../domain/card/card.js';
+import type { Card, CardUsage } from '../../../domain/card/card.js';
 import type { StatusView } from '../../../application/task/show-status.js';
 import type { TaskView } from '../../../application/task/task-view.js';
 import type { Presenter } from './presenter.js';
@@ -204,6 +204,10 @@ function cardText(card: Card): string {
         `${card.code.projects.some((p) => p.source === 'unknown') ? ' (some projects unknown)' : ''}`,
     ]);
   }
+  if (card.fact.lowMinutes !== null && card.fact.highMinutes !== null) {
+    rows.splice(2, 0, ['uncertainty', `${formatMinutes(card.fact.lowMinutes)} – ${formatMinutes(card.fact.highMinutes)}`]);
+  }
+  rows.push(...usageRows(card.usage));
   if (card.retro === 'pending') {
     rows.push(['retro', 'pending: run `emt retro`']);
   } else {
@@ -214,6 +218,32 @@ function cardText(card: Card): string {
     }
   }
   return table(rows);
+}
+
+/** The cost with how many of the task's sessions have a log, then tokens by model. */
+function usageRows(usage: CardUsage | null): [string, string][] {
+  if (usage === null) {
+    return [];
+  }
+  const cost =
+    usage.costUSD === null
+      ? 'unknown'
+      : `$${usage.costUSD.toFixed(2)}${usage.approximate ? ' (approximate: split by tokens)' : ''}`;
+  const models = Object.entries(usage.tokens).map(
+    ([model, t]): [string, string] => [
+      `  ${model}`,
+      `in ${tokenCount(t.input)}, out ${tokenCount(t.output)}, cache read ${tokenCount(t.cacheRead)}, cache write ${tokenCount(t.cacheWrite5m + t.cacheWrite1h)}`,
+    ],
+  );
+  return [['cost', `${cost}, from the logs of ${usage.withLogs} of ${usage.sessions} sessions`], ...(models.length === 0 ? [] : [['tokens', ''] as [string, string], ...models])];
+}
+
+/** `950`, `1.2k`, `3.4M`: token counts at a glance. */
+function tokenCount(n: number): string {
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  }
+  return n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
 }
 
 /** `1h 40m`, `9h`, `25m`; zero is `0m`. */
@@ -235,10 +265,12 @@ function statusText(view: StatusView): string {
   // With revisions every line about the fact is about the counted fact; the whole one is shown apart.
   const revised = view.revisions.length > 0;
   const shown = revised ? view.counted : view;
-  const uncertainty =
-    `± ${formatMinutes(shown.uncertainty)}` +
-    (shown.uncertaintyShare === null ? '' : ` (${percent(shown.uncertaintyShare)})`) +
-    (shown.uncertaintyExceedsTarget ? ', above the 5% target' : '');
+  const notes = [
+    shown.uncertaintyShare === null ? undefined : `${percent(shown.uncertaintyShare)} of the fact`,
+    shown.uncertaintyExceedsTarget ? 'above the 5% target' : undefined,
+  ].filter((note) => note !== undefined);
+  // The fact lies in this range: the heuristics may have counted too much or left out work.
+  const uncertainty = `${formatMinutes(shown.factLow)} – ${formatMinutes(shown.factHigh)}${notes.length === 0 ? '' : ` (${notes.join(', ')})`}`;
   const extras = Object.entries(view.records.extraMinutesByCategory).map(
     ([category, minutes]) => `${category} ${formatMinutes(minutes)}`,
   );
@@ -271,6 +303,7 @@ function statusText(view: StatusView): string {
     `${view.records.manual} manual, ${view.records.extras} extra${extras.length === 0 ? '' : ` (${extras.join(', ')})`}`,
   ]);
   rows.push(...planRows(view));
+  rows.push(...usageRows(view.usage));
   const since =
     (view.task.startedAt === undefined ? '' : ` since ${localTime(view.task.startedAt)}`) +
     (view.task.closedAt === undefined ? '' : `, closed ${localTime(view.task.closedAt)}`);

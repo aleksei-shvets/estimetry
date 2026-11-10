@@ -132,9 +132,9 @@ describe('cards of revised tasks', () => {
     expect((await emt('close', '--yes')).code).toBe(0);
   }
 
-  it('a closed revised task gets a card v2 and calibration v2 with the revised slices', async () => {
+  it('a closed revised task gets a card v3 and calibration v2 with the revised slices', async () => {
     await closeRevised();
-    expect(card()).toMatchObject({ schemaVersion: 2, estimate: { likelyHours: 4, type: 'feature' }, currentEstimate: { likelyHours: 6 }, revisions: [{ spent: 'exclude', category: 'missed-analysis' }] });
+    expect(card()).toMatchObject({ schemaVersion: 3, estimate: { likelyHours: 4, type: 'feature' }, currentEstimate: { likelyHours: 6 }, revisions: [{ spent: 'exclude', category: 'missed-analysis' }] });
     const written = JSON.parse(calibration()) as { schemaVersion: number; authors: Record<string, { revisions: { byType: Record<string, unknown> } }> };
     expect(written.schemaVersion).toBe(2);
     expect(Object.values(written.authors)[0]?.revisions.byType['feature']).toBeDefined();
@@ -143,7 +143,7 @@ describe('cards of revised tasks', () => {
     expect(shown.stdout).toMatch(/revision 1\s+missed-analysis, exclude/);
   });
 
-  it('a card of schema 1 is written again as v2, and rebuild after --repair gives the same card', async () => {
+  it('a card of schema 1 is written again as v3, and rebuild after --repair gives the same card', async () => {
     hook('SessionStart', { source: 'startup' });
     expect((await emt('estimate', 'revise', 'plan2.yaml', '--reason', 'x', '--category', 'rework', '--spent', 'exclude', '--lost-from', ago(60))).code).toBe(0);
     // The plan snapshot after the revision got lost; --repair writes it later.
@@ -155,7 +155,7 @@ describe('cards of revised tasks', () => {
     const v2 = card();
     writeFileSync(join(cli.home, 'cards', 'T-1.yaml'), stringify({ ...v2, schemaVersion: 1, currentEstimate: undefined }));
     expect((await emt('task', 'show', 'T-1')).code).toBe(0);
-    expect(card()['schemaVersion']).toBe(2);
+    expect(card()['schemaVersion']).toBe(3);
     const before = readFileSync(join(cli.home, 'cards', 'T-1.yaml'), 'utf8');
     expect((await emt('rebuild')).code).toBe(0);
     expect(readFileSync(join(cli.home, 'cards', 'T-1.yaml'), 'utf8')).toBe(before);
@@ -164,7 +164,7 @@ describe('cards of revised tasks', () => {
   it('a card of a newer estimetry leaves calibration.json as it was and says so', async () => {
     await closeRevised();
     const before = calibration();
-    writeFileSync(join(cli.home, 'cards', 'T-7.yaml'), stringify({ schemaVersion: 3, task: { id: 'T-7' } }));
+    writeFileSync(join(cli.home, 'cards', 'T-7.yaml'), stringify({ schemaVersion: 4, task: { id: 'T-7' } }));
     const rebuilt = await emt('rebuild');
     expect(`${rebuilt.stdout}${rebuilt.stderr}`).toMatch(/newer version of estimetry/);
     expect(calibration()).toBe(before);

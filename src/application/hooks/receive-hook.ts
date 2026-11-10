@@ -14,13 +14,14 @@ import type { GitSnapshots } from '../ports/git-snapshot.js';
 import type { IdGenerator } from '../ports/id-generator.js';
 import type { MeasurementSettings } from '../ports/measurement-settings.js';
 import type { ProjectLocator } from '../ports/project-locator.js';
-import type { SessionBindings } from '../ports/session-bindings.js';
+import { servedTasks, type SessionBindings } from '../ports/session-bindings.js';
 import type { TaskStatusReader } from '../ports/task-status-reader.js';
 import type { ChangeCompletions } from './change-completions.js';
 import type { Checkpoints } from './checkpoints.js';
 import { closeProposalText, cut, ESTIMATE_REMINDER, EXTRA_REMINDER, MAX_CONTEXT_LENGTH, sessionStartContext, type TaskFact } from './hook-context.js';
 import { journalEntry } from './journal-entry.js';
 import type { SessionTask } from './session-task.js';
+import type { ImportSessionLogs } from '../task/import-session-logs.js';
 
 /** The git hook `init --track-commits` installs. */
 export const GIT_SOURCE = 'git';
@@ -63,7 +64,12 @@ export interface HookDependencies {
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly authors: AuthorProvider;
+  /** The importer of session logs; loaded on the session end only. */
+  readonly logs?: () => Promise<Pick<ImportSessionLogs, 'execute'>>;
 }
+
+/** The session end imports the session's log in the hook itself, within this time (claude-code-hooks spec). */
+export const SESSION_END_IMPORT_BUDGET_MS = 5_000;
 
 /**
  * Entry point of installed hooks: turns a call into activity events of the
@@ -112,6 +118,9 @@ export class ReceiveHook {
       return undefined; // not an estimetry project
     }
     this.write(adapter, translation, now, resolved.project.id, resolved.task?.id);
+    if (translation.transcript !== undefined && (translation.kind === 'session-start' || translation.kind === 'session-end')) {
+      this.keepTranscript(translation.session, translation.transcript);
+    }
     this.deps.checkpoints.touch(
       translation.session,
       translation.kind,
@@ -139,6 +148,10 @@ export class ReceiveHook {
       const lines = [ESTIMATE_REMINDER, ...(proposal === undefined ? [] : [proposal]), text, ...(reminder && resolved.task === undefined ? [EXTRA_REMINDER] : [])];
       return adapter.renderContext(event, cut(lines.join('\n')));
     }
+    if (translation.kind === 'session-end') {
+      await this.importLog(adapter.id, translation);
+      return undefined;
+    }
     if (translation.kind === 'prompt') {
       const proposal = resolved.task === undefined ? undefined : await this.proposal(resolved.task.id, translation.session, resolved.project.root, now);
       const reminder = this.deps.checkpoints.takeReminder(translation.session);
@@ -146,6 +159,37 @@ export class ReceiveHook {
       return lines.length === 0 ? undefined : adapter.renderContext(event, cut(lines.join('\n')));
     }
     return undefined;
+  }
+
+  /** The path of the session's log, for imports outside the tool's environment. */
+  private keepTranscript(session: SessionId, transcript: string): void {
+    this.deps.bindings.update(session, (current) => (current === undefined || current.transcript === transcript ? undefined : { ...current, transcript }));
+  }
+
+  /**
+   * The log of an ended session goes into every task in progress it served.
+   * Past the budget the import gives up; the closing of the task catches up.
+   */
+  private async importLog(source: string, translation: HookTranslation): Promise<void> {
+    if (this.deps.logs === undefined) {
+      return;
+    }
+    const binding = this.deps.bindings.get(translation.session);
+    const tasks = servedTasks(binding).flatMap((id) => {
+      const summary = this.deps.tasks.summary(id);
+      return summary?.status === 'in-progress' ? [{ id, project: summary.projects[0] ?? binding?.project ?? '' }] : [];
+    });
+    if (tasks.length === 0) {
+      return;
+    }
+    const path = translation.transcript ?? binding?.transcript;
+    (await this.deps.logs()).execute({
+      session: translation.session.value,
+      source,
+      ...(path === undefined ? {} : { path }),
+      tasks,
+      budgetMs: SESSION_END_IMPORT_BUDGET_MS,
+    });
   }
 
   /**

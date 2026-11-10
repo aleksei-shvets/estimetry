@@ -84,7 +84,7 @@ describe('closing a task', () => {
     task.close({ at: at('10:00'), outcome: 'completed' }, meta('10:00'));
     task.reopen(meta('11:00'));
     expect(task.status).toBe('in-progress');
-    expect(task.closures).toEqual([{ at: at('10:00').toISOString(), outcome: 'completed', reopenedAt: at('11:00').toISOString() }]);
+    expect(task.closures).toEqual([{ at: at('10:00').toISOString(), outcome: 'completed', recordedAt: at('10:00').toISOString(), reopenedAt: at('11:00').toISOString() }]);
   });
 
   it('renegotiates in one save and does not repeat the extra work on a retry', () => {
@@ -351,6 +351,8 @@ function report(minutes: number, extra: Partial<EffortReport> = {}): EffortRepor
     agentTime: d,
     userTime: Duration.ZERO,
     fact: d,
+    factLow: d,
+    factHigh: d,
     uncertainty: Duration.ZERO,
     uncertaintyShare: 0,
     exceedsUncertaintyTarget: false,

@@ -9,6 +9,9 @@ import type { IdGenerator } from './ports/id-generator.js';
 import type { MeasurementSettings } from './ports/measurement-settings.js';
 import type { ProjectConfigFile } from './ports/project-config-file.js';
 import type { SessionBindings } from './ports/session-bindings.js';
+import type { SessionLogReaders } from './contracts/session-logs.js';
+import type { LogImportState } from './ports/log-import-state.js';
+import { ImportSessionLogs } from './task/import-session-logs.js';
 import type { TaskStatusReader } from './ports/task-status-reader.js';
 import type { TaskTypeCatalog } from './ports/task-type-catalog.js';
 import type { WorkspaceLocator } from './ports/workspace-locator.js';
@@ -81,6 +84,8 @@ export interface EstimetryDependencies {
     readonly head: GitHead;
     /** Where a card newer than this binary, or a card that could not be rebuilt, is reported. */
     readonly errors: ErrorReporter;
+    /** Session logs of the AI tools, imported into the journal before `task.closed`. */
+    readonly logs: { readonly readers: SessionLogReaders; readonly state: LogImportState };
   };
   /** The directory the command runs in: of several working copies of a project, its plan is read there. */
   readonly workspaceDir?: string;
@@ -126,6 +131,15 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
   const measurement = new TaskMeasurement(deps.journal, deps.measurement, deps.clock);
 
   const c = deps.closing;
+  const importLogs = new ImportSessionLogs({
+    readers: c.logs.readers,
+    state: c.logs.state,
+    journal: deps.journal,
+    ids: deps.ids,
+    clock: deps.clock,
+    authors: deps.authors,
+    errors: c.errors,
+  });
   const planSnapshots = new PlanSnapshots(deps.plans, c.head, deps.projects);
   const taskCards = new TaskCards(deps.journal, measurement, c.cards, c.calibration, c.settings, deps.tasks, c.errors, deps.authors);
   const closing = new TaskClosing(
@@ -138,6 +152,7 @@ export function createEstimetry(deps: EstimetryDependencies): Estimetry {
     deps.clock,
     deps.ids,
     deps.authors,
+    () => importLogs,
   );
   const startTask = new StartTask(deps.tasks, currentProject, activeTask, meta, planSnapshots, deps.journal, deps.workspaceDir);
   const bindSession = new BindSession(deps.sessions.bindings, deps.sessions.tasks, deps.journal, deps.ids, deps.authors);

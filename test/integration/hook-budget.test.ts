@@ -87,14 +87,23 @@ describe('hook budgets on a large store', () => {
       }),
     ) - node;
     expect(existsSync(layout.closeProposal('T-1'))).toBe(false);
+    // The end of a session of a task in progress whose log Claude Code never wrote: the import finds nothing.
+    const sessions = new YamlSessionStore(layout);
+    const end = median(
+      Array.from({ length: 5 }, () => {
+        sessions.update(SessionId.parse('ending'), () => ({ session: 'ending', project: 'api', root: repo, task: 'T-1', tasks: ['T-1'], since: '2026-10-27T08:00:00.000Z', everBound: true }));
+        return run('SessionEnd', { session_id: 'ending', reason: 'exit' });
+      }),
+    ) - node;
     console.log(
       `hook budget, ms beyond node start: background ${background.toFixed(0)}, prompt ${prompt.toFixed(0)}, ` +
-        `prompt with a proposal ${proposing.toFixed(0)}, session start ${start.toFixed(0)}`,
+        `prompt with a proposal ${proposing.toFixed(0)}, session start ${start.toFixed(0)}, session end without a log ${end.toFixed(0)}`,
     );
-    // Budgets are 150, 150 and 1000 ms; CI machines get twice as much.
+    // Budgets are 150, 150, 150, 1000 and 150 ms; CI machines get twice as much.
     expect(background).toBeLessThan(300);
     expect(prompt).toBeLessThan(300);
     expect(proposing).toBeLessThan(300);
+    expect(end).toBeLessThan(300);
     expect(start).toBeLessThan(2000);
   }, 180_000);
 });

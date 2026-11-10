@@ -10,9 +10,14 @@ import { InvalidValue } from '../shared/domain-error.js';
 import { Timestamp } from '../shared/timestamp.js';
 import type { TaskOutcome } from '../task/task-events.js';
 import type { Task } from '../task/task.js';
+import type { TokenCounts } from '../progress/session-log.js';
+import { usageSummary, type TaskUsage } from '../usage/task-usage.js';
 
-/** 2: the current estimate, revisions and the counted fact beside the first estimate (estimate-revision-cards). */
-export const CARD_SCHEMA_VERSION = 2;
+/**
+ * 2: the current estimate, revisions and the counted fact beside the first estimate (estimate-revision-cards).
+ * 3: bounds of the fact and the tokens and cost of the task (session-log-importer).
+ */
+export const CARD_SCHEMA_VERSION = 3;
 
 export interface ExtraTally {
   readonly count: number;
@@ -53,7 +58,20 @@ export interface CardFact {
   readonly manualMinutes: number;
   readonly uncertaintyMinutes: number;
   readonly uncertaintyShare: number | null;
+  /** Bounds of the fact; null on a card converted from schema 2 or earlier by its fields. */
+  readonly lowMinutes: number | null;
+  readonly highMinutes: number | null;
   readonly agentWorkMinutes: number;
+}
+
+/** Tokens and cost of the task from the logs of its sessions; never part of calibration. */
+export interface CardUsage {
+  readonly tokens: Readonly<Record<string, TokenCounts>>;
+  readonly costUSD: number | null;
+  readonly approximate: boolean;
+  /** Sessions with activity in the task, and how many of them have a log. */
+  readonly sessions: number;
+  readonly withLogs: number;
 }
 
 export interface CardRevision {
@@ -111,8 +129,10 @@ export interface Card {
   readonly revised?: boolean;
   /** The task got its estimate only by a revision after the start. */
   readonly estimatedAfterStart?: boolean;
-  /** Converted from a card of schema 1 without the journal of its task. */
-  readonly convertedFrom?: 1;
+  /** Converted from a card of an older schema without the journal of its task. */
+  readonly convertedFrom?: 1 | 2;
+  /** Null without session logs. */
+  readonly usage: CardUsage | null;
   readonly backgroundAgents: boolean;
   readonly parallel: {
     readonly used: boolean;
@@ -176,6 +196,7 @@ export interface CardInput {
   readonly records: readonly ProgressRecord[];
   /** Whether the journal has activity from hooks; without it the fact is manual only. */
   readonly hasActivity: boolean;
+  readonly usage?: TaskUsage;
 }
 
 /** The card of a closed task, built from its journal alone. */
@@ -233,6 +254,8 @@ export function buildCard(input: CardInput): Card {
     manualMinutes: minutes(r.manualTime.millis),
     uncertaintyMinutes: minutes(r.uncertainty.millis),
     uncertaintyShare: r.uncertaintyShare ?? null,
+    lowMinutes: minutes(r.factLow.millis),
+    highMinutes: minutes(r.factHigh.millis),
     agentWorkMinutes: minutes(r.agentWork.millis),
   });
   const hooksMeasured = (r: EffortReport) => r.measured.agent.total.millis + r.measured.user.total.millis;
@@ -278,6 +301,7 @@ export function buildCard(input: CardInput): Card {
       },
     },
     accuracy: input.hasActivity ? 'partial' : 'minimal',
+    usage: input.usage === undefined ? null : usageSummary(input.usage),
     ...(revised ? { revised: true } : {}),
     ...(task.estimatedAfterStart ? { estimatedAfterStart: true } : {}),
     backgroundAgents: report.backgroundAgents && !report.parallel.used,

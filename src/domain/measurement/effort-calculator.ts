@@ -3,6 +3,7 @@ import type { ActivityEvent, TurnOrigin } from './activity-events.js';
 import { Duration } from './duration.js';
 import { UNCERTAINTY_TARGET, type EffortReport } from './effort-report.js';
 import type { IdlePolicy } from './idle-policy.js';
+import type { LogBoundaries } from './log-boundaries.js';
 import { Interval } from './interval.js';
 import { IntervalSet } from './interval-set.js';
 import type { ManualTime } from './manual-time.js';
@@ -28,6 +29,8 @@ export interface EffortInput {
    * time without a moment stays: its record says nothing about when the work was done.
    */
   readonly lost?: IntervalSet;
+  /** What the session logs tell, by session: they stand in for closing and starting events the hooks missed. */
+  readonly logs?: ReadonlyMap<string, LogBoundaries>;
 }
 
 /** Bounds for infinite window ends; the same range Timestamp accepts. */
@@ -39,6 +42,9 @@ const ORDER_JITTER_MS = 1_000;
 
 /** Repeated deliveries of one hook arrive within this window. */
 const DUPLICATE_WINDOW_MS = 2_000;
+
+/** A turn of the log matches a turn of the hooks when it holds the hooks' event within this tolerance. */
+const LOG_MATCH_MS = 5_000;
 
 /** Agent id of the main agent of a session. */
 const MAIN = '';
@@ -60,7 +66,14 @@ export interface Timeline {
   readonly user: IntervalSet;
   /** Per session, for checks that agent and user time of one session never overlap. */
   readonly userBySession: ReadonlyMap<string, IntervalSet>;
-  readonly doubts: { readonly agent: IntervalSet; readonly user: IntervalSet };
+  /** The same measurement without the counted doubtful stretches and with the discarded ones. */
+  readonly bounds: { readonly low: Bound; readonly high: Bound };
+}
+
+/** All agents and the user under one bound of the fact (effort-metrics, uncertainty). */
+export interface Bound {
+  readonly agents: IntervalSet;
+  readonly user: IntervalSet;
 }
 
 export function measureEffort(input: EffortInput): EffortReport {
@@ -69,11 +82,18 @@ export function measureEffort(input: EffortInput): EffortReport {
   const userMeasured = timeline.user;
 
   const manual = splitManual(input.manual, input.lost ?? IntervalSet.EMPTY);
+  const factOf = (agents: IntervalSet, user: IntervalSet): Duration =>
+    agents
+      .union(manual.agentIntervals)
+      .total.plus(manual.agentWithoutTime)
+      .plus(user.union(manual.userIntervals).total.plus(manual.userWithoutTime));
   const agentTime = agentMeasured.union(manual.agentIntervals).total.plus(manual.agentWithoutTime);
   const userTime = userMeasured.union(manual.userIntervals).total.plus(manual.userWithoutTime);
   const fact = agentTime.plus(userTime);
   const manualTime = fact.minus(agentMeasured.total.plus(userMeasured.total));
-  const uncertainty = timeline.doubts.agent.total.plus(timeline.doubts.user.total);
+  const factLow = factOf(timeline.bounds.low.agents, timeline.bounds.low.user);
+  const factHigh = factOf(timeline.bounds.high.agents, timeline.bounds.high.user);
+  const uncertainty = factHigh.minus(factLow);
 
   const agentWork = Duration.sum(
     [...timeline.agents.entries()].map(([key, agent]) => {
@@ -88,6 +108,8 @@ export function measureEffort(input: EffortInput): EffortReport {
     agentTime,
     userTime,
     fact,
+    factLow,
+    factHigh,
     uncertainty,
     uncertaintyShare: share(uncertainty, fact),
     exceedsUncertaintyTarget:
@@ -118,7 +140,8 @@ export function buildTimeline(input: EffortInput): Timeline {
       }
     }
     const events = all.filter(({ event }) => !NOT_STEPS.has(event.type));
-    const context: Context = { startedAt, now, windowStart: (at) => windowStart(windows, at) };
+    const log = input.logs?.get(session);
+    const context: Context = { startedAt, now, windowStart: (at) => windowStart(windows, at), ...(log === undefined ? {} : { log }) };
     const streams = new Map<string, Prepared[]>();
     for (const item of events) {
       push(streams, agentOf(item.event) ?? MAIN, item);
@@ -138,6 +161,26 @@ export function buildTimeline(input: EffortInput): Timeline {
   return collector.timeline(input.startedAt);
 }
 
+/**
+ * Where each session with activity served the task: its windows, from the start
+ * of the task to now, without the lost windows. Token buckets are counted in these.
+ */
+export function sessionSpans(input: EffortInput): Map<string, IntervalSet> {
+  const startedAt = input.startedAt.toMillis();
+  const now = input.now.toMillis();
+  const lost = input.lost ?? IntervalSet.EMPTY;
+  const spans = new Map<string, IntervalSet>();
+  for (const [session, all] of bySession(prepare(input.activity))) {
+    const windows = sessionWindows(all) ?? [{ start: -Infinity, end: Infinity }];
+    const clipped = windows
+      .map((window) => ({ start: Math.max(window.start, startedAt), end: Math.min(window.end, now) }))
+      .filter((window) => window.end > window.start)
+      .map((window) => interval(window.start, window.end));
+    spans.set(session, IntervalSet.of(clipped).minus(lost));
+  }
+  return spans;
+}
+
 interface Prepared {
   readonly event: ActivityEvent;
   readonly at: number;
@@ -148,6 +191,44 @@ interface Context {
   readonly now: number;
   /** Start of the window of the session that holds `at`; the earliest time when the session has no windows. */
   readonly windowStart: (at: number) => number;
+  readonly log?: LogBoundaries;
+}
+
+/** The turn of the log that holds `at`, the latest one if several do. */
+function logTurnAt(log: LogBoundaries | undefined, at: number): { readonly start: number; readonly end: number } | undefined {
+  if (log === undefined) {
+    return undefined;
+  }
+  let found: { readonly start: number; readonly end: number } | undefined;
+  for (const turn of log.turns) {
+    if (turn.start - LOG_MATCH_MS > at) {
+      break;
+    }
+    if (turn.end + LOG_MATCH_MS >= at) {
+      found = turn;
+    }
+  }
+  return found;
+}
+
+/**
+ * Whether the log holds a subagent run: it has records from the run's last
+ * event of the hooks (within the match tolerance) up to `next`. Records of
+ * other runs only leave the run to the heuristics, as without a log.
+ */
+function holdsRun(spans: readonly (readonly [number, number])[], last: number, next: number): boolean {
+  return spans.some(([start, end]) => end + LOG_MATCH_MS >= last && start < next);
+}
+
+/** The last record of a subagent before `bound`, from the stretches of its log; undefined when it has none there. */
+function lastRecordBefore(spans: readonly (readonly [number, number])[], bound: number): number | undefined {
+  let last: number | undefined;
+  for (const [start, end] of spans) {
+    if (start < bound) {
+      last = Math.max(last ?? start, Math.min(end, bound));
+    }
+  }
+  return last;
 }
 
 /** Describes an agent instead of advancing its run. */
@@ -294,13 +375,25 @@ function mainStream(session: string, items: readonly Prepared[], c: Collector, c
     }
     turn = undefined;
   };
-  /** A turn that never got its closing event ends at its last event; the rest is doubtful. */
+  /**
+   * A turn that never got its closing event. The log's turn holding its last
+   * event closes it, as a `turn.ended` would, and the usual rules go on; without
+   * one it ends at its last event, and the rest is doubtful.
+   */
   const abandonTurn = (next: number): void => {
     if (!turn) {
       return;
     }
     const last = turn.run.last;
-    c.doubt(session, 'agent', last, Math.min(last + c.idle, next));
+    const logged = logTurnAt(ctx.log, last);
+    if (logged !== undefined) {
+      const end = Math.max(last, Math.min(logged.end, next));
+      turn.run.end(end);
+      closeTurn(end);
+      quiet = false;
+      return;
+    }
+    c.doubt(session, agentKey, false, last, Math.min(last + c.idle, next));
     closeTurn(last);
     quiet = true;
   };
@@ -375,11 +468,17 @@ function mainStream(session: string, items: readonly Prepared[], c: Collector, c
             continue; // e.g. a notification after the turn ended
           }
           // The session joined the task mid-turn (`emt start` or a binding ran inside it): the turn began then.
-          const start = Math.min(at, Math.max(ctx.startedAt, ctx.windowStart(at), at - c.idle));
+          // The log tells when, unless that is longer ago than the threshold: a wait of any length would come in.
+          const floor = Math.max(ctx.startedAt, ctx.windowStart(at));
+          const logged = logTurnAt(ctx.log, at);
+          const known = logged !== undefined && logged.start >= at - c.idle;
+          const start = Math.min(at, Math.max(floor, known ? logged.start : at - c.idle));
           userUntil(start);
           span = false;
           c.addAgent(agentKey, start, at);
-          c.doubt(session, 'agent', start, at);
+          if (!known) {
+            c.doubt(session, agentKey, true, start, at);
+          }
           turn = { run: new Run(session, agentKey, at, c), origin: 'user', id: undefined };
         }
         turn.run.step(event, at);
@@ -414,10 +513,17 @@ function subagentStream(
   const agentKey = key(session, agent);
   c.describe(agentKey, { session, agent, parent: key(session, MAIN), background: false });
   let run: Run | undefined;
+  const spans = ctx.log?.agents.get(agent);
+  /** A run without `agent.stopped`: its log's last record before `next` ends it; without a log the rest is doubtful. */
   const abandon = (next: number): void => {
-    if (run) {
-      c.doubt(session, 'agent', run.last, Math.min(run.last + c.idle, next));
+    if (!run) {
+      return;
     }
+    if (spans !== undefined && holdsRun(spans, run.last, next)) {
+      run.end(Math.max(run.last, lastRecordBefore(spans, next) ?? run.last));
+      return;
+    }
+    c.doubt(session, agentKey, false, run.last, Math.min(run.last + c.idle, next));
   };
 
   for (const { event, at } of items) {
@@ -557,8 +663,8 @@ interface AgentInfo {
 class Collector {
   private readonly agents = new Map<string, { info: AgentInfo; intervals: Interval[] }>();
   private readonly user = new Map<string, Interval[]>();
-  /** Doubtful stretches by session, so they are clipped by the windows of their session. */
-  private readonly doubts = new Map<string, { agent: Interval[]; user: Interval[] }>();
+  /** Doubtful stretches with their owner, so they are clipped by the windows of their session. */
+  private readonly doubts: Doubt[] = [];
   /** Stretches in which an agent waited for the user, by agent. */
   private readonly waits = new Map<string, Interval[]>();
   private readonly windows = new Map<string, readonly Window[]>();
@@ -593,11 +699,10 @@ class Collector {
     }
   }
 
-  doubt(session: string, kind: 'agent' | 'user', start: number, end: number): void {
+  /** `owner` is the agent key, or undefined for the user of the session; `counted` says the heuristic kept the stretch. */
+  doubt(session: string, owner: string | undefined, counted: boolean, start: number, end: number): void {
     if (end > start) {
-      const own = this.doubts.get(session) ?? { agent: [], user: [] };
-      own[kind].push(interval(start, end));
-      this.doubts.set(session, own);
+      this.doubts.push({ session, owner, counted, interval: interval(start, end) });
     }
   }
 
@@ -611,16 +716,16 @@ class Collector {
     if (toolRunning) {
       this.addAgent(agentKey, start, end);
       if (length > 2 * this.idle) {
-        this.doubt(session, 'agent', start, end);
+        this.doubt(session, agentKey, true, start, end);
       }
       return;
     }
-    this.silence(session, length, start, end, false, () => this.addAgent(agentKey, start, end), 'agent');
+    this.silence(session, length, start, end, false, () => this.addAgent(agentKey, start, end), agentKey);
   }
 
   /** A stretch while the user has control of a session. */
   userGap(session: string, start: number, end: number, quiet: boolean): void {
-    this.silence(session, end - start, start, end, quiet, () => this.addUser(session, start, end), 'user');
+    this.silence(session, end - start, start, end, quiet, () => this.addUser(session, start, end), undefined);
   }
 
   /** The agent waits for the user: the user's time if short, a pause if long. */
@@ -630,18 +735,21 @@ class Collector {
       return;
     }
     push(this.waits, agentKey, interval(start, end));
-    this.silence(session, length, start, end, false, () => this.addUser(session, start, end), 'user');
+    this.silence(session, length, start, end, false, () => this.addUser(session, start, end), undefined);
     if (endedByUntimedTool && length > 2 * this.idle) {
-      this.doubt(session, 'agent', start, end); // the tool may have been working for part of it
+      this.doubt(session, agentKey, false, start, end); // the tool may have been working for part of it
     }
   }
 
   timeline(startedAt: Timestamp): Timeline {
     const blocked = this.blockedByWaits();
+    const own = new Map<string, IntervalSet>();
+    for (const [agentKey, { intervals }] of this.agents) {
+      own.set(agentKey, IntervalSet.of(intervals).minus(IntervalSet.of(blocked.get(agentKey) ?? [])));
+    }
     const agents = new Map<string, AgentTimeline>();
-    for (const [agentKey, { info, intervals }] of this.agents) {
-      const own = IntervalSet.of(intervals).minus(IntervalSet.of(blocked.get(agentKey) ?? []));
-      agents.set(agentKey, { ...info, intervals: this.clip(info.session, own.intervals, startedAt) });
+    for (const [agentKey, { info }] of this.agents) {
+      agents.set(agentKey, { ...info, intervals: this.clip(info.session, (own.get(agentKey) ?? IntervalSet.EMPTY).intervals, startedAt) });
     }
     const userBySession = new Map<string, IntervalSet>();
     for (const [session, intervals] of this.user) {
@@ -649,16 +757,46 @@ class Collector {
       const main = agents.get(key(session, MAIN))?.intervals ?? IntervalSet.EMPTY;
       userBySession.set(session, this.clip(session, intervals, startedAt).minus(main));
     }
-    const doubts = [...this.doubts.entries()];
     return {
       agents,
       user: IntervalSet.of([...userBySession.values()].flatMap((set) => set.intervals)),
       userBySession,
-      doubts: {
-        agent: IntervalSet.of(doubts.flatMap(([session, d]) => this.clip(session, d.agent, startedAt).intervals)),
-        user: IntervalSet.of(doubts.flatMap(([session, d]) => this.clip(session, d.user, startedAt).intervals)),
-      },
+      bounds: { low: this.low(agents, userBySession, startedAt), high: this.high(own, userBySession, startedAt) },
     };
+  }
+
+  /** Doubtful stretches of one owner, clipped like the time they belong to. */
+  private doubtsOf(session: string, owner: string | undefined, counted: boolean, startedAt: Timestamp): IntervalSet {
+    const own = this.doubts.filter((d) => d.session === session && d.owner === owner && d.counted === counted);
+    return this.clip(session, own.map((d) => d.interval), startedAt);
+  }
+
+  /** The fact without the counted doubts: each owner loses its own, the rest stays (a busy other session still counts). */
+  private low(agents: ReadonlyMap<string, AgentTimeline>, userBySession: ReadonlyMap<string, IntervalSet>, startedAt: Timestamp): Bound {
+    const agentSets = [...agents.entries()].map(([agentKey, agent]) => agent.intervals.minus(this.doubtsOf(agent.session, agentKey, true, startedAt)));
+    const userSets = [...userBySession.entries()].map(([session, user]) => user.minus(this.doubtsOf(session, undefined, true, startedAt)));
+    return { agents: union(agentSets), user: union(userSets) };
+  }
+
+  /**
+   * The fact with the discarded doubts: each owner gets its own back. The user
+   * of a session and its main agent never share time, so a stretch of the main
+   * agent comes in only where it is not the user's time already; taking it from
+   * the user would only lower the fact, not raise it.
+   */
+  private high(own: ReadonlyMap<string, IntervalSet>, userBySession: ReadonlyMap<string, IntervalSet>, startedAt: Timestamp): Bound {
+    const sessions = new Set([...userBySession.keys(), ...this.doubts.filter((d) => d.owner === undefined).map((d) => d.session)]);
+    const users = new Map(
+      [...sessions].map((session) => [session, (userBySession.get(session) ?? IntervalSet.EMPTY).union(this.doubtsOf(session, undefined, false, startedAt))]),
+    );
+    const agents: IntervalSet[] = [];
+    for (const [agentKey, { info }] of this.agents) {
+      const kept = this.clip(info.session, (own.get(agentKey) ?? IntervalSet.EMPTY).intervals, startedAt);
+      const doubts = this.doubtsOf(info.session, agentKey, false, startedAt);
+      const added = info.agent === undefined ? doubts.minus(users.get(info.session) ?? IntervalSet.EMPTY) : doubts;
+      agents.push(kept.union(added));
+    }
+    return { agents: union(agents), user: union([...users.values()]) };
   }
 
   /**
@@ -690,7 +828,7 @@ class Collector {
     end: number,
     quiet: boolean,
     count: () => void,
-    kind: 'agent' | 'user',
+    owner: string | undefined,
   ): void {
     if (length <= 0) {
       return;
@@ -698,10 +836,10 @@ class Collector {
     if (length <= this.idle) {
       count();
       if (!quiet && length > this.idle / 2) {
-        this.doubt(session, kind, start + this.idle / 2, end);
+        this.doubt(session, owner, true, start + this.idle / 2, end);
       }
     } else if (!quiet && length <= 2 * this.idle) {
-      this.doubt(session, kind, start, end);
+      this.doubt(session, owner, false, start, end);
     }
   }
 
@@ -726,6 +864,19 @@ class Collector {
       push(this.user, session, interval(start, end));
     }
   }
+}
+
+interface Doubt {
+  readonly session: string;
+  /** Agent key; undefined for the user of the session. */
+  readonly owner: string | undefined;
+  /** The heuristic kept the stretch in the fact (true) or left it out (false). */
+  readonly counted: boolean;
+  readonly interval: Interval;
+}
+
+function union(sets: readonly IntervalSet[]): IntervalSet {
+  return IntervalSet.of(sets.flatMap((set) => set.intervals));
 }
 
 function interval(start: number, end: number): Interval {
@@ -772,7 +923,10 @@ function withoutLost(timeline: Timeline, lost: IntervalSet): Timeline {
     agents: new Map([...timeline.agents].map(([key, agent]) => [key, { ...agent, intervals: agent.intervals.minus(lost) }])),
     user: timeline.user.minus(lost),
     userBySession: new Map([...timeline.userBySession].map(([key, set]) => [key, set.minus(lost)])),
-    doubts: { agent: timeline.doubts.agent.minus(lost), user: timeline.doubts.user.minus(lost) },
+    bounds: {
+      low: { agents: timeline.bounds.low.agents.minus(lost), user: timeline.bounds.low.user.minus(lost) },
+      high: { agents: timeline.bounds.high.agents.minus(lost), user: timeline.bounds.high.user.minus(lost) },
+    },
   };
 }
 

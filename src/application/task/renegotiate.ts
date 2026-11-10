@@ -55,6 +55,7 @@ export class Renegotiate {
     original.assertCanClose();
     const spawned = this.spawned(original, input);
     let prepared = false;
+    let imported: string[] = [];
     const closed = retryOnConflict(() => {
       const task = this.tasks.get(original.id);
       const meta = this.meta.next();
@@ -68,13 +69,13 @@ export class Renegotiate {
         { next: () => this.meta.next() },
       );
       if (!prepared) {
-        this.closing.prepare(task, this.near);
+        imported = this.closing.prepare(task, this.near, meta.at);
         prepared = true;
       }
       this.tasks.save(task);
       return task;
     });
-    const warnings = this.closing.finish(closed);
+    const warnings = [...imported, ...this.closing.finish(closed)];
     return { closed: closedResult(closed, this.measurement, warnings), spawned: toTaskView(spawned) };
   }
 

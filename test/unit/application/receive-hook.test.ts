@@ -3,7 +3,8 @@ import { InMemoryCloseProposals } from '../../support/closing-fakes.js';
 import type { ActivityDraft, HookKind } from '../../../src/application/contracts/hook-adapter.js';
 import { BindSession } from '../../../src/application/hooks/bind-session.js';
 import { Checkpoints } from '../../../src/application/hooks/checkpoints.js';
-import { ReceiveHook } from '../../../src/application/hooks/receive-hook.js';
+import { ReceiveHook, SESSION_END_IMPORT_BUDGET_MS } from '../../../src/application/hooks/receive-hook.js';
+import type { SessionImportRequest } from '../../../src/application/task/import-session-logs.js';
 import { SessionTask } from '../../../src/application/hooks/session-task.js';
 import { SessionId } from '../../../src/domain/measurement/session-id.js';
 import { ProjectId } from '../../../src/domain/project/project-id.js';
@@ -50,22 +51,24 @@ function startedTask(id: string, title: string, startedAt = day('09:00')): void 
 
 const tool = (toolUseId: string): ActivityDraft => ({ type: 'tool.used', data: { toolUseId } });
 
-function call(event: string, kind: HookKind, events: readonly ActivityDraft[] = [], options: { session?: string; cwd?: string } = {}) {
+function call(event: string, kind: HookKind, events: readonly ActivityDraft[] = [], options: { session?: string; cwd?: string; transcript?: string } = {}) {
   return receive.execute({
     source: 'fake-tool',
     event,
-    payload: JSON.stringify({ session: options.session ?? 's1', kind, events }),
+    payload: JSON.stringify({ session: options.session ?? 's1', kind, events, ...(options.transcript === undefined ? {} : { transcript: options.transcript }) }),
     cwd: options.cwd ?? API,
   });
 }
 
 let checked: string[] = [];
+let imports: SessionImportRequest[] = [];
 let proposals: InMemoryCloseProposals;
 
 const types = (task: string) => journal.readActivity(TaskId.parse(task)).map((e) => e.type);
 
 beforeEach(() => {
   checked = [];
+  imports = [];
   proposals = new InMemoryCloseProposals();
   tasks = new InMemoryTaskRepository();
   journal = new InMemoryEventJournal();
@@ -96,6 +99,12 @@ beforeEach(() => {
     clock,
     ids,
     authors,
+    logs: async () => ({
+      execute: (request: SessionImportRequest) => {
+        imports.push(request);
+        return [];
+      },
+    }),
   });
   bind = new BindSession(bindings, status, journal, ids, authors);
 });
@@ -359,3 +368,34 @@ describe('after closing and proposals', () => {
   });
 });
 
+
+describe('the log of a session', () => {
+  it('keeps the path of the log, and imports it into the tasks in progress of the session at its end, within the budget', async () => {
+    startedTask('T-1', 'estimetry v1');
+    await call('Start', 'session-start', [{ type: 'session.started', data: {} }], { transcript: '/logs/s1.jsonl' });
+    expect(bindings.get(SessionId.parse('s1'))).toMatchObject({ task: 'T-1', tasks: ['T-1'], transcript: '/logs/s1.jsonl' });
+    await call('ToolDone', 'tool-done', [tool('t1')]);
+    expect(imports).toEqual([]);
+    await call('End', 'session-end', [{ type: 'session.ended', data: {} }]);
+    expect(imports).toEqual([
+      { session: 's1', source: 'fake-tool', path: '/logs/s1.jsonl', tasks: [{ id: 'T-1', project: 'api' }], budgetMs: SESSION_END_IMPORT_BUDGET_MS },
+    ]);
+  });
+
+  it('imports nothing into a task closed before its session ended', async () => {
+    startedTask('T-1', 'estimetry v1');
+    await call('Start', 'session-start', [{ type: 'session.started', data: {} }], { transcript: '/logs/s1.jsonl' });
+    const task = tasks.listAll().find((t) => t.id.toString() === 'T-1');
+    task?.close({ at: Timestamp.parse(day('10:30')), outcome: 'completed' }, { id: 'm-close', at: Timestamp.parse(day('10:30')), author: Author.of('dev@example.com') });
+    if (task) {
+      tasks.save(task);
+    }
+    await call('End', 'session-end', [{ type: 'session.ended', data: {} }]);
+    expect(imports).toEqual([]);
+  });
+
+  it('imports nothing for a session without a task in progress', async () => {
+    await call('End', 'session-end', [{ type: 'session.ended', data: {} }], { session: 's9' });
+    expect(imports).toEqual([]);
+  });
+});

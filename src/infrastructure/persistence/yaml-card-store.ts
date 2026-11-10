@@ -2,6 +2,7 @@ import { readdirSync, rmSync } from 'node:fs';
 import type { CardStore, StoredCard } from '../../application/ports/card-store.js';
 import { CARD_SCHEMA_VERSION, type Card } from '../../domain/card/card.js';
 import type { CardV1 } from '../../domain/card/card-v1.js';
+import type { CardV2 } from '../../domain/card/card-v2.js';
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
 
@@ -62,8 +63,11 @@ function stored(task: string, value: unknown): StoredCard | undefined {
   if (typeof version === 'number' && version > CARD_SCHEMA_VERSION) {
     return { schema: 'newer', task, version };
   }
-  if (version === CARD_SCHEMA_VERSION && isCard(value) && isCardV2(value)) {
+  if (version === CARD_SCHEMA_VERSION && isCard(value) && isCardV2(value) && 'usage' in value) {
     return { schema: 'current', card: value };
+  }
+  if (version === 2 && isCard(value) && isCardV2(value)) {
+    return { schema: 'v2', card: value as unknown as CardV2 };
   }
   if (version === 1 && isCard(value) && typeof (value as unknown as Record<string, unknown>)['parallel'] === 'object') {
     return { schema: 'v1', card: value as unknown as CardV1 };

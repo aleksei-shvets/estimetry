@@ -117,7 +117,7 @@ describe('close proposals', () => {
 describe('cards and calibration', () => {
   const card = (id: string): Card =>
     ({
-      schemaVersion: 2,
+      schemaVersion: 3,
       author: 'dev@example.com',
       task: { id, type: 'feature', stack: ['go'] },
       outcome: 'completed',
@@ -126,6 +126,7 @@ describe('cards and calibration', () => {
       currentEstimate: { likelyHours: 1, baseLikelyHours: 1, type: 'feature' },
       revisions: [],
       accuracy: 'partial',
+      usage: null,
       parallel: { used: false, sequentialMinutes: null },
       parts: [],
       currentParts: [],
@@ -157,15 +158,17 @@ describe('cards and calibration', () => {
     expect(existsSync(layout.calibrationLock)).toBe(false);
   });
 
-  it('tells a card of schema 1 and a card of a newer schema from a current one', () => {
+  it('tells cards of schemas 1 and 2 and a card of a newer schema from a current one', () => {
     const layout = new StorageLayout(join(tempDir(), 'home'));
     const cards = new YamlCardStore(layout);
     const { currentEstimate: _e, revisions: _r, currentParts: _p, beforeRevisionMinutes: _b, coveredByRevision: _c, ...old } = card('T-1') as unknown as Record<string, unknown>;
     cards.write({ ...old, schemaVersion: 1 } as unknown as Card);
-    cards.write({ ...card('T-2'), schemaVersion: 3 });
+    cards.write({ ...card('T-2'), schemaVersion: 4 });
     cards.write(card('T-3'));
-    expect(cards.list().map((c) => c.schema)).toEqual(['v1', 'newer', 'current']);
-    expect(cards.read('T-2')).toEqual({ schema: 'newer', task: 'T-2', version: 3 });
+    const { usage: _u, ...v2 } = card('T-5') as unknown as Record<string, unknown>;
+    cards.write({ ...v2, schemaVersion: 2 } as unknown as Card);
+    expect(cards.list().map((c) => c.schema)).toEqual(['v1', 'newer', 'current', 'v2']);
+    expect(cards.read('T-2')).toEqual({ schema: 'newer', task: 'T-2', version: 4 });
     const { parallel: _parallel, ...broken } = old;
     cards.write({ ...broken, schemaVersion: 1, task: { id: 'T-4', type: 'feature', stack: [] } } as unknown as Card);
     expect(cards.read('T-4')).toBeUndefined();

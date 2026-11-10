@@ -37,12 +37,14 @@ export function syntheticCard(spec: CardSpec): Card {
     manualMinutes: 0,
     uncertaintyMinutes: 0,
     uncertaintyShare: 0,
+    lowMinutes: factMinutes,
+    highMinutes: factMinutes,
     agentWorkMinutes: factMinutes,
   };
   const first = base === null ? null : estimate(base, type);
   const empty = () => ({ count: 0, timed: 0, minutes: 0 });
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     author: spec.author ?? 'dev@example.com',
     task: { id: spec.id, type, stack: [...(spec.stack ?? ['typescript'])] },
     outcome: spec.outcome ?? 'completed',
@@ -55,6 +57,7 @@ export function syntheticCard(spec: CardSpec): Card {
     revisions: [],
     fact: { ...fact, counted: { ...fact, sequentialMinutes: null, minimal: false } },
     accuracy: 'partial',
+    usage: null,
     backgroundAgents: false,
     parallel: { used: false, maxAgents: null, sequentialMinutes: null, budgetShare: null, planShare: null },
     parts: [],

@@ -104,6 +104,34 @@ Once a task is started (`emt start`), the Claude Code hooks record its sessions 
 - **Your time** — while the session is yours: reviewing results and writing the next prompt. Pauses longer than the idle threshold do not count.
 - **Not counted** — commands left running in the background after the agent finished its turn (`run_in_background`, or a subagent waiting for its own background job). The machine works then, not the agent.
 
+### How certain the fact is
+
+Some stretches are decided by a rule, not by an event: a silence of 20 minutes after the agent answered may be you reviewing the result, or you away. `emt status` shows the range the fact lies in:
+
+```
+fact         29h 43m of 58h 30m (51%)
+uncertainty  27h 53m – 34h 0m (21% of the fact, above the 5% target)
+```
+
+- **The lower bound** leaves out the doubtful stretches the rules counted: silences between half the threshold and the threshold, tools that ran longer than twice the threshold, the start of a turn a session joined midway.
+- **The upper bound** adds the doubtful stretches the rules left out: pauses up to twice the threshold, the tail of a turn or subagent that never reported its end, long waits that ended without a duration.
+
+Estimates and calibration compare with the fact itself; the range only tells how far it could move. Most of it is usually your own silences after a finished turn: nothing records whether you worked then, so it stays open.
+
+### Session logs, tokens and cost
+
+Claude Code keeps a log of every session. estimetry reads it when a session ends (also on `/clear` and `/resume`) and before a task closes, and keeps in the task's journal only what it needs:
+- when the agent's turns and subagents began and ended: a turn whose end the hooks missed ends where the log ends it, and a session that joined midway starts its turn where the log starts it;
+- tokens by model, with their times, and the session's total cost.
+
+The texts of the log — prompts, answers, tool inputs and outputs, descriptions and types of subagents — are never read into the journal.
+
+`emt status` and the card show the tokens of the task and its cost, with how many of its sessions had a log. When only part of a session's tokens belongs to the task (the session began before `emt start`, or served another task too), the task gets the matching share of the session's cost, weighing each kind of token by its price relative to an input token, and the cost is marked approximate.
+
+The cost is the total Claude Code itself records in the session log, at API prices. On a subscription it is not what you pay: read it as a measure for comparing tasks with each other, not as spending.
+
+Sessions that ended before you installed this version are read when the task closes. Claude Code deletes logs after 30 days; for longer tasks raise `cleanupPeriodDays` in its settings.
+
 ### Which task a session serves
 
 - **One task in progress** — a session binds to it by itself.
@@ -246,7 +274,7 @@ The parts of a revised task count only if no more than 5% of its counted fact wa
 
 ### What is never stored
 
-The journal keeps when things happened, not what was said or done: no prompt texts, no tool inputs or outputs, no commands, no commit messages. Commits are recorded as their hash, parents, `patch-id` and lines per file.
+The journal keeps when things happened, not what was said or done: no prompt texts, no tool inputs or outputs, no commands, no commit messages. Commits are recorded as their hash, parents, `patch-id` and lines per file. From session logs it keeps times, token counts by model and the cost; a log that cannot be read leaves only a code in `errors.log`.
 
 ### After upgrading estimetry
 

@@ -92,7 +92,7 @@ describe('card v2 of a revised task', () => {
   it('keeps the first estimate and its type, and adds the current one, the revision and the counted fact', () => {
     const card = revisedCard();
     expect(card).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       estimate: { likelyHours: 10, type: 'feature' },
       currentEstimate: { likelyHours: 12, type: 'research' },
       revisions: [{ typeBefore: 'feature', typeAfter: 'research', baseLikelyBeforeHours: 10, baseLikelyAfterHours: 12, lostMinutes: 120, countedAtMinutes: 60, spent: 'exclude' }],

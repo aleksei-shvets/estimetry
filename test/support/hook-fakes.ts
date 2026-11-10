@@ -5,7 +5,7 @@ import type { CheckpointState, CheckpointStatus } from '../../src/application/po
 import type { CommitInfo, GitHead, GitSnapshots } from '../../src/application/ports/git-snapshot.js';
 import type { LocatedProject, ProjectLocator } from '../../src/application/ports/project-locator.js';
 import type { ProjectPlanReading, ProjectPlans } from '../../src/application/ports/project-plans.js';
-import type { SessionBinding, SessionBindings } from '../../src/application/ports/session-bindings.js';
+import { carryOver, type SessionBinding, type SessionBindings } from '../../src/application/ports/session-bindings.js';
 import type { TaskStatusReader, TaskSummary } from '../../src/application/ports/task-status-reader.js';
 import { SessionId } from '../../src/domain/measurement/session-id.js';
 import type { ChangeProgress, FileLines } from '../../src/domain/progress/progress-records.js';
@@ -17,6 +17,7 @@ export interface FakePayload {
   readonly cwd?: string;
   readonly kind?: HookKind;
   readonly events?: readonly ActivityDraft[];
+  readonly transcript?: string;
 }
 
 /** A tool whose payload already names the events, so use cases are tested without a real translation. */
@@ -32,6 +33,7 @@ export class FakeHookAdapter implements HookAdapter {
       ...(p.cwd === undefined ? {} : { cwd: p.cwd }),
       kind: p.kind ?? 'other',
       events: p.events ?? [],
+      ...(p.transcript === undefined ? {} : { transcript: p.transcript }),
     };
   }
 
@@ -48,11 +50,14 @@ export class InMemorySessionBindings implements SessionBindings {
   }
 
   update(session: SessionId, change: (current: SessionBinding | undefined) => SessionBinding | undefined): SessionBinding | undefined {
-    const next = change(this.bindings.get(session.value));
-    if (next !== undefined) {
-      this.bindings.set(session.value, next);
+    const current = this.bindings.get(session.value);
+    const changed = change(current);
+    if (changed === undefined) {
+      return current;
     }
-    return next ?? this.bindings.get(session.value);
+    const next = carryOver(current, changed);
+    this.bindings.set(session.value, next);
+    return next;
   }
 
   ofProject(project: string): SessionBinding[] {

@@ -60,6 +60,8 @@ describe('emt status on synthetic journals', () => {
       userTime: 40,
       agentWork: 180,
       uncertainty: 10,
+      factLow: 90,
+      factHigh: 100,
       manualTime: 0,
       estimate: null,
       estimateShare: null,
@@ -67,7 +69,7 @@ describe('emt status on synthetic journals', () => {
     const text = await emt('status');
     expect(text.stdout).toMatch(/fact\s+1h 40m \(no estimate\)/);
     expect(text.stdout).toMatch(/agent work\s+3h/);
-    expect(text.stdout).toMatch(/uncertainty\s+± 10m \(10%\), above the 5% target/);
+    expect(text.stdout).toMatch(/uncertainty\s+1h 30m – 1h 40m \(10% of the fact, above the 5% target\)/);
   });
 
   it('flags a fact that depends on silences near the threshold', async () => {
@@ -199,6 +201,16 @@ describe('work records', () => {
     expect((await emt('parallel', 'off')).code).toBe(0);
     expect((await emt('parallel', 'off')).code).toBe(1);
     expect((await emt('status')).stdout).toMatch(/parallel\s+3 agents, sequential 6h/);
+  });
+});
+
+describe('emt status of a task just started', () => {
+  it('shows a zero range without shares', async () => {
+    await emt('task', 'new', 'Webhook');
+    await emt('start');
+    const text = (await emt('status')).stdout;
+    expect(text).toMatch(/fact\s+0m \(no estimate\)/);
+    expect(text).toMatch(/uncertainty\s+0m – 0m\n/);
   });
 });
 

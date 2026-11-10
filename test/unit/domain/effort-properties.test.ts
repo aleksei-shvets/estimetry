@@ -47,6 +47,14 @@ describe('effort properties on generated sessions', () => {
     expect(report.fact.millis).toBeLessThanOrEqual(report.calendar.millis);
   });
 
+  it.each(SEEDS)('seed %i: the fact lies inside its range, and the range is as wide as the uncertainty', (seed) => {
+    const { events, first, last } = generateSession(seed);
+    const report = measureEffort(input(events, first, last, seed));
+    expect(report.factLow.millis).toBeLessThanOrEqual(report.fact.millis);
+    expect(report.factHigh.millis).toBeGreaterThanOrEqual(report.fact.millis);
+    expect(report.uncertainty.millis).toBe(report.factHigh.millis - report.factLow.millis);
+  });
+
   it.each(SEEDS)('seed %i: agent and user time of one session do not overlap', (seed) => {
     const { events, first, last } = generateSession(seed);
     const timeline = buildTimeline(input(events, first, last, seed));

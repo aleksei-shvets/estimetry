@@ -16,6 +16,8 @@ export interface HookTranslation {
   readonly cwd?: string;
   readonly kind: HookKind;
   readonly events: readonly ActivityDraft[];
+  /** Path of the session log, when the tool reports one; a path on this machine, not a text. */
+  readonly transcript?: string;
 }
 
 /**

@@ -310,7 +310,8 @@ function isClosure(value: unknown): boolean {
     isTime(value['at']) &&
     isTaskOutcome(value['outcome']) &&
     optionalString(value['spawned']) &&
-    optional(value['reopenedAt'], isTime)
+    optional(value['reopenedAt'], isTime) &&
+    optional(value['recordedAt'], isTime)
   );
 }
 

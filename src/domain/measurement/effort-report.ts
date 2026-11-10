@@ -12,7 +12,11 @@ export interface EffortReport {
   readonly userTime: Duration;
   /** Agent time plus user time. */
   readonly fact: Duration;
-  /** Time that heuristics, not events, decided on. */
+  /** The fact without the doubtful stretches the heuristics counted. */
+  readonly factLow: Duration;
+  /** The fact with the doubtful stretches the heuristics left out. */
+  readonly factHigh: Duration;
+  /** Width of the range: `factHigh` minus `factLow`. */
   readonly uncertainty: Duration;
   /** Uncertainty divided by the fact; undefined while the fact is zero. */
   readonly uncertaintyShare: number | undefined;

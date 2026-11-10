@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs';
 import type { CheckpointState, CheckpointStatus } from '../../application/ports/checkpoint-state.js';
-import type { SessionBinding, SessionBindings } from '../../application/ports/session-bindings.js';
+import { carryOver, type SessionBinding, type SessionBindings } from '../../application/ports/session-bindings.js';
 import type { SessionId } from '../../domain/measurement/session-id.js';
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import { withFileLock } from '../fs/file-lock.js';
@@ -22,10 +22,11 @@ export class YamlSessionStore implements SessionBindings {
   update(session: SessionId, change: (current: SessionBinding | undefined) => SessionBinding | undefined): SessionBinding | undefined {
     return withFileLock(this.layout.sessionLock(session.value), () => {
       const current = this.get(session);
-      const next = change(current);
-      if (next === undefined) {
+      const changed = change(current);
+      if (changed === undefined) {
         return current;
       }
+      const next = carryOver(current, changed);
       writeYamlAtomic(this.layout.sessionBinding(session.value), { schemaVersion: SESSION_SCHEMA_VERSION, ...next });
       return next;
     });
@@ -94,6 +95,8 @@ function parseBinding(value: unknown): SessionBinding | undefined {
     ...optional('since'),
     ...optional('checkedAt'),
     ...optional('closedTask'),
+    ...optional('transcript'),
+    ...(Array.isArray(v['tasks']) && v['tasks'].every((task) => typeof task === 'string') ? { tasks: v['tasks'] as string[] } : {}),
     ...(v['everBound'] === true ? { everBound: true } : {}),
   };
 }

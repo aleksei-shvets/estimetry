@@ -72,19 +72,20 @@ export class CloseTask {
 
   execute(input: CloseTaskInput): TaskClosedResult {
     let prepared = false;
+    let imported: string[] = [];
     const task = retryOnConflict(() => {
       const task = this.activeTask.inProgress(input.task);
       const meta = this.meta.next();
       // The aggregate checks the moment before anything is written.
       task.close({ at: input.at ?? meta.at, outcome: input.abandoned ? 'abandoned' : 'completed' }, meta);
       if (!prepared) {
-        this.closing.prepare(task, this.near);
+        imported = this.closing.prepare(task, this.near, meta.at);
         prepared = true;
       }
       this.tasks.save(task);
       return task;
     });
-    const warnings = this.closing.finish(task);
+    const warnings = [...imported, ...this.closing.finish(task)];
     return closedResult(task, this.measurement, warnings);
   }
 }
