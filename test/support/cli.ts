@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, symlinkSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, symlinkSync } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -33,6 +33,8 @@ export function cliSandbox(): CliSandbox {
   if (!existsSync(MAIN)) {
     throw new Error(`${MAIN} is missing: run "npm run build" first (npm test does it)`);
   }
+  // Git hooks run `estimetry` from PATH: a non-executable entry would quietly fall through to a global install.
+  accessSync(MAIN, constants.X_OK);
   const root = tempDir('cli-');
   const home = join(root, 'home');
   const bin = join(root, 'bin');
