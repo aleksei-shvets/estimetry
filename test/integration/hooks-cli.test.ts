@@ -27,6 +27,16 @@ const journalLines = (name: string) => {
   const file = join(cli.home, 'events', name);
   return existsSync(file) ? readFileSync(file, 'utf8').trim().split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as { type: string; data: Record<string, unknown> }) : [];
 };
+/** What the background git hook left behind, for the message of a failed expectation. */
+const gitHookTrace = () => {
+  const errors = join(cli.home, 'errors.log');
+  const hookFile = join(repo, '.git', 'hooks', 'post-commit');
+  return [
+    `errors.log: ${existsSync(errors) ? readFileSync(errors, 'utf8') : '(none)'}`,
+    `post-commit: ${existsSync(hookFile) ? readFileSync(hookFile, 'utf8') : '(none)'}`,
+    `journal: ${journalLines('T-1.jsonl').map((e) => e.type).join(', ')}`,
+  ].join('\n');
+};
 const RECORDS = new Set(['checkpoint.recorded', 'commit.recorded', 'plan.started']);
 const activity = (task: string) => journalLines(`${task}.jsonl`).filter((e) => !e.type.startsWith('task.') && !RECORDS.has(e.type));
 
@@ -95,7 +105,7 @@ describe('hooks write the journal of the session’s task', () => {
     while (!journalLines('T-1.jsonl').some((e) => e.type === 'commit.recorded') && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    expect(journalLines('T-1.jsonl').find((e) => e.type === 'commit.recorded')?.data).toMatchObject({ sha: git(repo, 'rev-parse', 'HEAD') });
+    expect(journalLines('T-1.jsonl').find((e) => e.type === 'commit.recorded')?.data, gitHookTrace()).toMatchObject({ sha: git(repo, 'rev-parse', 'HEAD') });
   });
 
   it('two commits in a row are both recorded, each by its own sha', async () => {
@@ -113,7 +123,7 @@ describe('hooks write the journal of the session’s task', () => {
     while (recorded().length < 2 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    expect(recorded().sort()).toEqual([first, second].sort());
+    expect(recorded().sort(), gitHookTrace()).toEqual([first, second].sort());
   });
 
   it('init installs the background hooks asynchronous and keeps three synchronous', () => {
