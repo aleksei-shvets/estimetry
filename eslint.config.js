@@ -1,6 +1,7 @@
 // @ts-check
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import { DEBT, applicationImports, guardrails } from './eslint/guardrails.js';
 
 const LAYERS = ['domain', 'application', 'infrastructure', 'integrations', 'interface', 'bootstrap'];
 
@@ -30,77 +31,84 @@ const boundary = (files, patterns, paths = []) => ({
 
 const nodeIo = ['node:fs', 'node:fs/promises', 'node:child_process', 'fs', 'fs/promises', 'child_process'];
 
-export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/', 'coverage/'] },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
-  {
-    languageOptions: {
-      globals: { process: 'readonly', console: 'readonly' },
-    },
-    rules: {
-      '@typescript-eslint/consistent-type-imports': 'error',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-    },
-  },
-
-  boundary('src/domain/**', [
-    layerImports(allExcept('domain')),
+/**
+ * The configuration with a given list of debt; the tests of the guardrails build it without an entry.
+ * @param {import('./eslint/guardrails.js').Debt} debt
+ */
+export const config = (debt) =>
+  tseslint.config(
+    { ignores: ['dist/', 'node_modules/', 'coverage/'] },
+    js.configs.recommended,
+    ...tseslint.configs.recommended,
     {
-      regex: '^(?!\\.{1,2}/)',
-      message: 'Layer boundary: domain must not import packages or Node built-ins (see CLAUDE.md, "Architecture").',
+      languageOptions: {
+        globals: { process: 'readonly', console: 'readonly' },
+      },
+      rules: {
+        '@typescript-eslint/consistent-type-imports': 'error',
+        '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      },
     },
-  ]),
-  boundary(
-    'src/application/**',
-    [layerImports(allExcept('domain', 'application'))],
-    nodeIo.map((name) => ({
-      name,
-      message: 'Layer boundary: application performs I/O only through ports (see CLAUDE.md, "Architecture").',
-    })),
-  ),
-  boundary('src/infrastructure/**', [layerImports(['integrations', 'interface', 'bootstrap'])]),
-  // Integrations also stay apart from each other: a tool adapter knows no flow, a flow no stack detector.
-  ...[
-    ['tools', ['flows', 'stack']],
-    ['flows', ['tools', 'stack']],
-    ['stack', ['tools', 'flows']],
-  ].map(([own, others]) =>
-    boundary(`src/integrations/${own}/**`, [
-      layerImports(['infrastructure', 'interface', 'bootstrap']),
+
+    boundary('src/domain/**', [
+      layerImports(allExcept('domain')),
       {
-        regex: `(^|/)(${others.join('|')})/`,
-        message: `Integrations boundary: integrations/${own} must not import ${others.join(', ')} (see CLAUDE.md, "Architecture").`,
+        regex: '^(?!\\.{1,2}/)',
+        message: 'Layer boundary: domain must not import packages or Node built-ins (see CLAUDE.md, "Architecture").',
       },
     ]),
-  ),
-  boundary('src/integrations/*.ts', [layerImports(['infrastructure', 'interface', 'bootstrap'])]),
-  boundary('src/interface/**', [layerImports(['infrastructure', 'integrations', 'bootstrap'])]),
-
-  {
-    files: ['src/domain/**', 'src/application/**'],
-    rules: {
-      'no-restricted-globals': [
-        'error',
-        { name: 'process', message: 'Pass configuration through ports instead of reading process state.' },
-      ],
-    },
-  },
-  {
-    files: ['src/domain/**'],
-    rules: {
-      'no-restricted-properties': [
-        'error',
-        { object: 'Date', property: 'now', message: 'Domain gets time from the caller (Clock port).' },
-        { object: 'Math', property: 'random', message: 'Domain gets ids from the caller (IdGenerator port).' },
-      ],
-      'no-restricted-syntax': [
-        'error',
+    ...applicationImports(debt, {
+      patterns: [layerImports(allExcept('domain', 'application'))],
+      paths: nodeIo.map((name) => ({
+        name,
+        message: 'Layer boundary: application performs I/O only through ports (see CLAUDE.md, "Architecture").',
+      })),
+    }),
+    boundary('src/infrastructure/**', [layerImports(['integrations', 'interface', 'bootstrap'])]),
+    // Integrations also stay apart from each other: a tool adapter knows no flow, a flow no stack detector.
+    ...[
+      ['tools', ['flows', 'stack']],
+      ['flows', ['tools', 'stack']],
+      ['stack', ['tools', 'flows']],
+    ].map(([own, others]) =>
+      boundary(`src/integrations/${own}/**`, [
+        layerImports(['infrastructure', 'interface', 'bootstrap']),
         {
-          selector: "NewExpression[callee.name='Date'][arguments.length=0]",
-          message: 'Domain gets time from the caller (Clock port).',
+          regex: `(^|/)(${others.join('|')})/`,
+          message: `Integrations boundary: integrations/${own} must not import ${others.join(', ')} (see CLAUDE.md, "Architecture").`,
         },
-      ],
+      ]),
+    ),
+    boundary('src/integrations/*.ts', [layerImports(['infrastructure', 'interface', 'bootstrap'])]),
+    boundary('src/interface/**', [layerImports(['infrastructure', 'integrations', 'bootstrap'])]),
+
+    {
+      files: ['src/domain/**', 'src/application/**'],
+      rules: {
+        'no-restricted-globals': [
+          'error',
+          { name: 'process', message: 'Pass configuration through ports instead of reading process state.' },
+        ],
+      },
     },
-  },
-);
+    {
+      files: ['src/domain/**'],
+      rules: {
+        'no-restricted-properties': [
+          'error',
+          { object: 'Date', property: 'now', message: 'Domain gets time from the caller (Clock port).' },
+          { object: 'Math', property: 'random', message: 'Domain gets ids from the caller (IdGenerator port).' },
+        ],
+        'no-restricted-syntax': [
+          'error',
+          {
+            selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+            message: 'Domain gets time from the caller (Clock port).',
+          },
+        ],
+      },
+    },
+    ...guardrails(debt),
+  );
+
+export default config(DEBT);
