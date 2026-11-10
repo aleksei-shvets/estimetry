@@ -1,5 +1,3 @@
-import type { Card } from '../../domain/card/card.js';
-import { normalized } from '../../domain/calibration/calibration.js';
 import { stackLabels } from '../../domain/estimate/stack-labels.js';
 import { TaskType } from '../../domain/task/task-type.js';
 import type { ResolveCurrentProject } from '../project/resolve-current-project.js';
@@ -21,8 +19,4 @@ export function estimateQuery(
   const type = input.type === undefined ? undefined : TaskType.of(input.type, taskTypes.allowed()).value;
   const stack = stackLabels(input.stack ?? project.find()?.stack ?? []);
   return { ...(type === undefined ? {} : { type }), stack };
-}
-
-export function otherAuthors(cards: readonly Card[], author: string, aliases: ReadonlyMap<string, string>): number {
-  return normalized(cards, aliases).filter((card) => card.author !== author).length;
 }

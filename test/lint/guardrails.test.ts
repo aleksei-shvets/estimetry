@@ -7,9 +7,9 @@ import { ROOT } from '../support/cli.js';
 
 /** The list of current violations, as `eslint/guardrails.js` keeps it. */
 interface Debt {
-  statusLiteral: string[];
-  taskImportsHooks: string[];
-  nodePath: string[];
+  statusLiteral: Record<string, number>;
+  taskImportsHooks: Record<string, number>;
+  nodePath: Record<string, number>;
   maxLines: Record<string, number>;
   maxFunctionLines: Record<string, number>;
 }
@@ -94,16 +94,17 @@ describe('the list of debt', () => {
   };
   const lintFile = async (file: string, debt: Debt) => (await eslint(debt).lintFiles([join(ROOT, file)]))[0]?.messages ?? [];
 
-  it('every listed file still breaks its rule', async () => {
+  it('every listed file breaks its rule exactly as many times as listed', async () => {
     const lists: [keyof Pick<Debt, 'statusLiteral' | 'taskImportsHooks' | 'nodePath'>, RegExp][] = [
       ['statusLiteral', /task status/],
       ['taskImportsHooks', /application\/hooks/],
       ['nodePath', /node:path/],
     ];
     for (const [list, message] of lists) {
-      for (const file of guardrails.DEBT[list]) {
-        const found = await lintFile(file, without((debt) => (debt[list] = debt[list].filter((f) => f !== file))));
-        expect(found.some((m) => message.test(m.message)), `${file} no longer breaks ${list}: remove it from DEBT.${list}`).toBe(true);
+      for (const [file, count] of Object.entries(guardrails.DEBT[list])) {
+        const found = await lintFile(file, without((debt) => delete debt[list][file]));
+        const actual = found.filter((m) => message.test(m.message)).length;
+        expect(actual, `${file}: set DEBT.${list} to ${actual} (0 means remove it)`).toBe(count);
       }
     }
   }, 120_000);

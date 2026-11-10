@@ -18,8 +18,9 @@ import { servedTasks, type SessionBindings } from '../ports/session-bindings.js'
 import type { TaskStatusReader } from '../ports/task-status-reader.js';
 import type { ChangeCompletions } from './change-completions.js';
 import type { Checkpoints } from './checkpoints.js';
-import { closeProposalText, cut, ESTIMATE_REMINDER, EXTRA_REMINDER, MAX_CONTEXT_LENGTH, sessionStartContext, type TaskFact } from './hook-context.js';
-import { journalEntry } from './journal-entry.js';
+import { cut, MAX_CONTEXT_LENGTH } from './context-limit.js';
+import { closeProposalText, ESTIMATE_REMINDER, EXTRA_REMINDER, sessionStartContext, type TaskFact } from './hook-context.js';
+import { journalEntry } from '../shared/journal-entry.js';
 import type { SessionTask } from './session-task.js';
 import type { ImportSessionLogs } from '../task/import-session-logs.js';
 

@@ -4,7 +4,8 @@ import { InvalidValue } from '../../domain/shared/domain-error.js';
 import type { ResolveCurrentProject } from '../project/resolve-current-project.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
 import type { TaskTypeCatalog } from '../ports/task-type-catalog.js';
-import { estimateQuery, otherAuthors, type EstimateQueryInput } from './estimate-query.js';
+import { otherAuthors } from '../../domain/calibration/other-authors.js';
+import { estimateQuery, type EstimateQueryInput } from './estimate-query.js';
 import type { TaskCards } from './task-cards.js';
 
 export const SIMILAR_SCHEMA_VERSION = 1;

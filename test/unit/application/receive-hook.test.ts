@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryCloseProposals } from '../../support/closing-fakes.js';
 import type { ActivityDraft, HookKind } from '../../../src/application/contracts/hook-adapter.js';
-import { BindSession } from '../../../src/application/hooks/bind-session.js';
+import { BindSession } from '../../../src/application/task/bind-session.js';
 import { Checkpoints } from '../../../src/application/hooks/checkpoints.js';
 import { ReceiveHook, SESSION_END_IMPORT_BUDGET_MS } from '../../../src/application/hooks/receive-hook.js';
 import type { SessionImportRequest } from '../../../src/application/task/import-session-logs.js';

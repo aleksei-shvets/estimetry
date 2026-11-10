@@ -8,8 +8,7 @@ import type { IdGenerator } from '../ports/id-generator.js';
 import type { LocatedProject } from '../ports/project-locator.js';
 import type { SessionBindings } from '../ports/session-bindings.js';
 import type { TaskStatusReader } from '../ports/task-status-reader.js';
-import { journalEntry } from './journal-entry.js';
-import { CORE_SOURCE } from './session-task.js';
+import { CORE_SOURCE, journalEntry } from '../shared/journal-entry.js';
 
 
 /**

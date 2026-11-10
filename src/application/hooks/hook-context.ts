@@ -1,8 +1,6 @@
 import type { SessionId } from '../../domain/measurement/session-id.js';
 import type { TaskSummary } from '../ports/task-status-reader.js';
-
-/** The agent reads this; the tool shows it among system messages, so it stays short. */
-export const MAX_CONTEXT_LENGTH = 1000;
+import { cut, MAX_CONTEXT_LENGTH } from './context-limit.js';
 
 export const EXTRA_REMINDER = 'estimetry: if the work has gone beyond the plan, record it with /emt-extra.';
 
@@ -74,10 +72,6 @@ export function closeProposalText(input: {
       (plan.length === 0 ? '' : `; ${plan.join(', ')}`) +
       `. If it was the last change of the task, ask the user whether to close it (/emt-close); close only after they agree.`,
   );
-}
-
-export function cut(text: string, limit = MAX_CONTEXT_LENGTH): string {
-  return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
 }
 
 function duration(minutes: number): string {

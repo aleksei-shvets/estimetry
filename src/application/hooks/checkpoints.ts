@@ -11,7 +11,7 @@ import type { IdGenerator } from '../ports/id-generator.js';
 import type { MeasurementSettings } from '../ports/measurement-settings.js';
 import type { LocatedProject } from '../ports/project-locator.js';
 import type { ProjectPlans } from '../ports/project-plans.js';
-import { journalEntry } from './journal-entry.js';
+import { journalEntry } from '../shared/journal-entry.js';
 
 /** Calls that run in the background, so a snapshot that runs git does not hold the agent up. */
 const WRITES_CHECKPOINTS: ReadonlySet<HookKind> = new Set(['tool-done', 'turn-end']);

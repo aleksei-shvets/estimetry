@@ -9,10 +9,7 @@ import type { IdGenerator } from '../ports/id-generator.js';
 import type { LocatedProject } from '../ports/project-locator.js';
 import type { SessionBinding, SessionBindings } from '../ports/session-bindings.js';
 import type { TaskStatusReader, TaskSummary } from '../ports/task-status-reader.js';
-import { journalEntry } from './journal-entry.js';
-
-/** Records the core writes itself carry this source, not the adapter's. */
-export const CORE_SOURCE = 'estimetry';
+import { CORE_SOURCE, journalEntry } from '../shared/journal-entry.js';
 
 /** "No task" is looked at again after this long, so a task started mid-turn is picked up soon. */
 export const RECHECK_MS = 60_000;
