@@ -1,29 +1,45 @@
 {
   "name": "estimetry",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Compares work estimates with actual effort in AI-agent development and reuses that experience in the next estimate",
+  "keywords": [
+    "estimation",
+    "effort",
+    "ai-agents",
+    "claude-code",
+    "cli",
+    "time-tracking",
+    "openspec"
+  ],
   "license": "MIT",
   "author": "Aleksei Shvets",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aleksei-shvets/estimetry.git"
   },
+  "homepage": "https://github.com/aleksei-shvets/estimetry#readme",
+  "bugs": {
+    "url": "https://github.com/aleksei-shvets/estimetry/issues"
+  },
   "type": "module",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.12.0"
   },
   "bin": {
     "estimetry": "dist/bootstrap/main.js",
     "emt": "dist/bootstrap/main.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
-    "test": "npm run build && vitest run"
+    "test": "npm run build && vitest run",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "commander": "^14.0.3",
@@ -31,7 +47,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^20.19.43",
+    "@types/node": "^22.12.0",
     "eslint": "^10.13.0",
     "typescript": "5.9",
     "typescript-eslint": "^8.72.1",

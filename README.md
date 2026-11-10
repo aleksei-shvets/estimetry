@@ -2,13 +2,32 @@
 
 Compares work estimates with the actual effort in AI-agent development and reuses that experience in the next estimate.
 
-The CLI is `estimetry`, with the short alias `emt`. It needs Node.js 20.19 or newer:
+The CLI is `estimetry`, with the short alias `emt`.
+
+## Install
+
+You need:
+- Node.js 22.12 or newer;
+- git;
+- [Claude Code](https://docs.claude.com/en/docs/claude-code) — the only AI tool estimetry supports for now.
 
 ```sh
 npm install -g estimetry
+emt --version
 ```
 
-> estimetry is in early development.
+Install it globally: the hooks of Claude Code call `estimetry` from `PATH`.
+
+> estimetry is at 0.x: commands and the storage format may still change between minor versions. [CHANGELOG.md](CHANGELOG.md) says what changed and what to do after an upgrade.
+
+## Getting started
+
+1. In the root of a repository, run `estimetry init`. It sets up the Claude Code hooks and the `/emt-…` skills.
+2. Start a new Claude Code session there and ask how long a task will take, or run `/emt-estimate`. The agent creates the task, estimates it by parts and saves the estimate once you approve it.
+3. Run `/emt-start` and work as usual. The hooks measure the time of the agents and your own time; `emt status` shows it.
+4. When the work is done, run `/emt-close`. The agent closes the task and asks you why the fact differs from the estimate.
+
+Every closed task makes the next estimate more grounded: `emt similar` finds past tasks like the new one, and `emt calibrate` gives your own coefficient once there are enough of them.
 
 ## Help
 
