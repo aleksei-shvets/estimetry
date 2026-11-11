@@ -1,5 +1,6 @@
 import { Estimate } from '../estimate/estimate.js';
 import type { EstimateRevision } from '../estimate/estimate-revision.js';
+import { LostWindow } from '../estimate/lost-window.js';
 import { exclusionsOf, type PlanExclusions } from '../progress/plan-exclusions.js';
 import { Extra } from '../measurement/extra.js';
 import { ManualTime } from '../measurement/manual-time.js';
@@ -216,11 +217,9 @@ export class Task {
     return moments.length === 0 ? undefined : moments.reduce(later);
   }
 
-  /** Windows of work thrown away by revisions with `exclude`, as `[from, to]`. */
-  get lostWindows(): readonly { readonly from: Timestamp; readonly to: Timestamp }[] {
-    return this.state.revisions.flatMap((revision) =>
-      revision.spent === 'exclude' && revision.lostFrom !== undefined ? [{ from: revision.lostFrom, to: revision.at }] : [],
-    );
+  /** Windows of work thrown away by revisions with `exclude`. */
+  get lostWindows(): readonly LostWindow[] {
+    return this.state.revisions.flatMap((r) => (r.spent === 'exclude' && r.lostFrom !== undefined ? [LostWindow.of(r.lostFrom, r.at)] : []));
   }
 
   /**

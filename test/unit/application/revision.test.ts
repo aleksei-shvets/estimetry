@@ -28,6 +28,9 @@ import {
 import { FakeProjectPlans, InMemorySessionBindings, RepositoryTaskStatusReader } from '../../support/hook-fakes.js';
 import { fakeInstallDependencies, InMemoryProjectConfigFile, InMemoryProjectFiles } from '../../support/in-memory-files.js';
 import { InMemoryEventJournal, InMemoryProjectRepository, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
+import { ChangeArchives } from '../../../src/application/shared/change-archives.js';
+import { EventMetaSource } from '../../../src/application/shared/event-meta-source.js';
+import { ProgressLog } from '../../../src/application/hooks/progress-log.js';
 
 let tasks: InMemoryTaskRepository;
 let journal: InMemoryEventJournal;
@@ -158,13 +161,10 @@ describe('revising the estimate', () => {
     revise();
     const state = { read: () => undefined, write: () => undefined };
     const completions = new ChangeCompletions(
-      plans,
-      { changedAt: () => time('10:00').toMillis() },
-      state,
-      journal,
+      new ChangeArchives(plans, { changedAt: () => time('10:00').toMillis() }),
+      new ProgressLog(state, journal),
       new RepositoryTaskStatusReader(tasks),
-      new SequentialIdGenerator(),
-      new FakeAuthorProvider(),
+      new EventMetaSource({ now: () => { throw new Error('the clock is not read here'); } }, new SequentialIdGenerator(), new FakeAuthorProvider()),
       new RecordingErrorReporter(),
       closing.proposals,
     );

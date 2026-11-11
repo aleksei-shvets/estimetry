@@ -72,6 +72,10 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     { Checkpoints },
     { FlowProjectPlans },
     { ChangeCompletions },
+    { CheckpointSnapshot },
+    { ProgressLog },
+    { ChangeArchives },
+    { EventMetaSource },
     { HookAdapterRegistry },
     { claudeCodeHooks },
     { FlowRegistry },
@@ -97,6 +101,10 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     import('../application/hooks/checkpoints.js'),
     import('../application/hooks/flow-plans.js'),
     import('../application/hooks/change-completions.js'),
+    import('../application/hooks/checkpoint-snapshot.js'),
+    import('../application/hooks/progress-log.js'),
+    import('../application/shared/change-archives.js'),
+    import('../application/shared/event-meta-source.js'),
     import('../integrations/tools/hook-adapters.js'),
     import('../integrations/tools/claude-code/hook-translation.js'),
     import('../integrations/flows/registry.js'),
@@ -132,22 +140,14 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
   const projects = new FileProjectRepository(layout);
   const plans = new FlowProjectPlans(new YamlProjectConfigFile(), flows, files, projects);
   const proposals = new FileCloseProposals(layout);
+  const clock = { now: () => started };
+  const meta = new EventMetaSource(clock, ids, config);
   return new ReceiveHook({
     adapters: new HookAdapterRegistry().register(claudeCodeHooks),
     locator: new FsProjectLocator(layout),
     sessionTask: new SessionTask(bindings, tasks, journal, ids, config),
-    checkpoints: new Checkpoints(
-      checkpointState,
-      journal,
-      plans,
-      new FsGitHead(),
-      git,
-      config,
-      errors,
-      ids,
-      config,
-    ),
-    completions: new ChangeCompletions(plans, files, new YamlProgressState(layout), journal, tasks, ids, config, errors, proposals),
+    checkpoints: new Checkpoints(checkpointState, journal, new CheckpointSnapshot(plans, new FsGitHead(), git), config, errors, meta),
+    completions: new ChangeCompletions(new ChangeArchives(plans, files), new ProgressLog(new YamlProgressState(layout), journal), tasks, meta, errors, proposals),
     proposals,
     // Only a pending proposal to close the task needs the plan of the task.
     planOf: async () => {
@@ -192,7 +192,7 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
         new TaskPlanProgress(plans, journal),
       );
     },
-    clock: { now: () => started },
+    clock,
     ids,
     authors: config,
     // Only the session end parses a log, and only it loads the reader.

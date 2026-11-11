@@ -2,18 +2,16 @@ import type { ChangeCompleted, PlanBaseline, ProgressRecord } from '../../domain
 import { CalendarDate } from '../../domain/shared/calendar-date.js';
 import { isExcluded } from '../../domain/progress/plan-exclusions.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
-import { TaskId } from '../../domain/task/task-id.js';
 import type { ArchivedChange } from '../contracts/flow.js';
-import type { AuthorProvider } from '../ports/author-provider.js';
 import type { CloseProposals } from '../ports/close-proposals.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';
-import type { EventJournal } from '../ports/event-journal.js';
-import type { IdGenerator } from '../ports/id-generator.js';
-import type { ProgressSeen, ProgressState } from '../ports/progress-state.js';
-import type { ProjectFiles } from '../ports/project-files.js';
-import type { ProjectPlanReading, ProjectPlans } from '../ports/project-plans.js';
+import type { ProgressSeen } from '../ports/progress-state.js';
+import type { ProjectPlanReading } from '../ports/project-plans.js';
 import type { TaskStatusReader, TaskSummary } from '../ports/task-status-reader.js';
+import type { ChangeArchives } from '../shared/change-archives.js';
+import type { EventMetaSource } from '../shared/event-meta-source.js';
 import { journalEntry } from '../shared/journal-entry.js';
+import type { ProgressLog } from './progress-log.js';
 
 const SOURCE = 'estimetry';
 
@@ -24,13 +22,10 @@ const SOURCE = 'estimetry';
  */
 export class ChangeCompletions {
   constructor(
-    private readonly plans: Pick<ProjectPlans, 'archives'>,
-    private readonly files: Pick<ProjectFiles, 'changedAt'>,
-    private readonly state: ProgressState,
-    private readonly journal: EventJournal,
+    private readonly archives: ChangeArchives,
+    private readonly progress: ProgressLog,
     private readonly tasks: Pick<TaskStatusReader, 'inProgress'>,
-    private readonly ids: IdGenerator,
-    private readonly authors: AuthorProvider,
+    private readonly meta: EventMetaSource,
     private readonly errors: ErrorReporter,
     private readonly proposals?: Pick<CloseProposals, 'put'>,
   ) {}
@@ -51,18 +46,15 @@ export class ChangeCompletions {
     if (task.startedAt === undefined) {
       return;
     }
-    const readings = this.plans
-      .archives(task.projects, near === undefined ? {} : { near })
-      .filter((reading) => reading.archived !== undefined);
+    const readings = this.archives.read(task.projects, near === undefined ? {} : { near }).filter((reading) => reading.archived !== undefined);
     if (readings.length === 0) {
       return;
     }
-    const cached = this.state.read(task.id);
-    const seen = cached ?? fromRecords(this.journal.readRecords(TaskId.parse(task.id)));
+    const { seen, cached } = this.progress.seen(task.id);
     const startedAt = Timestamp.parse(task.startedAt);
     const records: ProgressRecord[] = [];
     const directories: Record<string, readonly string[]> = { ...seen.directories };
-    let changed = cached === undefined;
+    let changed = !cached;
     for (const reading of readings) {
       const firstRun = seen.directories[reading.project] === undefined;
       const unseen = (reading.archived ?? []).filter((dir) => !seenIn(seen, reading.project, dir.directory));
@@ -76,17 +68,11 @@ export class ChangeCompletions {
         changed = true;
       }
     }
-    // Journal first, then the cache: a crash in between repeats a record, it never loses one.
-    for (const record of records) {
-      this.journal.appendRecord(record);
-    }
+    this.progress.record(task.id, records, changed ? { directories } : undefined);
     // The latest exact completion is the one to ask about; approximate ones are old work.
     const exact = records.filter((record): record is ChangeCompleted => record.type === 'change.completed' && !record.data.approximate).at(-1);
     if (exact !== undefined && session !== undefined && this.proposals !== undefined) {
       this.proposals.put(task.id, { change: exact.data.change, project: exact.data.project, completedAt: exact.data.completedAt, session });
-    }
-    if (changed) {
-      this.state.write(task.id, { directories });
     }
   }
 
@@ -110,7 +96,7 @@ export class ChangeCompletions {
     let ours: ((change: string) => boolean) | undefined;
     for (const dir of unseen) {
       // Rolled back by a revision: settled, never a completion.
-      if (task.exclusions !== undefined && isExcluded(task.exclusions, reading.project, dir.change, dir.archivedOn.value, this.files.changedAt(dir.path))) {
+      if (task.exclusions !== undefined && isExcluded(task.exclusions, reading.project, dir.change, dir.archivedOn.value, this.archives.changedAt(dir))) {
         settled.push(dir.directory);
         continue;
       }
@@ -126,7 +112,7 @@ export class ChangeCompletions {
         continue;
       }
       // Only now a stat: a ctime older than the start means the directory was recreated (a clone), not moved.
-      const changedAt = firstRun ? undefined : this.files.changedAt(dir.path);
+      const changedAt = firstRun ? undefined : this.archives.changedAt(dir);
       const exact = changedAt !== undefined && changedAt >= startedAt.toMillis();
       const completedAt = exact ? Timestamp.fromMillis(Math.round(changedAt)) : Timestamp.parse(`${dir.archivedOn.value}T00:00:00.000Z`);
       settled.push(dir.directory);
@@ -143,7 +129,7 @@ export class ChangeCompletions {
             detectedAt: now.toISOString(),
             approximate: !exact,
           },
-          this.meta(task, reading.project, now),
+          this.recordMeta(task, reading.project, now),
         ),
       );
     }
@@ -152,7 +138,7 @@ export class ChangeCompletions {
         journalEntry<PlanBaseline>(
           'plan.baseline',
           { source: SOURCE, project: reading.project, directories: baseline },
-          this.meta(task, reading.project, now),
+          this.recordMeta(task, reading.project, now),
         ),
       );
     }
@@ -169,22 +155,9 @@ export class ChangeCompletions {
     return () => alone;
   }
 
-  private meta(task: TaskSummary, project: string, now: Timestamp) {
-    return { id: this.ids.next(), at: now, author: this.authors.current(), project, task: task.id };
+  private recordMeta(task: TaskSummary, project: string, now: Timestamp) {
+    return { ...this.meta.at(now), project, task: task.id };
   }
-}
-
-/** The cache rebuilt from the journal: directories of completions and baselines, by project. */
-function fromRecords(records: readonly ProgressRecord[]): ProgressSeen {
-  const directories: Record<string, string[]> = {};
-  for (const record of records) {
-    if (record.type === 'plan.baseline') {
-      (directories[record.data.project] ??= []).push(...record.data.directories);
-    } else if (record.type === 'change.completed') {
-      (directories[record.data.project] ??= []).push(record.data.directory);
-    }
-  }
-  return { directories };
 }
 
 function seenIn(seen: ProgressSeen, project: string, directory: string): boolean {

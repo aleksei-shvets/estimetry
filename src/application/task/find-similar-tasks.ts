@@ -80,13 +80,13 @@ export class FindSimilarTasks {
       author,
       aliases,
       stack: query.stack,
-      ...(query.type === undefined ? {} : { type: query.type }),
+      ...(query.type === undefined ? {} : { type: query.type.value }),
       ...(input.hours === undefined ? {} : { hours: input.hours }),
       ...(input.limit === undefined ? {} : { limit: input.limit }),
     });
     return {
       schemaVersion: SIMILAR_SCHEMA_VERSION,
-      query: { type: query.type ?? null, stack: query.stack, hours: input.hours ?? null },
+      query: { type: query.type?.value ?? null, stack: query.stack, hours: input.hours ?? null },
       tasks: found.map(view),
       skipped,
       otherAuthors: otherAuthors(cards, author, aliases),

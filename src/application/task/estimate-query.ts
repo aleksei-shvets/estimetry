@@ -1,4 +1,4 @@
-import { stackLabels } from '../../domain/estimate/stack-labels.js';
+import { EstimateQuery } from '../../domain/estimate/estimate-query.js';
 import { TaskType } from '../../domain/task/task-type.js';
 import type { ResolveCurrentProject } from '../project/resolve-current-project.js';
 import type { TaskTypeCatalog } from '../ports/task-type-catalog.js';
@@ -11,12 +11,7 @@ export interface EstimateQueryInput {
 }
 
 /** Type checked by the catalog, labels of the stack — given or the current project's. */
-export function estimateQuery(
-  input: EstimateQueryInput,
-  project: Pick<ResolveCurrentProject, 'find'>,
-  taskTypes: TaskTypeCatalog,
-): { readonly type?: string; readonly stack: readonly string[] } {
-  const type = input.type === undefined ? undefined : TaskType.of(input.type, taskTypes.allowed()).value;
-  const stack = stackLabels(input.stack ?? project.find()?.stack ?? []);
-  return { ...(type === undefined ? {} : { type }), stack };
+export function estimateQuery(input: EstimateQueryInput, project: Pick<ResolveCurrentProject, 'find'>, taskTypes: TaskTypeCatalog): EstimateQuery {
+  const stack = input.stack ?? project.find()?.stack ?? [];
+  return EstimateQuery.of(input.type === undefined ? { stack } : { type: TaskType.of(input.type, taskTypes.allowed()), stack });
 }

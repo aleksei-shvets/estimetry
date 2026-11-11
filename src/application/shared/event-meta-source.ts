@@ -1,4 +1,5 @@
 import type { EventMeta } from '../../domain/shared/event-envelope.js';
+import type { Timestamp } from '../../domain/shared/timestamp.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
 import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
@@ -13,5 +14,10 @@ export class EventMetaSource {
 
   next(): EventMeta {
     return { id: this.ids.next(), at: this.clock.now(), author: this.authors.current() };
+  }
+
+  /** A record whose moment is known already: the start of a hook, a measurement, the closing. */
+  at(moment: Timestamp): EventMeta {
+    return { id: this.ids.next(), at: moment, author: this.authors.current() };
   }
 }
