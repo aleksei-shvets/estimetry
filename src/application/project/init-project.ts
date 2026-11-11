@@ -1,4 +1,3 @@
-import { isAbsolute, relative, sep } from 'node:path';
 import type { ProjectRepository } from '../../domain/project/project-repository.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
 import { isRemoval, mergePlans, type FileChange, type InstallPlan } from '../contracts/file-change.js';
@@ -10,6 +9,7 @@ import type { CommitHookInstaller } from '../ports/commit-hook-installer.js';
 import type { GitExcludes } from '../ports/git-excludes.js';
 import type { ProjectConfigFile } from '../ports/project-config-file.js';
 import type { ProjectFiles } from '../ports/project-files.js';
+import type { ProjectPaths } from '../ports/project-paths.js';
 import { isShareMode, SHARE_MODES, type ShareMode, type SharingPreference } from '../ports/sharing-preference.js';
 import type { WorkspaceLocator } from '../ports/workspace-locator.js';
 import type { RegistrationPlan, ResolveCurrentProject } from './resolve-current-project.js';
@@ -109,8 +109,8 @@ export class InitProject {
       return fingerprint !== undefined && registered.fingerprint === undefined ? withStack.withFingerprint(fingerprint) : withStack;
     });
     const files = [
-      ...plan.changes.map((change) => ({ path: display(root, change.path), status: this.apply(change) })),
-      ...plan.skipped.map((skip) => ({ path: display(root, skip.path), status: 'skipped' as const, reason: skip.reason })),
+      ...plan.changes.map((change) => ({ path: display(this.deps.files, root, change.path), status: this.apply(change) })),
+      ...plan.skipped.map((skip) => ({ path: display(this.deps.files, root, skip.path), status: 'skipped' as const, reason: skip.reason })),
     ];
     if (this.deps.sharing.mode() !== share) {
       this.deps.sharing.save(share);
@@ -152,7 +152,7 @@ export class InitProject {
       return EMPTY;
     }
     const file = this.deps.excludes.globalFile();
-    const patterns = unignored.map((path) => `**/${path.split(sep).join('/')}`);
+    const patterns = unignored.map((path) => `**/${this.deps.files.portable(path)}`);
     if (consent !== true) {
       return {
         changes: [],
@@ -204,8 +204,7 @@ function plannedId(plan: RegistrationPlan): string {
 }
 
 /** Relative inside the project, absolute outside it. */
-function display(root: string, path: string): string {
-  const inside = relative(root, path);
-  return inside !== '' && !inside.startsWith('..') && !isAbsolute(inside) ? inside : path;
+function display(paths: ProjectPaths, root: string, path: string): string {
+  return paths.inside(root, path) ?? path;
 }
 

@@ -1,3 +1,4 @@
+import { posix } from 'node:path';
 import { stringify, parse } from 'yaml';
 import type { FileChange, InstallPlan } from '../../src/application/contracts/file-change.js';
 import type { Flow } from '../../src/application/contracts/flow.js';
@@ -14,6 +15,27 @@ import type { ShareMode, SharingPreference } from '../../src/application/ports/s
 
 /** Files by absolute POSIX path; directories exist implicitly. */
 export class InMemoryProjectFiles implements ProjectFiles {
+  inside(root: string, path: string): string | undefined {
+    const inside = posix.relative(root, path);
+    return inside !== '' && !inside.startsWith('..') && !posix.isAbsolute(inside) ? inside : undefined;
+  }
+
+  portable(path: string): string {
+    return path;
+  }
+
+  contains(dir: string, path: string): boolean {
+    return path === dir || path.startsWith(dir.endsWith('/') ? dir : `${dir}/`);
+  }
+
+  dirname(path: string): string {
+    return posix.dirname(path);
+  }
+
+  basename(path: string): string {
+    return posix.basename(path);
+  }
+
   readonly files = new Map<string, { content: string; executable: boolean }>();
   readonly writes: string[] = [];
 

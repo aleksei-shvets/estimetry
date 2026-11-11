@@ -1,4 +1,3 @@
-import { basename, dirname, relative } from 'node:path';
 import type { StackDetector } from '../contracts/stack-detector.js';
 import type { ProjectFiles } from '../ports/project-files.js';
 
@@ -17,14 +16,14 @@ export function detectStack(
   const found = files.find(root, names, { depth: MANIFEST_DEPTH, limit: MANIFEST_LIMIT });
   const byDirectory = new Map<string, Set<string>>();
   for (const path of found) {
-    const dir = dirname(path);
-    byDirectory.set(dir, (byDirectory.get(dir) ?? new Set()).add(basename(path)));
+    const dir = files.dirname(path);
+    byDirectory.set(dir, (byDirectory.get(dir) ?? new Set()).add(files.basename(path)));
   }
 
   const tags = new Set<string>();
   const warnings: string[] = [];
   for (const path of found) {
-    const name = basename(path);
+    const name = files.basename(path);
     if (!manifests.has(name)) {
       continue;
     }
@@ -32,14 +31,14 @@ export function detectStack(
     if (content === undefined) {
       continue;
     }
-    const siblings = byDirectory.get(dirname(path)) ?? new Set<string>();
+    const siblings = byDirectory.get(files.dirname(path)) ?? new Set<string>();
     for (const detector of detectors.filter((d) => d.manifests.includes(name))) {
       try {
         for (const tag of detector.detect(name, content, siblings)) {
           tags.add(tag);
         }
       } catch (error) {
-        warnings.push(`${relative(root, path)}: ${error instanceof Error ? error.message : String(error)}; skipped when detecting the stack`);
+        warnings.push(`${files.inside(root, path) ?? path}: ${error instanceof Error ? error.message : String(error)}; skipped when detecting the stack`);
       }
     }
   }

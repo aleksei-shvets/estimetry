@@ -1,5 +1,7 @@
+import type { ProjectPaths } from './project-paths.js';
+
 /** Files of the project and of the user's tool directories, by absolute path. */
-export interface ProjectFiles {
+export interface ProjectFiles extends ProjectPaths {
   /** Content of the file, or undefined if it does not exist. */
   read(path: string): string | undefined;
   isDirectory(path: string): boolean;
