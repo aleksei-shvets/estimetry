@@ -2,7 +2,6 @@ import type { Command } from 'commander';
 import { TaskId } from '../../../domain/task/task-id.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
 import { parseTime } from '../parse-input.js';
-import { unestimatedWarning } from '../presenters/text/task-text.js';
 
 export function registerStartCommand(program: Command, ctx: CliContext): void {
   program
@@ -18,9 +17,8 @@ export function registerStartCommand(program: Command, ctx: CliContext): void {
         ...(id === undefined ? {} : { task: TaskId.parse(id) }),
         ...(options.at === undefined ? {} : { at: parseTime(options.at) }),
       });
-      if (!view.estimated) {
-        ctx.out.error(unestimatedWarning(view));
-      }
-      ctx.out.print(presenterFor(options).taskStarted(view));
+      const presenter = presenterFor(options);
+      presenter.notices.taskStarted(view).forEach((line) => ctx.out.error(line));
+      ctx.out.print(presenter.taskStarted(view));
     });
 }

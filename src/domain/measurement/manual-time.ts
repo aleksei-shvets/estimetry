@@ -76,3 +76,16 @@ export class ManualTime {
     };
   }
 }
+
+/**
+ * Manual time a task knew of by `until`: recorded by then and, when the record
+ * names when the work ended, ended by then. A record of a snapshot that did not
+ * keep its moment counts as known.
+ */
+export function manualKnownBy(
+  records: readonly { readonly manual: ManualTime; readonly recordedAt?: Timestamp }[],
+  until: Timestamp,
+): ManualTime[] {
+  const by = (moment: Timestamp | undefined) => moment === undefined || moment.toMillis() <= until.toMillis();
+  return records.filter(({ manual, recordedAt }) => by(recordedAt) && by(manual.at)).map(({ manual }) => manual);
+}

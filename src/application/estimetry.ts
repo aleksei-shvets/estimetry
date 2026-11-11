@@ -58,6 +58,7 @@ import { Renegotiate, type Renegotiated, type RenegotiateInput } from './task/re
 import { ReopenTask, type TaskReopened } from './task/reopen-task.js';
 import type { TaskDetails } from './task/show-task.js';
 import { TaskCards } from './task/task-cards.js';
+import { AuthorAliases } from './task/author-aliases.js';
 import { TaskClosing } from './task/task-closing.js';
 import { CardBuilder } from './task/card-builder.js';
 import { ClosingFollowUp } from './task/closing-follow-up.js';
@@ -189,7 +190,7 @@ function coreServices(deps: EstimetryDependencies): CoreServices {
     deps.calibration,
     deps.calibrationSettings,
     deps.errors,
-    deps.authors,
+    new AuthorAliases(deps.authors, deps.calibrationSettings),
   );
   const closing = new TaskClosing(
     new ClosingRecords(
@@ -255,8 +256,9 @@ function estimatesGroup(deps: EstimetryDependencies, core: CoreServices): Estime
   );
   const findRevisionCandidates = new FindRevisionCandidates(activeTask, meta);
   const repairRevision = new RepairRevision(activeTask, revisionRecords);
-  const findSimilar = new FindSimilarTasks(taskCards, currentProject, deps.authors, deps.taskTypes);
-  const showCalibration = new ShowCalibration(taskCards, currentProject, deps.authors, deps.taskTypes, deps.calibrationSettings);
+  const aliases = new AuthorAliases(deps.authors, deps.calibrationSettings);
+  const findSimilar = new FindSimilarTasks(taskCards, currentProject, aliases, deps.taskTypes);
+  const showCalibration = new ShowCalibration(taskCards, currentProject, aliases, deps.taskTypes, deps.calibrationSettings);
   return {
     save: (input) => saveEstimate.execute(input),
     revise: (input) => reviseEstimate.execute(input),

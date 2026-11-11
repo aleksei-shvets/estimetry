@@ -1,11 +1,11 @@
 import { applicableCoefficient, type ApplicableCoefficient } from '../../domain/calibration/applicable-coefficient.js';
 import { calibrate, normalized, type AuthorCalibration, type RatioSlices, type RatioStats, type RevisedStats } from '../../domain/calibration/calibration.js';
 import type { ResolveCurrentProject } from '../project/resolve-current-project.js';
-import type { AuthorProvider } from '../ports/author-provider.js';
 import type { CalibrationSettings } from '../ports/calibration-settings.js';
 import type { TaskTypeCatalog } from '../ports/task-type-catalog.js';
 import { otherAuthors } from '../../domain/calibration/other-authors.js';
 import { estimateQuery, type EstimateQueryInput } from './estimate-query.js';
+import type { AuthorAliases } from './author-aliases.js';
 import type { TaskCards } from './task-cards.js';
 
 export const CALIBRATION_VIEW_SCHEMA_VERSION = 1;
@@ -52,9 +52,9 @@ const NO_TASKS: RatioStats = {
  */
 export class ShowCalibration {
   constructor(
-    private readonly cards: Pick<TaskCards, 'allCards' | 'aliases'>,
+    private readonly cards: Pick<TaskCards, 'allCards'>,
     private readonly project: Pick<ResolveCurrentProject, 'find'>,
-    private readonly authors: AuthorProvider,
+    private readonly authors: AuthorAliases,
     private readonly taskTypes: TaskTypeCatalog,
     private readonly settings: CalibrationSettings,
   ) {}
@@ -62,8 +62,8 @@ export class ShowCalibration {
   execute(input: CalibrationInput): CalibrationView {
     const query = estimateQuery(input, this.project, this.taskTypes);
     const { cards, skipped } = this.cards.allCards();
-    const author = this.authors.current().id;
-    const aliases = this.cards.aliases();
+    const author = this.authors.current();
+    const aliases = this.authors.toCurrent();
     const minTasks = this.settings.minTasks();
     // Only the author's section is shown: other authors' cards are not computed at all.
     const own = normalized(cards, aliases).filter((card) => card.author === author);

@@ -2,9 +2,12 @@ import type { Presenter } from './presenter.js';
 import { cardText, closeSummaryText } from './text/closing-text.js';
 import { calibrationText, estimateText, similarText } from './text/estimate-text.js';
 import { factText, formatMinutes, localTime, percent, table } from './text/format.js';
+import { textNotices } from './text/notices-text.js';
 import { initText, statusText } from './text/task-text.js';
 
 export const textPresenter: Presenter = {
+  notices: textNotices,
+
   taskCreated: (task) => `Created ${task.id} "${task.title}" (${task.type}) in project ${task.projects.join(', ')}`,
 
   taskList: (tasks, { all }) => {
@@ -55,6 +58,8 @@ export const textPresenter: Presenter = {
     (task.status === 'in-progress'
       ? ''
       : `\nTime is not measured yet: start the task when work begins with \`emt start ${task.id}\` (or /emt-start); add --at "YYYY-MM-DD HH:MM" if it already began.`),
+
+  revisionRepaired: (r) => `Wrote the plan snapshot of revision ${r.revision} of ${r.task.id}.`,
 
   estimateRevised: (r) =>
     r.firstEstimate

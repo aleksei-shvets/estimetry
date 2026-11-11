@@ -7,6 +7,7 @@ import type { ExtraRecorded } from '../../../application/task/record-extra.js';
 import type { ManualTimeRecorded } from '../../../application/task/record-manual-time.js';
 import type { EstimateSaved } from '../../../application/task/save-estimate.js';
 import type { EstimateRevised } from '../../../application/task/revise-estimate.js';
+import type { RevisionRepaired } from '../../../application/task/repair-revision.js';
 import type { StatusView } from '../../../application/task/show-status.js';
 import type { TaskView } from '../../../application/task/task-view.js';
 import type { TaskClosedResult } from '../../../application/task/close-task.js';
@@ -16,9 +17,19 @@ import type { Renegotiated } from '../../../application/task/renegotiate.js';
 import type { TaskReopened } from '../../../application/task/reopen-task.js';
 import type { TaskDetails } from '../../../application/task/show-task.js';
 import type { CloseSummary } from '../../../application/task/show-close-summary.js';
+import type { RevisionCandidates } from '../../../application/task/find-revision-candidates.js';
+
+/** Warnings and notes a command prints on stderr besides its result, one line each. */
+export interface Notices {
+  taskStarted(task: TaskView): readonly string[];
+  manualTimeRecorded(result: ManualTimeRecorded): readonly string[];
+  revisionCandidates(candidates: RevisionCandidates, covers: readonly string[]): readonly string[];
+}
 
 /** Renders use case results; `--json` picks the JSON presenter instead of branching in commands. */
 export interface Presenter {
+  /** Lines for stderr; the same text with `--json`, whose stdout stays one JSON document. */
+  readonly notices: Notices;
   taskCreated(task: TaskView): string;
   taskList(tasks: readonly TaskView[], options: { readonly all: boolean }): string;
   taskDetails(task: TaskDetails): string;
@@ -26,6 +37,7 @@ export interface Presenter {
   taskAttached(result: AttachTaskResult): string;
   estimateSaved(result: EstimateSaved): string;
   estimateRevised(result: EstimateRevised): string;
+  revisionRepaired(result: RevisionRepaired): string;
   manualTimeRecorded(result: ManualTimeRecorded): string;
   extraRecorded(result: ExtraRecorded): string;
   parallelModeChanged(result: ParallelModeChanged): string;

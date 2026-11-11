@@ -2,10 +2,10 @@ import type { Card } from '../../domain/card/card.js';
 import { similarTasks, typeOf, type SimilarTask } from '../../domain/similarity/similarity.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
 import type { ResolveCurrentProject } from '../project/resolve-current-project.js';
-import type { AuthorProvider } from '../ports/author-provider.js';
 import type { TaskTypeCatalog } from '../ports/task-type-catalog.js';
 import { otherAuthors } from '../../domain/calibration/other-authors.js';
 import { estimateQuery, type EstimateQueryInput } from './estimate-query.js';
+import type { AuthorAliases } from './author-aliases.js';
 import type { TaskCards } from './task-cards.js';
 
 export const SIMILAR_SCHEMA_VERSION = 1;
@@ -62,9 +62,9 @@ export interface SimilarTasksView {
 /** `emt similar` (similar-tasks spec): closed tasks of the author like the new one. */
 export class FindSimilarTasks {
   constructor(
-    private readonly cards: Pick<TaskCards, 'allCards' | 'aliases'>,
+    private readonly cards: Pick<TaskCards, 'allCards'>,
     private readonly project: Pick<ResolveCurrentProject, 'find'>,
-    private readonly authors: AuthorProvider,
+    private readonly authors: AuthorAliases,
     private readonly taskTypes: TaskTypeCatalog,
   ) {}
 
@@ -74,8 +74,8 @@ export class FindSimilarTasks {
       throw new InvalidValue('nothing to compare by: give --type <type> or --stack <labels>');
     }
     const { cards, skipped } = this.cards.allCards();
-    const author = this.authors.current().id;
-    const aliases = this.cards.aliases();
+    const author = this.authors.current();
+    const aliases = this.authors.toCurrent();
     const found = similarTasks(cards, {
       author,
       aliases,
