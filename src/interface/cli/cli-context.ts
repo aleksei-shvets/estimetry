@@ -1,4 +1,4 @@
-import type { HookCall } from '../../application/hooks/receive-hook.js';
+import type { HookCall } from '../../application/hooks/hook-call.js';
 import type { Estimetry } from '../../application/estimetry.js';
 import type { CliOutput } from './cli-output.js';
 import { jsonPresenter } from './presenters/json-presenter.js';

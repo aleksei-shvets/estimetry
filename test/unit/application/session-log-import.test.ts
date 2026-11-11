@@ -1,3 +1,4 @@
+import { EventMetaSource } from '../../../src/application/shared/event-meta-source.js';
 import { describe, expect, it } from 'vitest';
 import type { LogTurnData, SessionLogRead } from '../../../src/application/contracts/session-logs.js';
 import { ImportSessionLogs, MAX_RECORD_BYTES } from '../../../src/application/task/import-session-logs.js';
@@ -21,9 +22,7 @@ function setup() {
     readers: new SessionLogReaderRegistry().register(logs),
     state,
     journal,
-    ids: new SequentialIdGenerator(),
-    clock: new FixedClock('2026-10-27T12:00:00.000Z'),
-    authors: new FakeAuthorProvider(),
+    meta: new EventMetaSource(new FixedClock('2026-10-27T12:00:00.000Z'), new SequentialIdGenerator(), new FakeAuthorProvider()),
     errors,
   });
   const records = (task = 'T-1') => journal.readRecords(TaskId.parse(task)).filter((r): r is LogSession => r.type === 'log.session');

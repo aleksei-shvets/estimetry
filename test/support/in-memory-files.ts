@@ -5,7 +5,7 @@ import type { Flow } from '../../src/application/contracts/flow.js';
 import { InstallBlocked } from '../../src/application/contracts/install-blocked.js';
 import type { StackDetector } from '../../src/application/contracts/stack-detector.js';
 import type { InstallContext, ToolAdapter, ToolState } from '../../src/application/contracts/tool-adapter.js';
-import type { InstallDependencies } from '../../src/application/project/init-project.js';
+import type { InstallDependencies, InstallGit, InstallRegistries } from '../../src/application/project/install-dependencies.js';
 import type { CommandLocator } from '../../src/application/ports/command-locator.js';
 import type { CommitHookInstaller } from '../../src/application/ports/commit-hook-installer.js';
 import type { GitExcludes } from '../../src/application/ports/git-excludes.js';
@@ -232,29 +232,36 @@ export class ListRegistry<T extends { readonly id: string; readonly aliases?: re
   }
 }
 
-export function fakeInstallDependencies(files: InMemoryProjectFiles, overrides: Partial<InstallDependencies> = {}): InstallDependencies {
+/** Overrides of the fake dependencies of `init`, flat: tests replace a port without rebuilding its group. */
+export type FakeInstallOverrides = Partial<Pick<InstallDependencies, 'files' | 'sharing' | 'commands' | 'version'> & InstallRegistries & InstallGit>;
+
+export function fakeInstallDependencies(files: InMemoryProjectFiles, overrides: FakeInstallOverrides = {}): InstallDependencies {
   return {
-    files,
-    tools: new ListRegistry<ToolAdapter>([new FakeToolAdapter()]),
-    flows: new ListRegistry<Flow>([
-      {
-        id: 'openspec',
-        title: 'OpenSpec',
-        detect: (root, f) => f.isDirectory(`${root}/openspec`),
-        setupHint: (root, f) => (f.isDirectory(`${root}/openspec`) ? undefined : 'run `openspec init`'),
-        plan: () => [],
-        archived: () => [],
-      },
-      { id: 'none', title: 'No SDD', detect: () => true, plan: () => [], archived: () => [] },
-    ]),
-    detectors: new ListRegistry<StackDetector & { id: string }>([
-      { id: 'go', manifests: ['go.mod'], detect: (_name, content) => { if (!content.startsWith('module')) throw new Error('not a go.mod'); return ['go']; } },
-    ]),
-    commitHook: new FakeCommitHookInstaller(),
-    sharing: new InMemorySharingPreference(),
-    commands: new FakeCommandLocator(),
-    excludes: new FakeGitExcludes(),
-    version: '1.2.3',
-    ...overrides,
+    files: overrides.files ?? files,
+    registries: {
+      tools: overrides.tools ?? new ListRegistry<ToolAdapter>([new FakeToolAdapter()]),
+      flows:
+        overrides.flows ??
+        new ListRegistry<Flow>([
+          {
+            id: 'openspec',
+            title: 'OpenSpec',
+            detect: (root, f) => f.isDirectory(`${root}/openspec`),
+            setupHint: (root, f) => (f.isDirectory(`${root}/openspec`) ? undefined : 'run `openspec init`'),
+            plan: () => [],
+            archived: () => [],
+          },
+          { id: 'none', title: 'No SDD', detect: () => true, plan: () => [], archived: () => [] },
+        ]),
+      detectors:
+        overrides.detectors ??
+        new ListRegistry<StackDetector & { id: string }>([
+          { id: 'go', manifests: ['go.mod'], detect: (_name, content) => { if (!content.startsWith('module')) throw new Error('not a go.mod'); return ['go']; } },
+        ]),
+    },
+    git: { commitHook: overrides.commitHook ?? new FakeCommitHookInstaller(), excludes: overrides.excludes ?? new FakeGitExcludes() },
+    sharing: overrides.sharing ?? new InMemorySharingPreference(),
+    commands: overrides.commands ?? new FakeCommandLocator(),
+    version: overrides.version ?? '1.2.3',
   };
 }

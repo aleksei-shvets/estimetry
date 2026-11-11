@@ -15,7 +15,8 @@ import { ImportSessionLogs } from './task/import-session-logs.js';
 import type { TaskStatusReader } from './ports/task-status-reader.js';
 import type { TaskTypeCatalog } from './ports/task-type-catalog.js';
 import type { WorkspaceLocator } from './ports/workspace-locator.js';
-import { InitProject, type InitInput, type InitReport, type InstallDependencies } from './project/init-project.js';
+import { InitProject, type InitInput, type InitReport } from './project/init-project.js';
+import type { InstallDependencies } from './project/install-dependencies.js';
 import { ShowInitChoices, type InitChoices } from './project/show-init-choices.js';
 import { ResolveCurrentProject } from './project/resolve-current-project.js';
 import { EventMetaSource } from './shared/event-meta-source.js';
@@ -173,17 +174,9 @@ interface CoreServices {
 function coreServices(deps: EstimetryDependencies): CoreServices {
   const currentProject = new ResolveCurrentProject(deps.workspace, deps.projects, deps.projectConfig, deps.authors, deps.clock);
   const measurement = new TaskMeasurement(deps.journal, deps.measurement, deps.clock);
-  const importLogs = new ImportSessionLogs({
-    readers: deps.logReaders,
-    state: deps.logImportState,
-    journal: deps.journal,
-    ids: deps.ids,
-    clock: deps.clock,
-    authors: deps.authors,
-    errors: deps.errors,
-  });
-  const planSnapshots = new PlanSnapshots(deps.plans, deps.gitHead, deps.projects);
   const meta = new EventMetaSource(deps.clock, deps.ids, deps.authors);
+  const importLogs = new ImportSessionLogs({ readers: deps.logReaders, state: deps.logImportState, journal: deps.journal, meta, errors: deps.errors });
+  const planSnapshots = new PlanSnapshots(deps.plans, deps.gitHead, deps.projects);
   const taskCards = new TaskCards(
     new CardBuilder(deps.journal, measurement, deps.tasks),
     deps.cards,

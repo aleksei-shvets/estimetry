@@ -2,7 +2,7 @@ import type { ProjectConfigFile } from '../ports/project-config-file.js';
 import type { ShareMode } from '../ports/sharing-preference.js';
 import type { WorkspaceLocator } from '../ports/workspace-locator.js';
 import { defaultFlow, defaultTools, unignoredPersonalFiles } from './init-defaults.js';
-import type { InstallDependencies } from './init-project.js';
+import type { InstallDependencies } from './install-dependencies.js';
 
 /** What `init` would do by default, for the questions and for the non-interactive run. */
 export interface InitChoices {
@@ -33,14 +33,14 @@ export class ShowInitChoices {
     const tools = defaultTools(this.deps, root);
     return {
       projectRoot: root,
-      tools: this.deps.tools.all().map(({ id, title }) => ({ id, title })),
-      flows: this.deps.flows.all().map(({ id, title }) => ({ id, title })),
+      tools: this.deps.registries.tools.all().map(({ id, title }) => ({ id, title })),
+      flows: this.deps.registries.flows.all().map(({ id, title }) => ({ id, title })),
       defaults: {
         tools: tools.map((tool) => tool.id),
         flow: defaultFlow(this.deps, this.projectConfig, root),
         share: this.deps.sharing.mode() ?? 'none',
         shared: tools.some((tool) => tool.state(root, this.deps.files).shared),
-        trackCommits: this.deps.commitHook.installed(root),
+        trackCommits: this.deps.git.commitHook.installed(root),
       },
       unignoredPersonalFiles: unignoredPersonalFiles(this.deps, root, tools),
     };

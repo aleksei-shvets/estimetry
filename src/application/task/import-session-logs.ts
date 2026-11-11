@@ -7,12 +7,10 @@ import {
   type SessionLogFingerprint,
   type SessionLogReaders,
 } from '../contracts/session-logs.js';
+import type { EventMetaSource } from '../shared/event-meta-source.js';
 import { journalEntry } from '../shared/journal-entry.js';
-import type { AuthorProvider } from '../ports/author-provider.js';
-import type { Clock } from '../ports/clock.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';
 import type { EventJournal } from '../ports/event-journal.js';
-import type { IdGenerator } from '../ports/id-generator.js';
 import type { LogImportState } from '../ports/log-import-state.js';
 
 /** A record of a session log is split into parts no larger than this. */
@@ -43,9 +41,8 @@ export interface ImportDependencies {
   readonly readers: SessionLogReaders;
   readonly state: LogImportState;
   readonly journal: Pick<EventJournal, 'appendRecord'>;
-  readonly ids: IdGenerator;
-  readonly clock: Clock;
-  readonly authors: AuthorProvider;
+  /** Ids, the author and the clock's now of the records. */
+  readonly meta: EventMetaSource;
   readonly errors: ErrorReporter;
 }
 
@@ -107,7 +104,7 @@ export class ImportSessionLogs {
           const agents: LogAgent[] = read.agents
             .filter((agent) => !sameFile(entry?.fingerprint.agents[agent.agent], read.fingerprint.agents[agent.agent]) || read.from < from)
             .map((agent) => ({ agent: agent.agent, spans: agent.spans.map(([a, b]) => [a, b] as const), tokens: [...agent.tokens] }));
-          this.write(task, request.session, `${request.source}-log`, request.at ?? this.deps.clock.now(), { from: offset, turns, agents, cost: read.cost, skipped: read.skipped });
+          this.write(task, request.session, `${request.source}-log`, request.at ?? this.deps.meta.now(), { from: offset, turns, agents, cost: read.cost, skipped: read.skipped });
           this.deps.state.write(request.session, task.id, { fingerprint: read.fingerprint, next: read.next });
         }
         return [...fresh, ...results('imported', due)];
@@ -153,8 +150,7 @@ export class ImportSessionLogs {
       }
       size += length;
     }
-    const importId = this.deps.ids.next();
-    const author = this.deps.authors.current();
+    const importId = this.deps.meta.id();
     parts.forEach((part, i) => {
       const data: LogSession['data'] = {
         source,
@@ -169,7 +165,7 @@ export class ImportSessionLogs {
         skipped: i === 0 ? content.skipped : 0,
       };
       this.deps.journal.appendRecord(
-        journalEntry<LogSession>('log.session', data as unknown as Record<string, unknown>, { id: this.deps.ids.next(), at, author, project: task.project, task: task.id }),
+        journalEntry<LogSession>('log.session', data as unknown as Record<string, unknown>, { ...this.deps.meta.at(at), project: task.project, task: task.id }),
       );
     });
   }

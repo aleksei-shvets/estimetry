@@ -1,34 +1,17 @@
+import type { InstallDependencies } from './install-dependencies.js';
 import type { ProjectRepository } from '../../domain/project/project-repository.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
 import { isRemoval, mergePlans, type FileChange, type InstallPlan } from '../contracts/file-change.js';
 import type { Flow } from '../contracts/flow.js';
-import type { Flows, StackDetectors, ToolAdapters } from '../contracts/registries.js';
 import type { ToolAdapter } from '../contracts/tool-adapter.js';
-import type { CommandLocator } from '../ports/command-locator.js';
-import type { CommitHookInstaller } from '../ports/commit-hook-installer.js';
-import type { GitExcludes } from '../ports/git-excludes.js';
 import type { ProjectConfigFile } from '../ports/project-config-file.js';
-import type { ProjectFiles } from '../ports/project-files.js';
 import type { ProjectPaths } from '../ports/project-paths.js';
-import { isShareMode, SHARE_MODES, type ShareMode, type SharingPreference } from '../ports/sharing-preference.js';
+import { isShareMode, SHARE_MODES, type ShareMode } from '../ports/sharing-preference.js';
 import type { WorkspaceLocator } from '../ports/workspace-locator.js';
 import type { RegistrationPlan, ResolveCurrentProject } from './resolve-current-project.js';
 import { defaultFlow, defaultTools, unignoredPersonalFiles } from './init-defaults.js';
 import { detectStack } from './stack.js';
 
-/** Everything `init` needs besides the registry; built by the composition root. */
-export interface InstallDependencies {
-  readonly files: ProjectFiles;
-  readonly tools: ToolAdapters;
-  readonly flows: Flows;
-  readonly detectors: StackDetectors;
-  readonly commitHook: CommitHookInstaller;
-  readonly sharing: SharingPreference;
-  readonly commands: CommandLocator;
-  readonly excludes: GitExcludes;
-  /** Version of estimetry, stamped into generated files. */
-  readonly version: string;
-}
 
 export interface InitInput {
   /** Ids or aliases; omitted — what is installed, else every available tool. */
@@ -76,7 +59,7 @@ export class InitProject {
     const flow = this.flowById(input.flow ?? defaultFlow(this.deps, this.projectConfig, root));
     const share = this.shareMode(input.share ?? this.deps.sharing.mode() ?? 'none');
     const shared = input.shared ?? tools.some((tool) => tool.state(root, this.deps.files).shared);
-    const trackCommits = input.trackCommits ?? this.deps.commitHook.installed(root);
+    const trackCommits = input.trackCommits ?? this.deps.git.commitHook.installed(root);
     const warnings: string[] = [];
 
     const registration = this.currentProject.planRegistration();
@@ -91,14 +74,14 @@ export class InitProject {
     if (setupHint !== undefined) {
       warnings.push(setupHint);
     }
-    const stack = detectStack(root, this.deps.files, this.deps.detectors.all());
+    const stack = detectStack(root, this.deps.files, this.deps.registries.detectors.all());
     warnings.push(...stack.warnings);
 
     const plan = mergePlans([
       ...tools.map((tool) =>
         tool.plan({ projectRoot: root, files: this.deps.files, shared, force: input.force ?? false, version: this.deps.version }),
       ),
-      this.deps.commitHook.plan(root, trackCommits),
+      this.deps.git.commitHook.plan(root, trackCommits),
       { changes: [this.projectConfig.plan(root, { project: config.config?.project ?? plannedId(registration), flow: flow.id })], skipped: [], warnings: [] },
       shared ? EMPTY : this.excludePersonalFiles(root, tools, input.excludePersonalFiles),
     ]);
@@ -151,7 +134,7 @@ export class InitProject {
     if (unignored.length === 0) {
       return EMPTY;
     }
-    const file = this.deps.excludes.globalFile();
+    const file = this.deps.git.excludes.globalFile();
     const patterns = unignored.map((path) => `**/${this.deps.files.portable(path)}`);
     if (consent !== true) {
       return {
@@ -169,9 +152,9 @@ export class InitProject {
 
   private toolsById(ids: readonly string[]): ToolAdapter[] {
     const tools = ids.map((id) => {
-      const tool = this.deps.tools.get(id.trim());
+      const tool = this.deps.registries.tools.get(id.trim());
       if (!tool) {
-        throw new InvalidValue(`unknown tool "${id}", expected one of: ${this.deps.tools.all().map((t) => t.id).join(', ')}`);
+        throw new InvalidValue(`unknown tool "${id}", expected one of: ${this.deps.registries.tools.all().map((t) => t.id).join(', ')}`);
       }
       return tool;
     });
@@ -182,9 +165,9 @@ export class InitProject {
   }
 
   private flowById(id: string): Flow {
-    const flow = this.deps.flows.get(id);
+    const flow = this.deps.registries.flows.get(id);
     if (!flow) {
-      throw new InvalidValue(`unknown flow "${id}", expected one of: ${this.deps.flows.all().map((f) => f.id).join(', ')}`);
+      throw new InvalidValue(`unknown flow "${id}", expected one of: ${this.deps.registries.flows.all().map((f) => f.id).join(', ')}`);
     }
     return flow;
   }
