@@ -54,16 +54,39 @@ function optional(value: unknown, check: (value: unknown) => boolean): boolean {
  * ones. An unknown `task.*` event or a newer version of one means a newer
  * estimetry wrote the journal: that throws instead of being skipped.
  */
+/** Checks of the data of each task event; a check gets the whole event when it needs the envelope too. */
+const EVENT_DATA_CHECKS: Readonly<Record<TaskEvent['type'], (data: Json, event: Json) => boolean>> = {
+  'task.created': (data) =>
+    isString(data['title']) && isString(data['taskType']) && optionalString(data['ticket']) && optionalString(data['spawnedFrom']),
+  'task.started': (data) => typeof data['estimated'] === 'boolean' && optionalTime(data['at']),
+  'task.attached': (_data, event) => isString(event['project']),
+  'task.estimated': (data) => isEstimateData(data['estimate']) && optionalString(data['taskType']),
+  'task.manual-time-recorded': (data) => isManualTimeData(data),
+  'task.extra-recorded': (data) => isExtraData(data),
+  'task.parallel-mode-enabled': (data) => isParallelModeChangeData(data),
+  'task.parallel-mode-disabled': () => true,
+  'task.reopened': () => true,
+  'task.closed': (data) => isTime(data['at']) && isTaskOutcome(data['outcome']) && optionalString(data['spawned']),
+  'task.estimate-revised': (data) =>
+    isEstimateData(data['estimate']) &&
+    optionalString(data['taskType']) &&
+    isString(data['reason']) &&
+    optional(data['category'], isExtraCategory) &&
+    optional(data['spent'], isSpentPolicy) &&
+    isTime(data['at']) &&
+    optionalTime(data['lostFrom']) &&
+    isStringArray(data['covers']) &&
+    optional(data['excluded'], isExcludedList),
+  'task.retro-recorded': (data) =>
+    Array.isArray(data['reasons']) &&
+    data['reasons'].length > 0 &&
+    data['reasons'].every((r) => isObject(r) && isString(r['text']) && optionalString(r['part'])) &&
+    isString(data['lesson']),
+};
+
+/** A task event this binary can read, else undefined; an event of a newer binary is an error, not a skip. */
 export function parseTaskEvent(value: unknown): TaskEvent | undefined {
-  if (isObject(value) && isString(value['type']) && value['type'].startsWith('task.')) {
-    const task = isString(value['task']) ? value['task'] : '?';
-    if (!isTaskEventType(value['type'])) {
-      throw new JournalTooNew(task, `unknown event ${value['type']}`);
-    }
-    if (typeof value['schemaVersion'] === 'number' && value['schemaVersion'] > TASK_EVENT_SCHEMA_VERSION) {
-      throw new JournalTooNew(task, `event version ${value['schemaVersion']}`);
-    }
-  }
+  rejectNewer(value);
   if (
     !isObject(value) ||
     typeof value['schemaVersion'] !== 'number' ||
@@ -78,83 +101,20 @@ export function parseTaskEvent(value: unknown): TaskEvent | undefined {
   ) {
     return undefined;
   }
-  const data = value['data'];
-  switch (value['type']) {
-    case 'task.created':
-      if (
-        !isString(data['title']) ||
-        !isString(data['taskType']) ||
-        !optionalString(data['ticket']) ||
-        !optionalString(data['spawnedFrom'])
-      ) {
-        return undefined;
-      }
-      break;
-    case 'task.started':
-      if (typeof data['estimated'] !== 'boolean' || !optionalTime(data['at'])) {
-        return undefined;
-      }
-      break;
-    case 'task.attached':
-      if (!isString(value['project'])) {
-        return undefined;
-      }
-      break;
-    case 'task.estimated':
-      if (!isEstimateData(data['estimate']) || !optionalString(data['taskType'])) {
-        return undefined;
-      }
-      break;
-    case 'task.manual-time-recorded':
-      if (!isManualTimeData(data)) {
-        return undefined;
-      }
-      break;
-    case 'task.extra-recorded':
-      if (!isExtraData(data)) {
-        return undefined;
-      }
-      break;
-    case 'task.parallel-mode-enabled':
-      if (!isParallelModeChangeData(data)) {
-        return undefined;
-      }
-      break;
-    case 'task.parallel-mode-disabled':
-    case 'task.reopened':
-      break;
-    case 'task.closed':
-      if (!isTime(data['at']) || !isTaskOutcome(data['outcome']) || !optionalString(data['spawned'])) {
-        return undefined;
-      }
-      break;
-    case 'task.estimate-revised':
-      if (
-        !isEstimateData(data['estimate']) ||
-        !optionalString(data['taskType']) ||
-        !isString(data['reason']) ||
-        !optional(data['category'], isExtraCategory) ||
-        !optional(data['spent'], isSpentPolicy) ||
-        !isTime(data['at']) ||
-        !optionalTime(data['lostFrom']) ||
-        !isStringArray(data['covers']) ||
-        !optional(data['excluded'], isExcludedList)
-      ) {
-        return undefined;
-      }
-      break;
-    case 'task.retro-recorded':
-      if (
-        !Array.isArray(data['reasons']) ||
-        data['reasons'].length === 0 ||
-        !data['reasons'].every((r) => isObject(r) && isString(r['text']) && optionalString(r['part'])) ||
-        !isString(data['lesson'])
-      ) {
-        return undefined;
-      }
-      break;
+  return EVENT_DATA_CHECKS[value['type']](value['data'], value) ? (value as unknown as TaskEvent) : undefined;
+}
+
+/** @throws JournalTooNew for an unknown `task.*` event or one of a newer version. */
+function rejectNewer(value: unknown): void {
+  if (isObject(value) && isString(value['type']) && value['type'].startsWith('task.')) {
+    const task = isString(value['task']) ? value['task'] : '?';
+    if (!isTaskEventType(value['type'])) {
+      throw new JournalTooNew(task, `unknown event ${value['type']}`);
+    }
+    if (typeof value['schemaVersion'] === 'number' && value['schemaVersion'] > TASK_EVENT_SCHEMA_VERSION) {
+      throw new JournalTooNew(task, `event version ${value['schemaVersion']}`);
+    }
   }
-  return value as unknown as TaskEvent;
 }
 
 export function parseTaskSnapshot(value: unknown): TaskSnapshot | undefined {

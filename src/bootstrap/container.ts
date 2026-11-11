@@ -6,6 +6,12 @@ import type { HookCall } from '../application/hooks/receive-hook.js';
 import type { SharingPreference } from '../application/ports/sharing-preference.js';
 import type { InstallDependencies } from '../application/project/init-project.js';
 import type { ErrorReporter } from '../application/ports/error-reporter.js';
+import type { AuthorProvider } from '../application/ports/author-provider.js';
+import type { EventJournal } from '../application/ports/event-journal.js';
+import type { IdGenerator } from '../application/ports/id-generator.js';
+import type { MeasurementSettings } from '../application/ports/measurement-settings.js';
+import type { ProjectPlans } from '../application/ports/project-plans.js';
+import type { ProjectRepository } from '../domain/project/project-repository.js';
 import { StorageLayout } from '../infrastructure/fs/storage-layout.js';
 import { FileErrorReporter } from '../infrastructure/system/file-error-reporter.js';
 
@@ -163,68 +169,80 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     completions: new ChangeCompletions(new ChangeArchives(plans, files), new ProgressLog(new YamlProgressState(layout), journal), tasks, meta, errors, proposals),
     proposals,
     // Only a pending proposal to close the task needs the plan of the task.
-    planOf: async () => {
-      const [{ PlanSnapshots }, { SnapshotTaskReader }, { FsGitHead: Head }, { TaskId }] = await Promise.all([
-        import('../application/task/plan-snapshots.js'),
-        import('../infrastructure/persistence/snapshot-task-reader.js'),
-        import('../infrastructure/git/fs-git-head.js'),
-        import('../domain/task/task-id.js'),
-      ]);
-      const snapshots = new PlanSnapshots(plans, new Head(), projects);
-      const reader = new SnapshotTaskReader(layout);
-      return {
-        of: (task: string, near: string) => {
-          const found = reader.find(TaskId.parse(task));
-          if (found === undefined) {
-            return { unfinished: [] };
-          }
-          const plan = snapshots.closing(found, { near });
-          return { ...(plan.done === undefined ? {} : { done: plan.done }), unfinished: plan.unfinishedGroups };
-        },
-      };
-    },
+    planOf: () => hookPlanOf(layout, plans, projects),
     journal,
     tasks,
     bindings,
     commits: new CommitRecords(locator, git, new CommitTask(bindings, tasks, recent), journal, meta),
     recent,
     // Only the session start needs the fact, and only it loads the task repository and the calculator.
-    facts: async () => {
-      const [{ MeasuredTaskFacts }, { TaskMeasurement }, { TaskPlanProgress }, { SnapshotTaskReader }, { SystemClock }] =
-        await Promise.all([
-          import('../application/hooks/task-facts.js'),
-          import('../application/task/task-measurement.js'),
-          import('../application/task/task-plan-progress.js'),
-          import('../infrastructure/persistence/snapshot-task-reader.js'),
-          import('../infrastructure/system/system-clock.js'),
-        ]);
-      return new MeasuredTaskFacts(
-        new SnapshotTaskReader(layout),
-        new TaskMeasurement(journal, config, new SystemClock()),
-        new TaskPlanProgress(plans, journal),
-      );
-    },
+    facts: () => hookFacts(layout, journal, config, plans),
     clock,
     ids,
     authors: config,
     // Only the session end parses a log, and only it loads the reader.
-    logs: async () => {
-      const [{ ImportSessionLogs }, { SessionLogReaderRegistry }, { ClaudeCodeLogs }, { YamlLogImportState }] = await Promise.all([
-        import('../application/task/import-session-logs.js'),
-        import('../integrations/tools/session-log-readers.js'),
-        import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
-        import('../infrastructure/persistence/yaml-log-import-state.js'),
-      ]);
-      return new ImportSessionLogs({
-        readers: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(claudeConfig)),
-        state: new YamlLogImportState(layout),
-        journal,
-        ids,
-        clock: { now: () => Timestamp.fromMillis(Date.now()) },
-        authors: config,
-        errors,
-      });
+    logs: () => hookLogs({ layout, claudeConfig, journal, ids, config, errors }),
+  });
+}
+
+/** The plan of a task for the text of a pending proposal to close it: percent done and unfinished groups. */
+async function hookPlanOf(layout: StorageLayout, plans: ProjectPlans, projects: ProjectRepository) {
+  const [{ PlanSnapshots }, { SnapshotTaskReader }, { FsGitHead: Head }, { TaskId }] = await Promise.all([
+    import('../application/task/plan-snapshots.js'),
+    import('../infrastructure/persistence/snapshot-task-reader.js'),
+    import('../infrastructure/git/fs-git-head.js'),
+    import('../domain/task/task-id.js'),
+  ]);
+  const snapshots = new PlanSnapshots(plans, new Head(), projects);
+  const reader = new SnapshotTaskReader(layout);
+  return {
+    of: (task: string, near: string) => {
+      const found = reader.find(TaskId.parse(task));
+      if (found === undefined) {
+        return { unfinished: [] };
+      }
+      const plan = snapshots.closing(found, { near });
+      return { ...(plan.done === undefined ? {} : { done: plan.done }), unfinished: plan.unfinishedGroups };
     },
+  };
+}
+
+/** The fact of a task for the context of a session start. */
+async function hookFacts(layout: StorageLayout, journal: EventJournal, settings: MeasurementSettings, plans: ProjectPlans) {
+  const [{ MeasuredTaskFacts }, { TaskMeasurement }, { TaskPlanProgress }, { SnapshotTaskReader }, { SystemClock }] = await Promise.all([
+    import('../application/hooks/task-facts.js'),
+    import('../application/task/task-measurement.js'),
+    import('../application/task/task-plan-progress.js'),
+    import('../infrastructure/persistence/snapshot-task-reader.js'),
+    import('../infrastructure/system/system-clock.js'),
+  ]);
+  return new MeasuredTaskFacts(new SnapshotTaskReader(layout), new TaskMeasurement(journal, settings, new SystemClock()), new TaskPlanProgress(plans, journal));
+}
+
+/** The importer of session logs for a session end. */
+async function hookLogs(c: {
+  readonly layout: StorageLayout;
+  readonly claudeConfig: string;
+  readonly journal: EventJournal;
+  readonly ids: IdGenerator;
+  readonly config: AuthorProvider;
+  readonly errors: ErrorReporter;
+}) {
+  const [{ ImportSessionLogs }, { SessionLogReaderRegistry }, { ClaudeCodeLogs }, { YamlLogImportState }, { SystemClock }] = await Promise.all([
+    import('../application/task/import-session-logs.js'),
+    import('../integrations/tools/session-log-readers.js'),
+    import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
+    import('../infrastructure/persistence/yaml-log-import-state.js'),
+    import('../infrastructure/system/system-clock.js'),
+  ]);
+  return new ImportSessionLogs({
+    readers: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(c.claudeConfig)),
+    state: new YamlLogImportState(c.layout),
+    journal: c.journal,
+    ids: c.ids,
+    clock: new SystemClock(),
+    authors: c.config,
+    errors: c.errors,
   });
 }
 
