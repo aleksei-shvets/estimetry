@@ -2,7 +2,7 @@ import type { ChangeCompleted, PlanBaseline, ProgressRecord } from '../../domain
 import { CalendarDate } from '../../domain/shared/calendar-date.js';
 import { isExcluded } from '../../domain/progress/plan-exclusions.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
-import type { ArchivedChange } from '../contracts/flow.js';
+import type { ArchivedChange } from '../ports/project-plans.js';
 import type { CloseProposals } from '../ports/close-proposals.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';
 import type { ProgressSeen } from '../ports/progress-state.js';
@@ -46,7 +46,9 @@ export class ChangeCompletions {
     if (task.startedAt === undefined) {
       return;
     }
-    const readings = this.archives.read(task.projects, near === undefined ? {} : { near }).filter((reading) => reading.archived !== undefined);
+    const readings = this.archives
+      .read(task.projects, near === undefined ? {} : { near })
+      .filter((reading) => reading.archived !== undefined);
     if (readings.length === 0) {
       return;
     }
@@ -96,7 +98,10 @@ export class ChangeCompletions {
     let ours: ((change: string) => boolean) | undefined;
     for (const dir of unseen) {
       // Rolled back by a revision: settled, never a completion.
-      if (task.exclusions !== undefined && isExcluded(task.exclusions, reading.project, dir.change, dir.archivedOn.value, this.archives.changedAt(dir))) {
+      if (
+        task.exclusions !== undefined &&
+        isExcluded(task.exclusions, reading.project, dir.change, dir.archivedOn.value, this.archives.changedAt(dir))
+      ) {
         settled.push(dir.directory);
         continue;
       }

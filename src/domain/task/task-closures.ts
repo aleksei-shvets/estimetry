@@ -35,7 +35,11 @@ export function checkClosingMoment(state: TaskState, startedAt: Timestamp, at: T
 }
 
 export function closedData(input: ClosingInput): TaskClosed['data'] {
-  return { at: input.at.toISOString(), outcome: input.outcome, ...(input.spawned === undefined ? {} : { spawned: input.spawned.toString() }) };
+  return {
+    at: input.at.toISOString(),
+    outcome: input.outcome,
+    ...(input.spawned === undefined ? {} : { spawned: input.spawned.toString() }),
+  };
 }
 
 /** Periods of parallel mode with the last one ended at `at`: a disabling always, the closing of the task only an open one. */

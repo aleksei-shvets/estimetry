@@ -1,3 +1,4 @@
+import { StackLabels } from '../../../src/domain/estimate/stack-labels.js';
 import { describe, expect, it } from 'vitest';
 import { applicableCoefficient } from '../../../src/domain/calibration/applicable-coefficient.js';
 import { calibrate } from '../../../src/domain/calibration/calibration.js';
@@ -13,15 +14,15 @@ const ids = (list: { card: { task: { id: string } } }[]) => list.map((item) => i
 describe('similar tasks', () => {
   it('a shared stack ranks first; the type alone gives 0.375', () => {
     const cards = [syntheticCard({ id: 'T-2', stack: ['go'] }), syntheticCard({ id: 'T-1', stack: ['flutter', 'bloc'] })];
-    const result = similarTasks(cards, { author: ME, type: 'feature', stack: ['flutter', 'bloc'] });
+    const result = similarTasks(cards, { author: ME, type: 'feature', stack: StackLabels.of(['flutter', 'bloc']) });
     expect(result.map((r) => [r.card.task.id, r.score])).toEqual([['T-1', 1], ['T-2', 0.375]]);
     expect(result[0]?.matched).toEqual({ stack: { common: ['flutter', 'bloc'], share: 1 }, type: true });
   });
 
   it('size counts with --hours and only for a card with an estimate', () => {
-    const sized = similarTasks([syntheticCard({ id: 'T-1', base: 20 })], { author: ME, type: 'feature', stack: [], hours: 10 });
+    const sized = similarTasks([syntheticCard({ id: 'T-1', base: 20 })], { author: ME, type: 'feature', stack: StackLabels.of([]), hours: 10 });
     expect(sized[0]).toMatchObject({ score: 0.8, matched: { size: { ratio: 2, share: 0.5 } } });
-    const unestimated = similarTasks([syntheticCard({ id: 'T-1', base: null, factHours: 40 })], { author: ME, type: 'feature', stack: [], hours: 10 });
+    const unestimated = similarTasks([syntheticCard({ id: 'T-1', base: null, factHours: 40 })], { author: ME, type: 'feature', stack: StackLabels.of([]), hours: 10 });
     expect(unestimated[0]).toMatchObject({ score: 1, matched: { type: true } });
     expect(unestimated[0]?.matched.size).toBeUndefined();
   });
@@ -30,7 +31,7 @@ describe('similar tasks', () => {
     const result = similarTasks([syntheticCard({ id: 'T-1', stack: ['flutter'] }), syntheticCard({ id: 'T-2', stack: [] })], {
       author: ME,
       type: 'feature',
-      stack: ['Flutter'],
+      stack: StackLabels.of(['Flutter']),
     });
     expect(result.map((r) => [r.card.task.id, r.score])).toEqual([['T-1', 1], ['T-2', 1]]);
     expect(result[1]?.matched.stack).toBeUndefined();
@@ -38,7 +39,7 @@ describe('similar tasks', () => {
 
   it('takes the type of the first estimate', () => {
     const revised = syntheticCard({ id: 'T-1', overrides: { currentEstimate: { ...syntheticCard({ id: 'x' }).estimate!, type: 'research' } } });
-    expect(similarTasks([revised], { author: ME, type: 'feature', stack: ['go'] })[0]?.matched.type).toBe(true);
+    expect(similarTasks([revised], { author: ME, type: 'feature', stack: StackLabels.of(['go']) })[0]?.matched.type).toBe(true);
   });
 
   it('leaves out tasks sharing nothing, abandoned ones and those of other authors; aliases count', () => {
@@ -48,13 +49,13 @@ describe('similar tasks', () => {
       syntheticCard({ id: 'T-3', type: 'research', author: 'other@example.com' }),
       syntheticCard({ id: 'T-4', type: 'research', author: 'old@example.com' }),
     ];
-    const result = similarTasks(cards, { author: ME, aliases: new Map([['old@example.com', ME]]), type: 'research', stack: ['go'] });
+    const result = similarTasks(cards, { author: ME, aliases: new Map([['old@example.com', ME]]), type: 'research', stack: StackLabels.of(['go']) });
     expect(ids(result)).toEqual(['T-4']);
   });
 
   it('orders equal scores by the later closing and keeps the limit', () => {
     const cards = [1, 5, 3].map((day) => syntheticCard({ id: `T-${day}`, closedAt: `2026-11-0${day}T10:00:00.000Z` }));
-    expect(ids(similarTasks(cards, { author: ME, type: 'feature', stack: [], limit: 2 }))).toEqual(['T-5', 'T-3']);
+    expect(ids(similarTasks(cards, { author: ME, type: 'feature', stack: StackLabels.of([]), limit: 2 }))).toEqual(['T-5', 'T-3']);
   });
 
   it('shows the ratio as calibration counts it, or why the task is left out', () => {
@@ -70,7 +71,7 @@ describe('similar tasks', () => {
       },
     });
     const late = syntheticCard({ id: 'T-2', overrides: { estimatedAfterStart: true } });
-    const result = similarTasks([renegotiated, late], { author: ME, type: 'feature', stack: [] });
+    const result = similarTasks([renegotiated, late], { author: ME, type: 'feature', stack: StackLabels.of([]) });
     expect(result.find((r) => r.card.task.id === 'T-1')?.ratio).toEqual({ ratio: 1.25 });
     expect(result.find((r) => r.card.task.id === 'T-2')?.ratio).toEqual({ excluded: 'estimated-after-start' });
   });
@@ -83,7 +84,7 @@ describe('applicable coefficient', () => {
 
   it('takes the slice by type first', () => {
     const author = authorOf([...sample(6, { stack: ['flutter'], ratio: 1.3 }), ...sample(3, { type: 'research', stack: ['flutter'], ratio: 0.8 })]);
-    expect(applicableCoefficient(author, { type: 'feature', stack: ['flutter'] })).toEqual({ value: 1.3, slice: { kind: 'type', key: 'feature' }, n: 6 });
+    expect(applicableCoefficient(author, { type: 'feature', stack: StackLabels.of(['flutter']) })).toEqual({ value: 1.3, slice: { kind: 'type', key: 'feature' }, n: 6 });
   });
 
   it('a small type falls back to the technology with the most tasks, alphabetically on a tie', () => {
@@ -92,16 +93,16 @@ describe('applicable coefficient', () => {
       ...sample(4, { type: 'research', stack: ['flutter'], ratio: 1.2 }),
       ...sample(2, { type: 'bugfix', stack: ['bloc'], ratio: 1.4 }),
     ]);
-    expect(applicableCoefficient(author, { type: 'feature', stack: ['flutter', 'bloc'] })).toEqual({ value: 1.2, slice: { kind: 'stack', key: 'flutter' }, n: 7 });
+    expect(applicableCoefficient(author, { type: 'feature', stack: StackLabels.of(['flutter', 'bloc']) })).toEqual({ value: 1.2, slice: { kind: 'stack', key: 'flutter' }, n: 7 });
     const tie = authorOf([...sample(2, { type: 'research', stack: ['go'], ratio: 1 }), ...sample(6, { type: 'bugfix', stack: ['flutter', 'bloc'], ratio: 1.1 })]);
-    expect(applicableCoefficient(tie, { type: 'research', stack: ['flutter', 'bloc'] })?.slice).toEqual({ kind: 'stack', key: 'bloc' });
+    expect(applicableCoefficient(tie, { type: 'research', stack: StackLabels.of(['flutter', 'bloc']) })?.slice).toEqual({ kind: 'stack', key: 'bloc' });
   });
 
   it('never applies the overall slice', () => {
     const author = authorOf([...sample(10, { stack: ['go'], ratio: 1.2 }), ...sample(2, { type: 'research', stack: ['go'], ratio: 1 })]);
     expect(author?.ratio.overall.n).toBe(12);
-    expect(applicableCoefficient(author, { type: 'research', stack: [] })).toBeNull();
-    expect(applicableCoefficient(undefined, { type: 'research', stack: [] })).toBeNull();
+    expect(applicableCoefficient(author, { type: 'research', stack: StackLabels.of([]) })).toBeNull();
+    expect(applicableCoefficient(undefined, { type: 'research', stack: StackLabels.of([]) })).toBeNull();
   });
 
   it('a revision takes the revised slice', () => {
@@ -116,8 +117,8 @@ describe('applicable coefficient', () => {
         },
       });
     const author = calibrate([...Array.from({ length: 5 }, (_, i) => revised(i)), syntheticCard({ id: 'T-x', ratio: 1.4 })], { minTasks: 5 }).authors[ME];
-    expect(applicableCoefficient(author, { type: 'feature', stack: [] })?.value).toBe(1.4);
-    expect(applicableCoefficient(author, { type: 'feature', stack: [], revise: true })).toEqual({ value: 1.1, slice: { kind: 'type', key: 'feature' }, n: 5 });
+    expect(applicableCoefficient(author, { type: 'feature', stack: StackLabels.of([]) })?.value).toBe(1.4);
+    expect(applicableCoefficient(author, { type: 'feature', stack: StackLabels.of([]), revise: true })).toEqual({ value: 1.1, slice: { kind: 'type', key: 'feature' }, n: 5 });
   });
 });
 

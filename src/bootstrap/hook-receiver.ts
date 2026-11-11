@@ -67,14 +67,26 @@ export function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, 
   const started = Timestamp.fromMillis(Math.round(startedAt));
   const files = new NodeProjectFiles();
   const projects = new FileProjectRepository(layout);
-  const plans = new FlowProjectPlans(new YamlProjectConfigFile(), new FlowRegistry().register(openSpecFlow).register(noneFlow), files, projects);
+  const plans = new FlowProjectPlans(
+    new YamlProjectConfigFile(),
+    new FlowRegistry().register(openSpecFlow).register(noneFlow),
+    files,
+    projects,
+  );
   const proposals = new FileCloseProposals(layout);
   const clock = { now: () => started };
   const meta = new EventMetaSource(clock, ids, config);
   const locator = new FsProjectLocator(layout);
   const recent = new RecentSessions(checkpointState, config);
   const checkpoints = new Checkpoints(checkpointState, journal, new CheckpointSnapshot(plans, new FsGitHead(), git), config, errors, meta);
-  const completions = new ChangeCompletions(new ChangeArchives(plans, files), new ProgressLog(new YamlProgressState(layout), journal), tasks, meta, errors, proposals);
+  const completions = new ChangeCompletions(
+    new ChangeArchives(plans, files),
+    new ProgressLog(new YamlProgressState(layout), journal),
+    tasks,
+    meta,
+    errors,
+    proposals,
+  );
   // Only a pending proposal to close the task needs the plan of the task.
   const proposal = new PendingProposal(proposals, recent, () => hookPlanOf(layout, plans, projects));
   const sessions = new ReceiveSessionHook(
@@ -88,7 +100,12 @@ export function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, 
     new SessionEndImport(bindings, tasks, () => hookLogs({ layout, claudeConfig, journal, ids, config, errors })),
   );
   const adapters = new HookAdapterRegistry().register(claudeCodeHooks).register(gitHooks);
-  return new ReceiveHook(adapters, clock, new CommitRecords(locator, git, new CommitTask(bindings, tasks, recent), journal, meta), sessions);
+  return new ReceiveHook(
+    adapters,
+    clock,
+    new CommitRecords(locator, git, new CommitTask(bindings, tasks, recent), journal, meta),
+    sessions,
+  );
 }
 
 /** The plan of a task for the text of a pending proposal to close it: percent done and unfinished groups. */
@@ -122,7 +139,11 @@ async function hookFacts(layout: StorageLayout, journal: EventJournal, settings:
     import('../infrastructure/persistence/snapshot-task-reader.js'),
     import('../infrastructure/system/system-clock.js'),
   ]);
-  return new MeasuredTaskFacts(new SnapshotTaskReader(layout), new TaskMeasurement(journal, settings, new SystemClock()), new TaskPlanProgress(plans, journal));
+  return new MeasuredTaskFacts(
+    new SnapshotTaskReader(layout),
+    new TaskMeasurement(journal, settings, new SystemClock()),
+    new TaskPlanProgress(plans, journal),
+  );
 }
 
 /** The importer of session logs for a session end. */
@@ -134,13 +155,14 @@ async function hookLogs(c: {
   readonly config: AuthorProvider;
   readonly errors: ErrorReporter;
 }) {
-  const [{ ImportSessionLogs }, { SessionLogReaderRegistry }, { ClaudeCodeLogs }, { YamlLogImportState }, { SystemClock }] = await Promise.all([
-    import('../application/task/import-session-logs.js'),
-    import('../integrations/tools/session-log-readers.js'),
-    import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
-    import('../infrastructure/persistence/yaml-log-import-state.js'),
-    import('../infrastructure/system/system-clock.js'),
-  ]);
+  const [{ ImportSessionLogs }, { SessionLogReaderRegistry }, { ClaudeCodeLogs }, { YamlLogImportState }, { SystemClock }] =
+    await Promise.all([
+      import('../application/task/import-session-logs.js'),
+      import('../integrations/tools/session-log-readers.js'),
+      import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
+      import('../infrastructure/persistence/yaml-log-import-state.js'),
+      import('../infrastructure/system/system-clock.js'),
+    ]);
   return new ImportSessionLogs({
     readers: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(c.claudeConfig)),
     state: new YamlLogImportState(c.layout),

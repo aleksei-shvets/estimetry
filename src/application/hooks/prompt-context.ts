@@ -14,7 +14,8 @@ export class PromptContext {
   ) {}
 
   async text(session: SessionId, resolved: SessionTaskResult, now: Timestamp): Promise<string | undefined> {
-    const proposal = resolved.task === undefined ? undefined : await this.proposal.take(resolved.task.id, session, resolved.project.root, now);
+    const proposal =
+      resolved.task === undefined ? undefined : await this.proposal.take(resolved.task.id, session, resolved.project.root, now);
     const reminder = this.checkpoints.takeReminder(session);
     const lines = [...(proposal === undefined ? [] : [proposal]), ...(reminder ? [EXTRA_REMINDER] : [])];
     return lines.length === 0 ? undefined : cut(lines.join('\n'));

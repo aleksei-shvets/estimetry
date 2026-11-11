@@ -80,7 +80,10 @@ export class TaskMeasurement {
    * do not count. Merged once per read of the journal: a card measures the same
    * content several times.
    */
-  private logs(task: Task, records: readonly ProgressRecord[]): { sessions: Map<string, SessionLog>; boundaries: Map<string, LogBoundaries> } {
+  private logs(
+    task: Task,
+    records: readonly ProgressRecord[],
+  ): { sessions: Map<string, SessionLog>; boundaries: Map<string, LogBoundaries> } {
     const cached = this.merged.get(records);
     if (cached !== undefined && cached.closures === task.closures.length) {
       return cached;
@@ -94,7 +97,10 @@ export class TaskMeasurement {
     return merged;
   }
 
-  private readonly merged = new WeakMap<readonly ProgressRecord[], { sessions: Map<string, SessionLog>; boundaries: Map<string, LogBoundaries>; closures: number }>();
+  private readonly merged = new WeakMap<
+    readonly ProgressRecord[],
+    { sessions: Map<string, SessionLog>; boundaries: Map<string, LogBoundaries>; closures: number }
+  >();
 
   private report(task: Task, journal: JournalContent | undefined, options: Options = {}): EffortReport {
     const content = this.content(task, journal);
@@ -112,7 +118,10 @@ export class TaskMeasurement {
         ? task.manualTime
         : task.manualRecords
             .filter(({ manual: record, recordedAt }) => {
-              return (recordedAt === undefined || recordedAt.toMillis() <= until.toMillis()) && (record.at === undefined || record.at.toMillis() <= until.toMillis());
+              return (
+                (recordedAt === undefined || recordedAt.toMillis() <= until.toMillis()) &&
+                (record.at === undefined || record.at.toMillis() <= until.toMillis())
+              );
             })
             .map(({ manual: record }) => record);
     const lost = options.lost ?? [];

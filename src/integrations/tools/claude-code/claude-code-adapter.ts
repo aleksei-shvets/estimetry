@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { CommandContent } from '../../../application/contracts/command-content.js';
-import type { FileChange, InstallPlan, SkippedFile } from '../../../application/contracts/file-change.js';
+import type { FileChange, InstallPlan, SkippedFile } from '../../../application/ports/file-change.js';
 import type { InstallContext, ToolAdapter, ToolState } from '../../../application/contracts/tool-adapter.js';
 import type { ProjectFiles } from '../../../application/ports/project-files.js';
 import { COMMANDS, ESTIMETRY_SKILL } from '../content/commands.js';
@@ -49,14 +49,21 @@ export class ClaudeCodeAdapter implements ToolAdapter {
   private hooks({ projectRoot, files, shared }: InstallContext): InstallPlan {
     const [target, previous] = shared ? [SHARED_SETTINGS, LOCAL_SETTINGS] : [LOCAL_SETTINGS, SHARED_SETTINGS];
     const changes: FileChange[] = [
-      { path: join(projectRoot, target), content: withHooks(files.read(join(projectRoot, target)), this.hookEvents, target, SYNCHRONOUS_HOOK_EVENTS) },
+      {
+        path: join(projectRoot, target),
+        content: withHooks(files.read(join(projectRoot, target)), this.hookEvents, target, SYNCHRONOUS_HOOK_EVENTS),
+      },
     ];
     const warnings: string[] = [];
     const old = files.read(join(projectRoot, previous));
     if (old !== undefined) {
       try {
         const cleaned = withoutHooks(old, previous);
-        changes.push(cleaned === undefined ? { path: join(projectRoot, previous), remove: true } : { path: join(projectRoot, previous), content: cleaned });
+        changes.push(
+          cleaned === undefined
+            ? { path: join(projectRoot, previous), remove: true }
+            : { path: join(projectRoot, previous), content: cleaned },
+        );
       } catch {
         // Claude Code cannot read it either, so the old hooks do not run.
         warnings.push(`${previous} is not valid JSON, so the estimetry hooks in it were left as they are`);

@@ -1,4 +1,4 @@
-import type { InstallPlan } from '../contracts/file-change.js';
+import type { InstallPlan } from './file-change.js';
 
 /** The git `post-commit` hook that reports commits to estimetry. */
 export interface CommitHookInstaller {

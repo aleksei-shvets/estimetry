@@ -46,7 +46,13 @@ export function servedTasks(binding: SessionBinding | undefined): string[] {
   if (binding === undefined) {
     return [];
   }
-  return [...new Set([...(binding.tasks ?? []), ...(binding.task === undefined ? [] : [binding.task]), ...(binding.closedTask === undefined ? [] : [binding.closedTask])])];
+  return [
+    ...new Set([
+      ...(binding.tasks ?? []),
+      ...(binding.task === undefined ? [] : [binding.task]),
+      ...(binding.closedTask === undefined ? [] : [binding.closedTask]),
+    ]),
+  ];
 }
 
 export interface SessionBindings {

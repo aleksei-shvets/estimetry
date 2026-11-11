@@ -39,7 +39,11 @@ export class PlanSnapshots {
     const plan =
       startedAt === undefined
         ? undefined
-        : taskPlan(available.map((reading) => ({ project: reading.project, changes: reading.changes ?? [] })), startedAt, task.planExclusions);
+        : taskPlan(
+            available.map((reading) => ({ project: reading.project, changes: reading.changes ?? [] })),
+            startedAt,
+            task.planExclusions,
+          );
     const progress = plan === undefined || available.length === 0 ? undefined : planProgress(task.estimate, plan);
     const groups = [...new Set((task.estimate?.parts ?? []).flatMap((part) => (part.group === undefined ? [] : [part.group])))];
     const completed = groups.filter((group) => {

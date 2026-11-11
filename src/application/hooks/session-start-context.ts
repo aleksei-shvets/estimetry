@@ -35,7 +35,12 @@ export class SessionStartContext {
       candidates: resolved.candidates,
     });
     // The reminder of estimate mode goes first, so the length limit never cuts it.
-    const lines = [ESTIMATE_REMINDER, ...(proposal === undefined ? [] : [proposal]), status, ...(reminder && task === undefined ? [EXTRA_REMINDER] : [])];
+    const lines = [
+      ESTIMATE_REMINDER,
+      ...(proposal === undefined ? [] : [proposal]),
+      status,
+      ...(reminder && task === undefined ? [EXTRA_REMINDER] : []),
+    ];
     return cut(lines.join('\n'));
   }
 }

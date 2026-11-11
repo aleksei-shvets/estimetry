@@ -22,7 +22,10 @@ export function tallyExtras(extras: readonly Extra[]): Card['extras'] {
 
 /** A tally of no extra work for every category. */
 export function noExtraTallies(): Record<ExtraCategory, ExtraTally> {
-  return Object.fromEntries(EXTRA_CATEGORIES.map((category) => [category, { count: 0, timed: 0, minutes: 0 }])) as Record<ExtraCategory, ExtraTally>;
+  return Object.fromEntries(EXTRA_CATEGORIES.map((category) => [category, { count: 0, timed: 0, minutes: 0 }])) as Record<
+    ExtraCategory,
+    ExtraTally
+  >;
 }
 
 /** Extra work a revision with `exclude` covers: by category only. */

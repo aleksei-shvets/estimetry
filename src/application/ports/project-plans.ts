@@ -1,6 +1,15 @@
 import type { ChangeProgress } from '../../domain/progress/progress-records.js';
 import type { CalendarDate } from '../../domain/shared/calendar-date.js';
-import type { ArchivedChange } from '../contracts/flow.js';
+
+/** An archive directory of a change: what the hook receiver looks at, without reading its tasks. */
+export interface ArchivedChange {
+  readonly change: string;
+  readonly archivedOn: CalendarDate;
+  /** Name of the directory in the archive, e.g. `2026-11-02-plan-progress`. */
+  readonly directory: string;
+  /** Absolute path of the directory. */
+  readonly path: string;
+}
 
 /** Why a project of a task has no plan here. */
 export type PlanUnavailable = 'flow-none' | 'unknown-flow' | 'no-config' | 'not-on-this-machine';

@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isRemoval, type InstallPlan } from '../../src/application/contracts/file-change.js';
+import { isRemoval, type InstallPlan } from '../../src/application/ports/file-change.js';
 import { NodeProjectFiles } from '../../src/infrastructure/fs/node-project-files.js';
 import { BLOCK_COMMAND, GitCommitHookInstaller } from '../../src/infrastructure/git/git-commit-hook-installer.js';
 import { tempDir } from '../support/temp-dir.js';

@@ -26,7 +26,12 @@ export class Checkpoints {
   ) {}
 
   /** Records the call; writes a checkpoint when it is due. Returns the state after the call. */
-  touch(session: SessionId, kind: HookKind, now: Timestamp, task?: { readonly id: string; readonly project: LocatedProject }): CheckpointStatus {
+  touch(
+    session: SessionId,
+    kind: HookKind,
+    now: Timestamp,
+    task?: { readonly id: string; readonly project: LocatedProject },
+  ): CheckpointStatus {
     let status: CheckpointStatus = { ...this.state.read(session), lastSeenAt: now.toISOString() };
     if (task !== undefined && WRITES_CHECKPOINTS.has(kind)) {
       const interval = this.settings.checkpointInterval();

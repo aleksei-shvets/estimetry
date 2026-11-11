@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { ProjectFiles } from '../../../application/ports/project-files.js';
-import type { ArchivedChange } from '../../../application/contracts/flow.js';
+import type { ArchivedChange } from '../../../application/ports/project-plans.js';
 import type { ChangeProgress } from '../../../domain/progress/progress-records.js';
 import { CalendarDate } from '../../../domain/shared/calendar-date.js';
 

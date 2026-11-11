@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { stringify } from 'yaml';
-import type { FileChange } from '../../application/contracts/file-change.js';
+import type { FileChange } from '../../application/ports/file-change.js';
 import type { ProjectConfig, ProjectConfigFile } from '../../application/ports/project-config-file.js';
 import { readYaml } from '../fs/atomic-yaml.js';
 

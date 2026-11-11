@@ -44,5 +44,9 @@ function closing(task: Task): Partial<TaskView> {
   const closure = task.closure;
   return closure === undefined
     ? {}
-    : { closedAt: closure.at.toISOString(), outcome: closure.outcome, ...(closure.spawned === undefined ? {} : { spawned: closure.spawned.toString() }) };
+    : {
+        closedAt: closure.at.toISOString(),
+        outcome: closure.outcome,
+        ...(closure.spawned === undefined ? {} : { spawned: closure.spawned.toString() }),
+      };
 }

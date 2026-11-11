@@ -1,7 +1,7 @@
 import type { InstallDependencies } from './install-dependencies.js';
 import type { ProjectRepository } from '../../domain/project/project-repository.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
-import { isRemoval, mergePlans, type FileChange, type InstallPlan } from '../contracts/file-change.js';
+import { isRemoval, mergePlans, type FileChange, type InstallPlan } from '../ports/file-change.js';
 import type { Flow } from '../contracts/flow.js';
 import type { ToolAdapter } from '../contracts/tool-adapter.js';
 import type { ProjectConfigFile } from '../ports/project-config-file.js';
@@ -82,7 +82,11 @@ export class InitProject {
         tool.plan({ projectRoot: root, files: this.deps.files, shared, force: input.force ?? false, version: this.deps.version }),
       ),
       this.deps.git.commitHook.plan(root, trackCommits),
-      { changes: [this.projectConfig.plan(root, { project: config.config?.project ?? plannedId(registration), flow: flow.id })], skipped: [], warnings: [] },
+      {
+        changes: [this.projectConfig.plan(root, { project: config.config?.project ?? plannedId(registration), flow: flow.id })],
+        skipped: [],
+        warnings: [],
+      },
       shared ? EMPTY : this.excludePersonalFiles(root, tools, input.excludePersonalFiles),
     ]);
 

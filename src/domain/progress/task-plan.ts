@@ -41,7 +41,11 @@ export function taskPlan(projects: readonly ProjectPlan[], startedAt: Timestamp,
         continue;
       }
       // Rolled back by a revision: the new plan does not count it, even if archived the same day.
-      if (change.archived && change.archivedOn !== undefined && isExcluded(exclusions, project, change.change, change.archivedOn, change.changedAt)) {
+      if (
+        change.archived &&
+        change.archivedOn !== undefined &&
+        isExcluded(exclusions, project, change.change, change.archivedOn, change.changedAt)
+      ) {
         archivedBeforeRevision.add(change.change);
         continue;
       }

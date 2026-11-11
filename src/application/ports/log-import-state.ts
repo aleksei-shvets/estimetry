@@ -1,4 +1,13 @@
-import type { SessionLogFingerprint } from '../contracts/session-logs.js';
+/** Size and modification time of a file: a changed fingerprint means new data. */
+export interface FileFingerprint {
+  readonly size: number;
+  readonly mtimeMs: number;
+}
+
+export interface SessionLogFingerprint {
+  readonly main: FileFingerprint;
+  readonly agents: Readonly<Record<string, FileFingerprint>>;
+}
 
 /** What the last import of a session's log into one task saw. */
 export interface LogImportEntry {

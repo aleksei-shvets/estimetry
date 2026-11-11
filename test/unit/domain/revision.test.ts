@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCard } from '../../../src/domain/card/card.js';
+import { buildCard } from '../../../src/domain/card/build-card.js';
 import { calibrate } from '../../../src/domain/calibration/calibration.js';
 import { Estimate } from '../../../src/domain/estimate/estimate.js';
 import { EstimatePart } from '../../../src/domain/estimate/estimate-part.js';

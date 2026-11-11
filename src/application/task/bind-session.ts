@@ -56,7 +56,11 @@ export class BindSession {
 
   private mark<T extends SessionBound | SessionUnbound>(type: T['type'], session: SessionId, task: string, project: string, at: Timestamp): void {
     this.journal.append(
-      journalEntry<T>(type, { source: CORE_SOURCE, session: session.value }, { id: this.ids.next(), at, author: this.authors.current(), project, task }),
+      journalEntry<T>(
+        type,
+        { source: CORE_SOURCE, session: session.value },
+        { id: this.ids.next(), at, author: this.authors.current(), project, task },
+      ),
     );
   }
 }

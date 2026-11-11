@@ -30,7 +30,12 @@ export class ActivityRecorder {
     if (translation.transcript !== undefined && (kind === 'session-start' || kind === 'session-end')) {
       this.keepTranscript(session, translation.transcript);
     }
-    this.checkpoints.touch(session, kind, now, resolved.task === undefined ? undefined : { id: resolved.task.id, project: resolved.project });
+    this.checkpoints.touch(
+      session,
+      kind,
+      now,
+      resolved.task === undefined ? undefined : { id: resolved.task.id, project: resolved.project },
+    );
     if (resolved.task !== undefined) {
       this.completions.check(resolved.task, now, resolved.project.root, session.value);
     }
@@ -38,13 +43,19 @@ export class ActivityRecorder {
 
   /** The path of the session's log, for imports outside the tool's environment. */
   private keepTranscript(session: SessionId, transcript: string): void {
-    this.bindings.update(session, (current) => (current === undefined || current.transcript === transcript ? undefined : { ...current, transcript }));
+    this.bindings.update(session, (current) =>
+      current === undefined || current.transcript === transcript ? undefined : { ...current, transcript },
+    );
   }
 
   private write(source: string, translation: HookTranslation, now: Timestamp, project: string, task: string | undefined): void {
     for (const draft of translation.events) {
       const data = { ...draft.data, source, session: translation.session.value };
-      const entry = journalEntry<ActivityEvent>(draft.type, data, { ...this.meta.at(now), project, ...(task === undefined ? {} : { task }) });
+      const entry = journalEntry<ActivityEvent>(draft.type, data, {
+        ...this.meta.at(now),
+        project,
+        ...(task === undefined ? {} : { task }),
+      });
       if (task === undefined) {
         this.journal.appendUnassigned(project, entry);
       } else {

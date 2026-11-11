@@ -23,6 +23,8 @@ export const TASK_STATUS_VALUES = ['new', 'estimated', 'in-progress', 'closed'];
 const MAX_LINES = 400;
 const MAX_FUNCTION_LINES = 80;
 const MAX_PARAMS = 6;
+/** Longer lines would let a file or a function fit its limit by packing code into fewer lines. */
+const MAX_LINE_LENGTH = 140;
 
 /** @type {Debt} */
 export const DEBT = {
@@ -97,8 +99,14 @@ function sizeRules(debt) {
   const lines = (max) => ['error', { max, skipBlankLines: false, skipComments: false }];
   /** @param {number} max */
   const functionLines = (max) => ['error', { max, skipBlankLines: false, skipComments: false, IIFEs: true }];
+  // Strings and templates are texts, not packed code: messages, help and the content installed by `init` keep their lines.
+  const lineLength = ['error', { code: MAX_LINE_LENGTH, ignoreStrings: true, ignoreTemplateLiterals: true, ignoreUrls: true, ignoreRegExpLiterals: true }];
   return [
-    { files: ['src/**'], rules: { 'max-lines': lines(MAX_LINES), 'max-lines-per-function': functionLines(MAX_FUNCTION_LINES) } },
+    {
+      files: ['src/**'],
+      rules: { 'max-lines': lines(MAX_LINES), 'max-lines-per-function': functionLines(MAX_FUNCTION_LINES), 'max-len': lineLength },
+    },
+    { files: ['src/integrations/tools/content/**'], rules: { 'max-len': 'off' } },
     ...Object.entries(debt.maxLines).map(([file, max]) => ({ files: [file], rules: { 'max-lines': lines(max) } })),
     ...Object.entries(debt.maxFunctionLines).map(([file, max]) => ({ files: [file], rules: { 'max-lines-per-function': functionLines(max) } })),
   ];

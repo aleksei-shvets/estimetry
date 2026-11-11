@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { InstallPlan } from '../../../src/application/contracts/file-change.js';
-import { isRemoval } from '../../../src/application/contracts/file-change.js';
+import type { InstallPlan } from '../../../src/application/ports/file-change.js';
+import { isRemoval } from '../../../src/application/ports/file-change.js';
 import { InstallBlocked } from '../../../src/application/contracts/install-blocked.js';
 import { ClaudeCodeAdapter } from '../../../src/integrations/tools/claude-code/claude-code-adapter.js';
 import { withBlock, withoutBlock } from '../../../src/integrations/tools/claude-code/claude-md.js';

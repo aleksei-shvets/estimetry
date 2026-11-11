@@ -2,6 +2,8 @@ import type { Card } from '../card/card.js';
 import { stackLabels } from '../estimate/stack-labels.js';
 import { exclusion, ratioOf, revisedExclusion, revisedRatioOf, type Exclusion } from './task-ratio.js';
 import { EXTRA_CATEGORIES, type ExtraAccounting, type ExtraCategory } from '../measurement/extra.js';
+import { isRevised, linesPerHour, partsByKind, volumeAccuracy, type PartsStats, type ShareStats, type VolumeStats } from './code-and-parts.js';
+import { median, round } from './statistics.js';
 
 export type { Exclusion } from './task-ratio.js';
 
@@ -9,9 +11,6 @@ export type { Exclusion } from './task-ratio.js';
 export const CALIBRATION_SCHEMA_VERSION = 2;
 export const DEFAULT_MIN_TASKS = 5;
 const UNCERTAINTY_LIMIT = 0.05;
-/** A revised task tells about the parts of its current estimate only if little was done before the revision. */
-const BEFORE_REVISION_LIMIT = 0.05;
-
 
 /** One slice of the ratio fact / estimate. */
 export interface RatioStats {
@@ -25,11 +24,6 @@ export interface RatioStats {
   readonly backgroundAgents: number;
   /** Tasks of the slice whose estimate was revised. */
   readonly revised: number;
-}
-
-export interface ShareStats {
-  readonly n: number;
-  readonly median: number | null;
 }
 
 export interface RatioSlices<T extends RatioStats = RatioStats> {
@@ -52,13 +46,6 @@ export interface RevisionStats {
   readonly lostShare: number | null;
 }
 
-export interface VolumeStats {
-  readonly within: number;
-  readonly below: number;
-  readonly above: number;
-  readonly median: number | null;
-}
-
 export interface AuthorCalibration {
   readonly tasks: number;
   /** Whole fact over the first estimate, by the type of the first estimate. */
@@ -72,13 +59,18 @@ export interface AuthorCalibration {
   };
   /** By type, category and accounting: minutes of extra work per estimated minute. */
   readonly extras: Readonly<
-    Record<string, Readonly<Record<string, Readonly<Record<ExtraAccounting, { readonly share: number; readonly count: number; readonly timed: number }>>>>>
+    Record<
+      string,
+      Readonly<
+        Record<string, Readonly<Record<ExtraAccounting, { readonly share: number; readonly count: number; readonly timed: number }>>>
+      >
+    >
   >;
   /** By type: the spawned task's estimate over the original one. */
   readonly missedScope: Readonly<Record<string, ShareStats>>;
   readonly codeVolume: { readonly production: VolumeStats; readonly tests: VolumeStats; readonly excluded: number };
   readonly linesPerHour: { readonly byStack: Readonly<Record<string, ShareStats>>; readonly excluded: number };
-  readonly parts: { readonly byKind: Readonly<Record<string, ShareStats>>; readonly excluded: number };
+  readonly parts: PartsStats;
 }
 
 export interface Calibration {
@@ -153,10 +145,6 @@ function forAuthor(cards: readonly Card[], byId: ReadonlyMap<string, Card>, minT
   };
 }
 
-function isRevised(card: Card): boolean {
-  return card.revised === true || card.revisions.length > 0;
-}
-
 function hasExclude(card: Card): boolean {
   return card.revisions.some((revision) => revision.spent === 'exclude');
 }
@@ -166,7 +154,11 @@ interface Sampled {
   readonly excluded: readonly { readonly card: Card; readonly reason: Exclusion }[];
 }
 
-function sampled(cards: readonly Card[], exclude: (card: Card) => Exclusion | undefined, ratio: (card: Card) => number | undefined): Sampled {
+function sampled(
+  cards: readonly Card[],
+  exclude: (card: Card) => Exclusion | undefined,
+  ratio: (card: Card) => number | undefined,
+): Sampled {
   const samples: Sample[] = [];
   const excluded: { card: Card; reason: Exclusion }[] = [];
   for (const card of cards) {
@@ -300,99 +292,4 @@ function missedScope(cards: readonly Card[], byId: ReadonlyMap<string, Card>): A
     shares.set(card.estimate.type, list);
   }
   return Object.fromEntries([...shares].sort().map(([type, values]) => [type, { n: values.length, median: median(values) }]));
-}
-
-function volumeAccuracy(cards: readonly Card[], kind: 'production' | 'tests'): VolumeStats {
-  let within = 0;
-  let below = 0;
-  let above = 0;
-  const ratios: number[] = [];
-  for (const card of cards) {
-    const range = card.estimate?.codeVolume?.[kind];
-    const lines = card.code?.lines[kind];
-    if (range === undefined || lines === undefined || card.code?.projects.some((p) => p.source === 'unknown')) {
-      continue;
-    }
-    const [min, max] = range;
-    if (lines.added < min) {
-      below += 1;
-    } else if (lines.added > max) {
-      above += 1;
-    } else {
-      within += 1;
-    }
-    const middle = (min + max) / 2;
-    if (middle > 0) {
-      ratios.push(lines.added / middle);
-    }
-  }
-  return { within, below, above, median: median(ratios) };
-}
-
-function linesPerHour(cards: readonly Card[]): Record<string, ShareStats> {
-  const values = new Map<string, number[]>();
-  for (const card of cards) {
-    if (card.code === null || card.fact.totalMinutes === 0) {
-      continue;
-    }
-    const lines = card.code.lines.production.added + card.code.lines.tests.added;
-    for (const tech of card.task.stack) {
-      const list = values.get(tech) ?? [];
-      list.push(lines / (card.fact.totalMinutes / 60));
-      values.set(tech, list);
-    }
-  }
-  return Object.fromEntries([...values].sort().map(([tech, list]) => [tech, { n: list.length, median: median(list) }]));
-}
-
-/**
- * Only parts alone in their group: the time of a shared group says nothing
- * about one kind. A revised task gives the parts of its current estimate, if
- * little of its counted fact was spent before the revision.
- */
-function partsByKind(cards: readonly Card[]): AuthorCalibration['parts'] {
-  const values = new Map<string, number[]>();
-  let excluded = 0;
-  for (const card of cards) {
-    // A revised card of schema 1 has no fact by the parts of its current estimate.
-    if (card.convertedFrom === 1 && isRevised(card)) {
-      excluded += 1;
-      continue;
-    }
-    if (card.partsFact !== 'by-checkboxes') {
-      continue;
-    }
-    if (isRevised(card)) {
-      const counted = card.fact.counted.totalMinutes;
-      if (counted === 0 || card.beforeRevisionMinutes / counted > BEFORE_REVISION_LIMIT) {
-        excluded += 1;
-        continue;
-      }
-    }
-    const coefficient = card.currentEstimate?.coefficient ?? 1;
-    for (const part of card.currentParts) {
-      if (!part.soleInGroup || part.factMinutes === null || part.likelyHours === 0) {
-        continue;
-      }
-      const list = values.get(part.kind) ?? [];
-      list.push(part.factMinutes / 60 / (part.likelyHours / coefficient));
-      values.set(part.kind, list);
-    }
-  }
-  return { byKind: Object.fromEntries([...values].sort().map(([kind, list]) => [kind, { n: list.length, median: median(list) }])), excluded };
-}
-
-/** The middle value; with an even count, the mean of the two middle ones. */
-export function median(values: readonly number[]): number | null {
-  if (values.length === 0) {
-    return null;
-  }
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  const value = sorted.length % 2 === 1 ? (sorted[middle] as number) : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
-  return round(value);
-}
-
-function round(value: number): number {
-  return Math.round(value * 1000) / 1000;
 }

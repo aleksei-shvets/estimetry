@@ -1,6 +1,6 @@
 import { posix } from 'node:path';
 import { stringify, parse } from 'yaml';
-import type { FileChange, InstallPlan } from '../../src/application/contracts/file-change.js';
+import type { FileChange, InstallPlan } from '../../src/application/ports/file-change.js';
 import type { Flow } from '../../src/application/contracts/flow.js';
 import { InstallBlocked } from '../../src/application/contracts/install-blocked.js';
 import type { StackDetector } from '../../src/application/contracts/stack-detector.js';

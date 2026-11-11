@@ -3,13 +3,12 @@ import { basename, dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import {
   SessionLogFailure,
-  type FileFingerprint,
   type LogAgentData,
-  type SessionLogFingerprint,
   type SessionLogReader,
   type SessionLogRequest,
   type SessionLogResult,
 } from '../../../../application/contracts/session-logs.js';
+import type { FileFingerprint, SessionLogFingerprint } from '../../../../application/ports/log-import-state.js';
 import { AgentLogParser, MainLogParser } from './log-parser.js';
 import { logLines } from './log-lines.js';
 

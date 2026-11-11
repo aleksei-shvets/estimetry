@@ -1,4 +1,4 @@
-import type { FileChange } from '../contracts/file-change.js';
+import type { FileChange } from './file-change.js';
 
 /** Team settings of the project: `.estimetry/config.yaml`, meant to be committed. */
 export interface ProjectConfig {

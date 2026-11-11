@@ -1,4 +1,5 @@
-import { noExtraTallies, type Card, type CardEstimate } from '../../src/domain/card/card.js';
+import type { Card, CardEstimate } from '../../src/domain/card/card.js';
+import { noExtraTallies } from '../../src/domain/card/extra-tallies.js';
 import { EXTRA_CATEGORIES } from '../../src/domain/measurement/extra.js';
 
 export interface CardSpec {

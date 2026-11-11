@@ -35,7 +35,16 @@ export interface CalibrationView {
   readonly otherAuthors: number;
 }
 
-const NO_TASKS: RatioStats = { n: 0, median: null, mean: null, applicable: false, excluded: {}, uncertain: 0, backgroundAgents: 0, revised: 0 };
+const NO_TASKS: RatioStats = {
+  n: 0,
+  median: null,
+  mean: null,
+  applicable: false,
+  excluded: {},
+  uncertain: 0,
+  backgroundAgents: 0,
+  revised: 0,
+};
 
 /**
  * `emt calibrate` (calibration-query spec): the author's coefficients for a
@@ -64,13 +73,14 @@ export class ShowCalibration {
     const pick = <T extends RatioStats>(slices: RatioSlices<T> | undefined, empty: T): RatioSlices<T> => ({
       overall: slices?.overall ?? empty,
       byType: type === undefined ? {} : { [type]: slices?.byType[type] ?? empty },
-      byStack: Object.fromEntries(query.stack.map((label) => [label, slices?.byStack[label] ?? empty])),
+      byStack: Object.fromEntries(query.stack.values.map((label) => [label, slices?.byStack[label] ?? empty])),
     });
     return {
       schemaVersion: CALIBRATION_VIEW_SCHEMA_VERSION,
-      query: { type: type ?? null, stack: query.stack, revise },
+      query: { type: type ?? null, stack: [...query.stack.values], revise },
       // A calibration from an incomplete set of cards could give a wrong coefficient.
-      coefficient: skipped.length > 0 ? null : applicableCoefficient(mine, { ...(type === undefined ? {} : { type }), stack: query.stack, revise }),
+      coefficient:
+        skipped.length > 0 ? null : applicableCoefficient(mine, { ...(type === undefined ? {} : { type }), stack: query.stack, revise }),
       minTasks,
       tasks: mine?.tasks ?? 0,
       ratio: pick(mine?.ratio, NO_TASKS),
@@ -78,7 +88,7 @@ export class ShowCalibration {
       revisions: type === undefined ? {} : (mine?.revisions.byType[type] ?? {}),
       extras: type === undefined ? {} : (mine?.extras[type] ?? {}),
       missedScope: type === undefined ? null : (mine?.missedScope[type] ?? null),
-      linesPerHour: Object.fromEntries(query.stack.flatMap((label) => {
+      linesPerHour: Object.fromEntries(query.stack.values.flatMap((label) => {
         const stats = mine?.linesPerHour.byStack[label];
         return stats === undefined ? [] : [[label, stats]];
       })),

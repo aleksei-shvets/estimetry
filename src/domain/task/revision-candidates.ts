@@ -14,7 +14,9 @@ export interface RevisionCandidateRecords {
 
 export function revisionCandidates(task: Task, window: LostWindow): RevisionCandidateRecords {
   return {
-    extras: task.extraRecords.flatMap(({ id, at, extra }) => (id === undefined || at === undefined || !window.contains(at) ? [] : [{ id, at, extra }])),
+    extras: task.extraRecords.flatMap(({ id, at, extra }) =>
+      id === undefined || at === undefined || !window.contains(at) ? [] : [{ id, at, extra }],
+    ),
     untimedManual: task.manualRecords
       .filter((record) => record.manual.at === undefined && record.recordedAt !== undefined && window.contains(record.recordedAt))
       .map((record) => record.manual),

@@ -74,7 +74,11 @@ async function revise(ctx: CliContext, file: string | undefined, options: Revise
   // What --covers may name and what stays counted, before anything is written.
   printCandidates(
     ctx,
-    app.estimates.revisionCandidates({ ...task, ...(lostFrom === undefined ? {} : { lostFrom }), ...(options.spent === undefined ? {} : { spent: options.spent }) }),
+    app.estimates.revisionCandidates({
+      ...task,
+      ...(lostFrom === undefined ? {} : { lostFrom }),
+      ...(options.spent === undefined ? {} : { spent: options.spent }),
+    }),
     options.covers ?? [],
   );
   const revised = app.estimates.revise({

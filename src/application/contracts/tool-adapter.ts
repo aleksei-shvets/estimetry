@@ -1,5 +1,5 @@
 import type { ProjectFiles } from '../ports/project-files.js';
-import type { InstallPlan } from './file-change.js';
+import type { InstallPlan } from '../ports/file-change.js';
 
 export interface InstallContext {
   readonly projectRoot: string;

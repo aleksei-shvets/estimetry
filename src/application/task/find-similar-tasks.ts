@@ -70,7 +70,7 @@ export class FindSimilarTasks {
 
   execute(input: SimilarTasksInput): SimilarTasksView {
     const query = estimateQuery(input, this.project, this.taskTypes);
-    if (query.type === undefined && query.stack.length === 0) {
+    if (query.type === undefined && query.stack.isEmpty) {
       throw new InvalidValue('nothing to compare by: give --type <type> or --stack <labels>');
     }
     const { cards, skipped } = this.cards.allCards();
@@ -86,7 +86,7 @@ export class FindSimilarTasks {
     });
     return {
       schemaVersion: SIMILAR_SCHEMA_VERSION,
-      query: { type: query.type?.value ?? null, stack: query.stack, hours: input.hours ?? null },
+      query: { type: query.type?.value ?? null, stack: [...query.stack.values], hours: input.hours ?? null },
       tasks: found.map(view),
       skipped,
       otherAuthors: otherAuthors(cards, author, aliases),

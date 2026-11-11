@@ -1,4 +1,5 @@
-import { buildCard, type Card } from '../../domain/card/card.js';
+import { buildCard } from '../../domain/card/build-card.js';
+import type { Card } from '../../domain/card/card.js';
 import { revisionFacts } from '../../domain/card/revision-facts.js';
 import { IntervalSet } from '../../domain/measurement/interval-set.js';
 import { partFacts, type CompletionPoint, type PlanPoint } from '../../domain/progress/part-facts.js';
@@ -86,7 +87,14 @@ function planPoints(records: readonly ProgressRecord[]): PlanPoint[] {
 function completions(records: readonly ProgressRecord[]): CompletionPoint[] {
   return records.flatMap((record) =>
     record.type === 'change.completed' && !record.data.approximate
-      ? [{ at: Timestamp.parse(record.data.completedAt), project: record.data.project, change: record.data.change, directory: record.data.directory }]
+      ? [
+          {
+            at: Timestamp.parse(record.data.completedAt),
+            project: record.data.project,
+            change: record.data.change,
+            directory: record.data.directory,
+          },
+        ]
       : [],
   );
 }

@@ -38,7 +38,8 @@ export class RevisionRecords {
   dropProposal(task: Task, excluded: readonly ExcludedArchives[]): void {
     const pending = this.proposals.peek(task.id.toString());
     const about = (project: ExcludedArchives) =>
-      (pending?.project === undefined || pending.project === project.project) && project.archives.some((archive) => archive.change === pending?.change);
+      (pending?.project === undefined || pending.project === project.project) &&
+      project.archives.some((archive) => archive.change === pending?.change);
     if (pending !== undefined && excluded.some(about)) {
       this.proposals.remove(task.id.toString());
     }

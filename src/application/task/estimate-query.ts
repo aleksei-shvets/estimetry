@@ -1,4 +1,4 @@
-import { EstimateQuery } from '../../domain/estimate/estimate-query.js';
+import { EstimateQuery } from '../../domain/card/estimate-query.js';
 import { TaskType } from '../../domain/task/task-type.js';
 import type { ResolveCurrentProject } from '../project/resolve-current-project.js';
 import type { TaskTypeCatalog } from '../ports/task-type-catalog.js';

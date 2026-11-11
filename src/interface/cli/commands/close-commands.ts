@@ -17,7 +17,13 @@ interface CloseOptions {
  * Asks in a terminal; elsewhere `--yes` must say the user already agreed
  * (design §2: a task never closes by itself).
  */
-async function confirmed(ctx: CliContext, options: { readonly yes?: boolean; readonly json?: boolean }, what: string, summary: () => string, question: string): Promise<boolean> {
+async function confirmed(
+  ctx: CliContext,
+  options: { readonly yes?: boolean; readonly json?: boolean },
+  what: string,
+  summary: () => string,
+  question: string,
+): Promise<boolean> {
   if (options.yes) {
     return true;
   }

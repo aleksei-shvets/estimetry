@@ -1,12 +1,8 @@
 import type { LogAgent, LogSession, LogTurn } from '../../domain/progress/session-log.js';
 import { SessionId } from '../../domain/measurement/session-id.js';
 import type { Timestamp } from '../../domain/shared/timestamp.js';
-import {
-  SessionLogFailure,
-  type FileFingerprint,
-  type SessionLogFingerprint,
-  type SessionLogReaders,
-} from '../contracts/session-logs.js';
+import { SessionLogFailure, type SessionLogReaders } from '../contracts/session-logs.js';
+import type { FileFingerprint, SessionLogFingerprint } from '../ports/log-import-state.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
 import { journalEntry } from '../shared/journal-entry.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';
@@ -57,7 +53,8 @@ export class ImportSessionLogs {
 
   execute(request: SessionImportRequest): SessionImport[] {
     const reader = this.deps.readers.get(request.source);
-    const results = (outcome: LogImportOutcome, tasks = request.tasks) => tasks.map((task) => ({ session: request.session, task: task.id, outcome }));
+    const results = (outcome: LogImportOutcome, tasks = request.tasks) =>
+      tasks.map((task) => ({ session: request.session, task: task.id, outcome }));
     if (reader === undefined || request.tasks.length === 0) {
       return results('not-found');
     }
@@ -165,7 +162,7 @@ export class ImportSessionLogs {
         skipped: i === 0 ? content.skipped : 0,
       };
       this.deps.journal.appendRecord(
-        journalEntry<LogSession>('log.session', data as unknown as Record<string, unknown>, { ...this.deps.meta.at(at), project: task.project, task: task.id }),
+        journalEntry<LogSession>('log.session', data, { ...this.deps.meta.at(at), project: task.project, task: task.id }),
       );
     });
   }
