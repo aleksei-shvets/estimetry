@@ -25,12 +25,8 @@ export const DEBT = {
   statusLiteral: {},
   taskImportsHooks: {},
   nodePath: {},
-  maxLines: {
-  },
-  maxFunctionLines: {
-    'src/bootstrap/container.ts': 125,
-    'src/infrastructure/persistence/records.ts': 102,
-  },
+  maxLines: {},
+  maxFunctionLines: {},
   maxParams: {},
 };
 
