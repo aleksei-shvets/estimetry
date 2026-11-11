@@ -1,5 +1,6 @@
 import type { EventJournal } from '../../src/application/ports/event-journal.js';
-import { isProgressRecordType, parseProgressRecord, type ProgressRecord } from '../../src/domain/progress/progress-records.js';
+import { parseProgressRecord } from '../../src/domain/progress/progress-record-parser.js';
+import { isProgressRecordType, type ProgressRecord } from '../../src/domain/progress/progress-records.js';
 import { parseActivityEvent, type ActivityEvent } from '../../src/domain/measurement/activity-events.js';
 import type { Project } from '../../src/domain/project/project.js';
 import type { ProjectId } from '../../src/domain/project/project-id.js';

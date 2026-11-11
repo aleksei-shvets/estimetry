@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Interval } from '../../../src/domain/measurement/interval.js';
 import { IntervalSet } from '../../../src/domain/measurement/interval-set.js';
-import { parseProgressRecord } from '../../../src/domain/progress/progress-records.js';
+import { parseProgressRecord } from '../../../src/domain/progress/progress-record-parser.js';
 import { logBoundaries, sessionLogs, type LogSession, type LogSessionData, type TokenBucket } from '../../../src/domain/progress/session-log.js';
 import { taskUsage } from '../../../src/domain/usage/task-usage.js';
 import { Timestamp } from '../../../src/domain/shared/timestamp.js';

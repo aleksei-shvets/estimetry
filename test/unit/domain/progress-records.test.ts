@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { fileList, InvalidProgressRecord, MAX_RECORDED_FILES, parseProgressRecord } from '../../../src/domain/progress/progress-records.js';
+import { InvalidProgressRecord, parseProgressRecord } from '../../../src/domain/progress/progress-record-parser.js';
+import { fileList, MAX_RECORDED_FILES } from '../../../src/domain/progress/progress-records.js';
 
 const envelope = { schemaVersion: 1, id: 'r-1', ts: '2026-10-30T10:00:00.000Z', author: 'dev@example.com', task: 'T-1', project: 'api' };
 const checkpoint = {
