@@ -9,7 +9,13 @@ import type { ResolveActiveTask } from './resolve-active-task.js';
 /** Records the user may want to name in `--covers`, or should know stay counted. */
 export interface RevisionCandidates {
   /** Extra work recorded since the window of lost work began, any category. */
-  readonly extras: readonly { readonly id: string; readonly at: string; readonly category: string; readonly description: string; readonly minutes: number | null }[];
+  readonly extras: readonly {
+    readonly id: string;
+    readonly at: string;
+    readonly category: string;
+    readonly description: string;
+    readonly minutes: number | null;
+  }[];
   /** Manual time without a moment recorded in the window: it is not taken out. */
   readonly untimedManual: readonly { readonly description: string; readonly minutes: number }[];
 }

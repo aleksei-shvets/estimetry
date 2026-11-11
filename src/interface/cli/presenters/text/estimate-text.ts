@@ -60,7 +60,10 @@ export function similarText(view: SimilarTasksView): string {
 }
 
 /** `type feature` and `stack go` rows of the slices of a query. */
-function queried<T>(slices: { readonly byType: Readonly<Record<string, T>>; readonly byStack: Readonly<Record<string, T>> }): (readonly [string, T])[] {
+function queried<T>(slices: {
+  readonly byType: Readonly<Record<string, T>>;
+  readonly byStack: Readonly<Record<string, T>>;
+}): (readonly [string, T])[] {
   return [
     ...Object.entries(slices.byType).map(([key, stats]) => [`type ${key}`, stats] as const),
     ...Object.entries(slices.byStack).map(([key, stats]) => [`stack ${key}`, stats] as const),

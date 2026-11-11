@@ -1,4 +1,5 @@
-import type { SessionLogFingerprint, SessionLogRead, SessionLogReader, SessionLogRequest, SessionLogResult } from '../../src/application/contracts/session-logs.js';
+import type { SessionLogRead, SessionLogReader, SessionLogRequest, SessionLogResult } from '../../src/application/contracts/session-logs.js';
+import type { SessionLogFingerprint } from '../../src/application/ports/log-import-state.js';
 import type { LogImportEntry, LogImportState } from '../../src/application/ports/log-import-state.js';
 import { SessionLogReaderRegistry } from '../../src/integrations/tools/session-log-readers.js';
 import type { CalibrationStore } from '../../src/application/ports/calibration-store.js';

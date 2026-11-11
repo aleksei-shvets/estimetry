@@ -1,4 +1,4 @@
-import { stackLabels } from '../estimate/stack-labels.js';
+import type { StackLabels } from '../estimate/stack-labels.js';
 import type { AuthorCalibration, RatioStats } from './calibration.js';
 
 export interface ApplicableCoefficient {
@@ -16,18 +16,19 @@ export interface ApplicableCoefficient {
  */
 export function applicableCoefficient(
   author: AuthorCalibration | undefined,
-  query: { readonly type?: string; readonly stack: readonly string[]; readonly revise?: boolean },
+  query: { readonly type?: string; readonly stack: StackLabels; readonly revise?: boolean },
 ): ApplicableCoefficient | null {
   if (author === undefined) {
     return null;
   }
   const slices = query.revise ? author.revised : author.ratio;
-  const usable = (stats: RatioStats | undefined): stats is RatioStats & { median: number } => stats?.applicable === true && stats.median !== null;
+  const usable = (stats: RatioStats | undefined): stats is RatioStats & { median: number } =>
+    stats?.applicable === true && stats.median !== null;
   const byType = query.type === undefined ? undefined : slices.byType[query.type];
   if (query.type !== undefined && usable(byType)) {
     return { value: byType.median, slice: { kind: 'type', key: query.type }, n: byType.n };
   }
-  const stacks = stackLabels(query.stack)
+  const stacks = query.stack.values
     .flatMap((key) => {
       const stats = slices.byStack[key];
       return usable(stats) ? [{ key, stats }] : [];

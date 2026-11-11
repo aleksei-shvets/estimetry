@@ -93,6 +93,17 @@ describe('architecture checks', () => {
     expect(await sizes(longFunction(78), 'src/application/x.ts')).toEqual(['max-lines-per-function']);
   });
 
+  it('a line of code over 140 characters is an error, a long text is not', async () => {
+    const length = async (code: string, file = 'src/domain/x.ts') => (await messages(code, file)).filter((m) => m.ruleId === 'max-len').length;
+    const sum = (count: number) => `export const s = ${Array.from({ length: count }, (_, i) => `v${i}`).join(' + ')};\n`;
+    const declared = Array.from({ length: 40 }, (_, i) => `const v${i} = ${i};`).join('\n');
+    expect(await length(`${declared}\n${sum(22)}`)).toBe(0);
+    expect(await length(`${declared}\n${sum(40)}`)).toBe(1);
+    expect(await length(`export const message = '${'x'.repeat(200)}';\n`, 'src/application/task/x.ts')).toBe(0);
+    expect(await length(`export const message = \`${'x'.repeat(200)}\`;\n`, 'src/interface/cli/x.ts')).toBe(0);
+    expect(await length(`${declared}\n${sum(40)}`, 'src/integrations/tools/content/x.ts')).toBe(0);
+  });
+
   it('a function of application with more than six parameters is an error', async () => {
     const params = (count: number) => Array.from({ length: count }, (_, i) => `p${i}: number`).join(', ');
     const constructor = (count: number) => `export class X {\n  constructor(${params(count).replaceAll('p', 'private readonly p')}) {}\n}\n`;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildCard, type Card } from '../../../src/domain/card/card.js';
+import { buildCard } from '../../../src/domain/card/build-card.js';
+import type { Card } from '../../../src/domain/card/card.js';
 import { upgradeCardV1, type CardV1 } from '../../../src/domain/card/card-v1.js';
 import { calibrate } from '../../../src/domain/calibration/calibration.js';
 import { Estimate } from '../../../src/domain/estimate/estimate.js';

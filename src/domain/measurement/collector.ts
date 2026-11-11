@@ -129,7 +129,9 @@ export class Collector {
 
   /** The fact without the counted doubts: each owner loses its own, the rest stays (a busy other session still counts). */
   private low(agents: ReadonlyMap<string, AgentTimeline>, userBySession: ReadonlyMap<string, IntervalSet>, startedAt: Timestamp): Bound {
-    const agentSets = [...agents.entries()].map(([agentKey, agent]) => agent.intervals.minus(this.doubtsOf(agent.session, agentKey, true, startedAt)));
+    const agentSets = [...agents.entries()].map(([agentKey, agent]) =>
+      agent.intervals.minus(this.doubtsOf(agent.session, agentKey, true, startedAt)),
+    );
     const userSets = [...userBySession.entries()].map(([session, user]) => user.minus(this.doubtsOf(session, undefined, true, startedAt)));
     return { agents: union(agentSets), user: union(userSets) };
   }
@@ -143,7 +145,10 @@ export class Collector {
   private high(own: ReadonlyMap<string, IntervalSet>, userBySession: ReadonlyMap<string, IntervalSet>, startedAt: Timestamp): Bound {
     const sessions = new Set([...userBySession.keys(), ...this.doubts.filter((d) => d.owner === undefined).map((d) => d.session)]);
     const users = new Map(
-      [...sessions].map((session) => [session, (userBySession.get(session) ?? IntervalSet.EMPTY).union(this.doubtsOf(session, undefined, false, startedAt))]),
+      [...sessions].map((session) => [
+        session,
+        (userBySession.get(session) ?? IntervalSet.EMPTY).union(this.doubtsOf(session, undefined, false, startedAt)),
+      ]),
     );
     const agents: IntervalSet[] = [];
     for (const [agentKey, { info }] of this.agents) {

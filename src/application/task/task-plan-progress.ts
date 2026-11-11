@@ -82,7 +82,9 @@ export class TaskPlanProgress {
     );
     const unavailable = plan === undefined ? untracked[0]?.reason : undefined;
     const completed =
-      options.completions === false ? [] : this.completed(options.records ?? this.journal.readRecords(task.id), readings, task.planExclusions);
+      options.completions === false
+        ? []
+        : this.completed(options.records ?? this.journal.readRecords(task.id), readings, task.planExclusions);
     return {
       ...(plan === undefined ? {} : { plan }),
       ...(unavailable === undefined ? {} : { unavailable }),
@@ -95,7 +97,11 @@ export class TaskPlanProgress {
    * Completions still standing: the directory is in the archive and no active
    * change of the same name overrides it. Of duplicate records the first counts.
    */
-  private completed(records: readonly ProgressRecord[], readings: readonly ProjectPlanReading[], exclusions: PlanExclusions): CompletedChange[] {
+  private completed(
+    records: readonly ProgressRecord[],
+    readings: readonly ProjectPlanReading[],
+    exclusions: PlanExclusions,
+  ): CompletedChange[] {
     const byDirectory = new Map<string, CompletedChange>();
     for (const record of records) {
       if (record.type !== 'change.completed') {

@@ -7,7 +7,12 @@ import { Timestamp } from '../shared/timestamp.js';
  * archive was listed; for any other project the archive counts from the day of the revision.
  */
 export interface PlanExclusions {
-  readonly archives: readonly { readonly project: string; readonly change: string; readonly archivedOn: string; readonly changedAt?: number }[];
+  readonly archives: readonly {
+    readonly project: string;
+    readonly change: string;
+    readonly archivedOn: string;
+    readonly changedAt?: number;
+  }[];
   readonly read: readonly { readonly at: string; readonly projects: readonly string[] }[];
 }
 
@@ -61,7 +66,13 @@ export function exclusionsOf(
 }
 
 /** For a recorded completion: its directory names the date it was archived on (`2026-11-02-auth`). */
-export function isExcludedDirectory(exclusions: PlanExclusions, project: string, change: string, directory: string, changedAt?: number): boolean {
+export function isExcludedDirectory(
+  exclusions: PlanExclusions,
+  project: string,
+  change: string,
+  directory: string,
+  changedAt?: number,
+): boolean {
   const date = /^(\d{4}-\d{2}-\d{2})-/.exec(directory)?.[1];
   return date !== undefined && isExcluded(exclusions, project, change, date, changedAt);
 }

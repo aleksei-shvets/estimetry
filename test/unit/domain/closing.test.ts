@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildCard, type Card } from '../../../src/domain/card/card.js';
-import { calibrate, median } from '../../../src/domain/calibration/calibration.js';
+import { buildCard } from '../../../src/domain/card/build-card.js';
+import type { Card } from '../../../src/domain/card/card.js';
+import { calibrate } from '../../../src/domain/calibration/calibration.js';
+import { median } from '../../../src/domain/calibration/statistics.js';
 import { classify } from '../../../src/domain/code/code-classes.js';
 import { codeLines, countedCommits } from '../../../src/domain/code/code-volume.js';
 import { Estimate } from '../../../src/domain/estimate/estimate.js';

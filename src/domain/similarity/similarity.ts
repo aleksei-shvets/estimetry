@@ -1,7 +1,7 @@
 import type { Card } from '../card/card.js';
 import { normalized } from '../calibration/calibration.js';
 import { taskRatio } from '../calibration/task-ratio.js';
-import { stackLabels } from '../estimate/stack-labels.js';
+import type { StackLabels } from '../estimate/stack-labels.js';
 import { Timestamp } from '../shared/timestamp.js';
 
 export const DEFAULT_SIMILAR_LIMIT = 5;
@@ -15,7 +15,7 @@ export interface SimilarityQuery {
   /** Earlier ids of the same author: their cards are the author's. */
   readonly aliases?: ReadonlyMap<string, string>;
   readonly type?: string;
-  readonly stack: readonly string[];
+  readonly stack: StackLabels;
   /** Preliminary most likely hours of the new task, before calibration. */
   readonly hours?: number;
   readonly limit?: number;
@@ -41,7 +41,7 @@ export interface SimilarTask {
  * and normalised over the components the query and the card both have.
  */
 export function similarTasks(cards: readonly Card[], query: SimilarityQuery): SimilarTask[] {
-  const stack = stackLabels(query.stack);
+  const stack = query.stack;
   const scored: SimilarTask[] = [];
   for (const card of normalized(cards, query.aliases)) {
     if (card.author !== query.author || card.outcome === 'abandoned') {
@@ -49,9 +49,9 @@ export function similarTasks(cards: readonly Card[], query: SimilarityQuery): Si
     }
     const parts: { weight: number; value: number }[] = [];
     const matched: { stack?: { common: string[]; share: number }; type?: boolean; size?: { ratio: number; share: number } } = {};
-    if (stack.length > 0 && card.task.stack.length > 0) {
-      const common = stack.filter((label) => card.task.stack.includes(label));
-      const share = common.length / new Set([...stack, ...card.task.stack]).size;
+    if (!stack.isEmpty && card.task.stack.length > 0) {
+      const common = stack.commonWith(card.task.stack);
+      const share = common.length / new Set([...stack.values, ...card.task.stack]).size;
       matched.stack = { common, share: round(share) };
       parts.push({ weight: WEIGHTS.stack, value: share });
     }

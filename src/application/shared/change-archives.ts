@@ -1,4 +1,4 @@
-import type { ArchivedChange } from '../contracts/flow.js';
+import type { ArchivedChange } from '../ports/project-plans.js';
 import type { ProjectFiles } from '../ports/project-files.js';
 import type { ProjectPlanReading, ProjectPlans } from '../ports/project-plans.js';
 import { nearOf, type WorkingCopy } from './working-copy.js';

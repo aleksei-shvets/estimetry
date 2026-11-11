@@ -136,10 +136,20 @@ function planPoints(input: PartFactsInput, boundary: number | undefined, exclusi
 }
 
 /** Completions in time; after the revision none of a directory it took out. */
-function completionPoints(input: PartFactsInput, boundary: number | undefined, exclusions: PlanExclusions): (CompletionPoint & { readonly millis: number })[] {
+function completionPoints(
+  input: PartFactsInput,
+  boundary: number | undefined,
+  exclusions: PlanExclusions,
+): (CompletionPoint & { readonly millis: number })[] {
   return input.completions
     .map((c) => ({ ...c, millis: clamp(c.at, input) }))
-    .filter((c) => boundary === undefined || c.millis < boundary || c.directory === undefined || !isExcludedDirectory(exclusions, c.project, c.change, c.directory));
+    .filter(
+      (c) =>
+        boundary === undefined ||
+        c.millis < boundary ||
+        c.directory === undefined ||
+        !isExcludedDirectory(exclusions, c.project, c.change, c.directory),
+    );
 }
 
 /**
@@ -154,7 +164,11 @@ function splitManual(c: {
   readonly total: Duration;
   readonly grouped: readonly EstimatePart[];
   readonly boundary: number | undefined;
-}): { readonly pooled: { agent: IntervalSet; user: IntervalSet }; readonly directMillis: Map<string, number>; readonly direct: (item: ManualItem) => boolean } {
+}): {
+  readonly pooled: { agent: IntervalSet; user: IntervalSet };
+  readonly directMillis: Map<string, number>;
+  readonly direct: (item: ManualItem) => boolean;
+} {
   const { boundary, grouped, records } = c;
   // Manual time recorded before the revision for a part, or without a moment, was about the previous plan.
   const early = (item: ManualItem): boolean =>
@@ -167,7 +181,8 @@ function splitManual(c: {
   const direct = (item: ManualItem) => ownManual(item) || early(item);
   const pooled = timedSets(c.input.measured, records, c.lost, (item) => !direct(item));
   const directMillis = new Map<string, number>();
-  const ownMillis = c.total.millis - pooled.agent.total.millis - pooled.user.total.millis - untimed(records, (item) => !direct(item)).millis;
+  const ownMillis =
+    c.total.millis - pooled.agent.total.millis - pooled.user.total.millis - untimed(records, (item) => !direct(item)).millis;
   distributeOwnManual(
     records.filter(direct).map((item) => ({ key: early(item) ? BEFORE : (item.record.part as string), duration: item.record.duration })),
     ownMillis,
@@ -177,7 +192,12 @@ function splitManual(c: {
 }
 
 /** A group's time is shared by its parts in proportion to their most likely hours; manual time for a part comes on top. */
-function partMillis(estimate: Estimate, grouped: readonly EstimatePart[], byGroup: ReadonlyMap<string, number>, directMillis: ReadonlyMap<string, number>): number[] {
+function partMillis(
+  estimate: Estimate,
+  grouped: readonly EstimatePart[],
+  byGroup: ReadonlyMap<string, number>,
+  directMillis: ReadonlyMap<string, number>,
+): number[] {
   return estimate.parts.map((part) => {
     if (part.group === undefined) {
       return 0;
@@ -216,7 +236,14 @@ function basePoints(points: readonly Point[], revision: string | undefined, boun
     if (point.revision !== revision) {
       return false;
     }
-    return !points.some((other) => other !== point && other.project === point.project && other.revision === undefined && other.millis >= boundary && other.millis < point.millis);
+    return !points.some(
+      (other) =>
+        other !== point &&
+        other.project === point.project &&
+        other.revision === undefined &&
+        other.millis >= boundary &&
+        other.millis < point.millis,
+    );
   });
 }
 
@@ -225,7 +252,12 @@ function withoutExcluded(point: Point, exclusions: PlanExclusions): Point {
   return {
     ...point,
     changes: point.changes.filter(
-      (change) => !(change.archived && change.archivedOn !== undefined && isExcluded(exclusions, point.project, change.change, change.archivedOn, change.changedAt)),
+      (change) =>
+        !(
+          change.archived &&
+          change.archivedOn !== undefined &&
+          isExcluded(exclusions, point.project, change.change, change.archivedOn, change.changedAt)
+        ),
     ),
   };
 }
@@ -282,7 +314,11 @@ function untimed(manual: readonly ManualItem[], include: (item: ManualItem) => b
 }
 
 /** What manual time of the parts adds to the fact goes to the parts, in proportion to their records. */
-function distributeOwnManual(records: readonly { readonly key: string; readonly duration: Duration }[], millis: number, direct: Map<string, number>): void {
+function distributeOwnManual(
+  records: readonly { readonly key: string; readonly duration: Duration }[],
+  millis: number,
+  direct: Map<string, number>,
+): void {
   const sum = records.reduce((total, record) => total + record.duration.millis, 0);
   if (sum === 0 || millis <= 0) {
     return;

@@ -4,6 +4,8 @@
  * answers, tool inputs or outputs, nor names or descriptions of subagents.
  */
 
+import type { SessionLogFingerprint } from '../ports/log-import-state.js';
+
 /** Tokens of one model that started within one five-minute bucket. Times are milliseconds since the epoch. */
 export interface TokenBucketData {
   readonly at: number;
@@ -38,17 +40,6 @@ export interface CostTotalData {
   readonly startTime: number;
   readonly totalUSD: number;
   readonly unknown: boolean;
-}
-
-/** Size and modification time of a file: a changed fingerprint means new data. */
-export interface FileFingerprint {
-  readonly size: number;
-  readonly mtimeMs: number;
-}
-
-export interface SessionLogFingerprint {
-  readonly main: FileFingerprint;
-  readonly agents: Readonly<Record<string, FileFingerprint>>;
 }
 
 export interface SessionLogRead {

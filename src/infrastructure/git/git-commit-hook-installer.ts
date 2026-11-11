@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, normalize, relative, sep } from 'node:path';
-import type { InstallPlan } from '../../application/contracts/file-change.js';
+import type { InstallPlan } from '../../application/ports/file-change.js';
 import type { CommitHookInstaller } from '../../application/ports/commit-hook-installer.js';
 
 export const BLOCK_START = '# >>> estimetry >>>';

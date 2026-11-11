@@ -1,4 +1,4 @@
-import type { SessionLogFingerprint } from '../../application/contracts/session-logs.js';
+import type { SessionLogFingerprint } from '../../application/ports/log-import-state.js';
 import type { LogImportEntry, LogImportState } from '../../application/ports/log-import-state.js';
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import { withFileLock } from '../fs/file-lock.js';

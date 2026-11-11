@@ -175,7 +175,13 @@ function coreServices(deps: EstimetryDependencies): CoreServices {
   const currentProject = new ResolveCurrentProject(deps.workspace, deps.projects, deps.projectConfig, deps.authors, deps.clock);
   const measurement = new TaskMeasurement(deps.journal, deps.measurement, deps.clock);
   const meta = new EventMetaSource(deps.clock, deps.ids, deps.authors);
-  const importLogs = new ImportSessionLogs({ readers: deps.logReaders, state: deps.logImportState, journal: deps.journal, meta, errors: deps.errors });
+  const importLogs = new ImportSessionLogs({
+    readers: deps.logReaders,
+    state: deps.logImportState,
+    journal: deps.journal,
+    meta,
+    errors: deps.errors,
+  });
   const planSnapshots = new PlanSnapshots(deps.plans, deps.gitHead, deps.projects);
   const taskCards = new TaskCards(
     new CardBuilder(deps.journal, measurement, deps.tasks),
@@ -186,7 +192,14 @@ function coreServices(deps: EstimetryDependencies): CoreServices {
     deps.authors,
   );
   const closing = new TaskClosing(
-    new ClosingRecords(deps.journal, new CodeVolumeService(deps.plans, deps.codeMeasurer), planSnapshots, deps.sessionBindings, meta, () => importLogs),
+    new ClosingRecords(
+      deps.journal,
+      new CodeVolumeService(deps.plans, deps.codeMeasurer),
+      planSnapshots,
+      deps.sessionBindings,
+      meta,
+      () => importLogs,
+    ),
     new ClosingFollowUp(deps.journal, deps.sessionBindings, deps.proposals, taskCards, meta),
   );
   return {

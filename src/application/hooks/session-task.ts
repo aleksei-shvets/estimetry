@@ -67,7 +67,14 @@ export class SessionTask {
       if (only && others.length === 0) {
         // The first window starts with the task, so work done before a backdated start counts too.
         const since = latest?.everBound || only.startedAt === undefined ? now.toISOString() : only.startedAt;
-        const binding: SessionBinding = { session: session.value, project: project.id, root: project.root, task: only.id, since, everBound: true };
+        const binding: SessionBinding = {
+          session: session.value,
+          project: project.id,
+          root: project.root,
+          task: only.id,
+          since,
+          everBound: true,
+        };
         bindsNow = { binding, task: only };
         return binding;
       }

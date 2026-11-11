@@ -52,7 +52,8 @@ export function registerInitCommand(program: Command, ctx: CliContext): void {
     .action(async (options: InitOptions) => {
       const app = await ctx.app();
       const choices = app.project.choices();
-      const input = ctx.terminal.interactive && options.interactive && !options.json ? await ask(ctx, choices, options) : fromFlags(options);
+      const input =
+        ctx.terminal.interactive && options.interactive && !options.json ? await ask(ctx, choices, options) : fromFlags(options);
       ctx.out.print(presenterFor(options).initReport(app.project.init(input)));
     });
 }
@@ -77,14 +78,20 @@ async function ask(ctx: CliContext, choices: InitChoices, options: InitOptions):
     if (input.tools === undefined) {
       input.tools = await prompts.multiSelect(
         'AI tools',
-        [...choices.tools.map((tool) => ({ value: tool.id, label: tool.title })), ...COMING_SOON.tools.map((tool) => ({ ...tool, disabled: true }))],
+        [
+          ...choices.tools.map((tool) => ({ value: tool.id, label: tool.title })),
+          ...COMING_SOON.tools.map((tool) => ({ ...tool, disabled: true })),
+        ],
         defaults.tools,
       );
     }
     if (input.flow === undefined) {
       input.flow = await prompts.select(
         'Development process',
-        [...choices.flows.map((flow) => ({ value: flow.id, label: flow.title })), ...COMING_SOON.flows.map((flow) => ({ ...flow, disabled: true }))],
+        [
+          ...choices.flows.map((flow) => ({ value: flow.id, label: flow.title })),
+          ...COMING_SOON.flows.map((flow) => ({ ...flow, disabled: true })),
+        ],
         defaults.flow,
       );
     }

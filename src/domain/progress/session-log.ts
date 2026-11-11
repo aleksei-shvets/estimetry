@@ -86,7 +86,8 @@ export function sessionLogs(records: readonly LogSession[], closed: readonly Clo
   const ignored = (record: LogSession) => {
     const ts = Timestamp.parse(record.ts).toMillis();
     return closed.some(
-      (period) => ts > (period.recordedAt ?? period.at).toMillis() && (period.reopenedAt === undefined || ts < period.reopenedAt.toMillis()),
+      (period) =>
+        ts > (period.recordedAt ?? period.at).toMillis() && (period.reopenedAt === undefined || ts < period.reopenedAt.toMillis()),
     );
   };
   const inForce = records.filter((record) => !ignored(record));
@@ -122,7 +123,17 @@ function joinedTurns(turns: readonly LogTurn[]): LogTurn[] {
   const byKey = new Map<number, LogTurn>();
   for (const turn of turns) {
     const before = byKey.get(turn.key);
-    byKey.set(turn.key, before === undefined ? turn : { ...before, ...(before.start === undefined && turn.start !== undefined ? { start: turn.start } : {}), ...(before.end === undefined && turn.end !== undefined ? { end: turn.end } : {}), tokens: [...before.tokens, ...turn.tokens] });
+    byKey.set(
+      turn.key,
+      before === undefined
+        ? turn
+        : {
+            ...before,
+            ...(before.start === undefined && turn.start !== undefined ? { start: turn.start } : {}),
+            ...(before.end === undefined && turn.end !== undefined ? { end: turn.end } : {}),
+            tokens: [...before.tokens, ...turn.tokens],
+          },
+    );
   }
   return [...byKey.values()];
 }
@@ -131,7 +142,12 @@ function joinedAgents(agents: readonly LogAgent[]): LogAgent[] {
   const byId = new Map<string, LogAgent>();
   for (const agent of agents) {
     const before = byId.get(agent.agent);
-    byId.set(agent.agent, before === undefined ? agent : { agent: agent.agent, spans: [...before.spans, ...agent.spans], tokens: [...before.tokens, ...agent.tokens] });
+    byId.set(
+      agent.agent,
+      before === undefined
+        ? agent
+        : { agent: agent.agent, spans: [...before.spans, ...agent.spans], tokens: [...before.tokens, ...agent.tokens] },
+    );
   }
   return [...byId.values()];
 }

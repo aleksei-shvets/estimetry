@@ -201,7 +201,9 @@ export function snapshotOf(s: TaskState, version: { readonly count: number; read
     parallelMode: s.parallelMode.map(parallelPeriodData),
     ...field('spawnedFrom', s.spawnedFrom?.toString()),
     ...(s.closures.length === 0 ? {} : { closures: s.closures.map(closureData) }),
-    ...(s.retro === undefined ? {} : { retro: { reasons: s.retro.reasons, lesson: s.retro.lesson, recordedAt: s.retro.recordedAt.toISOString() } }),
+    ...(s.retro === undefined
+      ? {}
+      : { retro: { reasons: s.retro.reasons, lesson: s.retro.lesson, recordedAt: s.retro.recordedAt.toISOString() } }),
     lastEventAt: s.lastEventAt.toISOString(),
     ...field('firstEstimate', s.firstEstimate?.toData()),
     ...(s.estimatedAfterStart ? { estimatedAfterStart: true } : {}),

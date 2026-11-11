@@ -17,7 +17,9 @@ export class ProgressLog {
   /** What was noticed; `cached` is false when it came from the journal and the cache is to be written. */
   seen(task: string): { readonly seen: ProgressSeen; readonly cached: boolean } {
     const cached = this.state.read(task);
-    return cached === undefined ? { seen: fromRecords(this.journal.readRecords(TaskId.parse(task))), cached: false } : { seen: cached, cached: true };
+    return cached === undefined
+      ? { seen: fromRecords(this.journal.readRecords(TaskId.parse(task))), cached: false }
+      : { seen: cached, cached: true };
   }
 
   /** Journal first, then the cache: a crash in between repeats a record, it never loses one. */
