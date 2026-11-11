@@ -12,6 +12,16 @@ export class EventMetaSource {
     private readonly authors: AuthorProvider,
   ) {}
 
+  /** The clock's now, for what is stamped later or compared with the moment of a record. */
+  now(): Timestamp {
+    return this.clock.now();
+  }
+
+  /** An id alone, for a value that ties several records together. */
+  id(): string {
+    return this.ids.next();
+  }
+
   next(): EventMeta {
     return { id: this.ids.next(), at: this.clock.now(), author: this.authors.current() };
   }

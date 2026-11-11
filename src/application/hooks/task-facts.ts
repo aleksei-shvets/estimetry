@@ -3,7 +3,7 @@ import type { Task } from '../../domain/task/task.js';
 import type { TaskMeasurement } from '../task/task-measurement.js';
 import type { TaskPlanProgress } from '../task/task-plan-progress.js';
 import type { TaskFact } from './hook-context.js';
-import type { TaskFacts } from './receive-hook.js';
+import type { TaskFacts } from './session-start-context.js';
 
 /** The fact of a task for the status line at the start of a session: the one hook that reads the whole journal. */
 export class MeasuredTaskFacts implements TaskFacts {

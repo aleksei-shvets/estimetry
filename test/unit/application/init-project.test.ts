@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { closingPorts, fakeClosing } from '../../support/closing-fakes.js';
 import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
 import { InstallBlocked } from '../../../src/application/contracts/install-blocked.js';
-import type { InstallDependencies } from '../../../src/application/project/init-project.js';
 import { InvalidValue } from '../../../src/domain/shared/domain-error.js';
 import {
   FakeAuthorProvider,
@@ -19,6 +18,7 @@ import {
   FakeGitExcludes,
   FakeToolAdapter,
   fakeInstallDependencies,
+  type FakeInstallOverrides,
   InMemoryProjectConfigFile,
   InMemoryProjectFiles,
   InMemorySharingPreference,
@@ -39,7 +39,7 @@ let excludes: FakeGitExcludes;
 let workspace: FakeWorkspaceLocator;
 let app: Estimetry;
 
-function build(overrides: Partial<InstallDependencies> = {}): void {
+function build(overrides: FakeInstallOverrides = {}): void {
   app = createEstimetry({
     tasks: new InMemoryTaskRepository(),
     projects,

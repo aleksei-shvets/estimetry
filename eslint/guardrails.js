@@ -20,6 +20,10 @@ export const TASK_STATUS_VALUES = ['new', 'estimated', 'in-progress', 'closed'];
  * @property {Record<string, number>} maxParams files of src/application with a function over 6 parameters, with the most as the ceiling
  */
 
+const MAX_LINES = 400;
+const MAX_FUNCTION_LINES = 80;
+const MAX_PARAMS = 6;
+
 /** @type {Debt} */
 export const DEBT = {
   statusLiteral: {},
@@ -30,9 +34,6 @@ export const DEBT = {
   maxParams: {},
 };
 
-const MAX_LINES = 400;
-const MAX_FUNCTION_LINES = 80;
-const MAX_PARAMS = 6;
 
 const STATUS_VALUE = `/^(${TASK_STATUS_VALUES.join('|')})$/`;
 const STATUS_MESSAGE =
@@ -55,6 +56,21 @@ const TIMESTAMP_CAST = {
     'Do not cast to Timestamp: use a narrow getter that checks the moment (requireStartedAt(), requireClosedAt()) or a method of the value object (ManualTime.interval()).',
 };
 
+const DEPENDENCIES_MESSAGE =
+  'More than six dependencies in one object bypass max-params: split the class by roles or group dependencies by meaning (see CLAUDE.md, "Architecture").';
+
+/** Dependencies passed as one object: an interface named `*Dependencies` (the ports of the facade aside) or the type of a constructor parameter. */
+const DEPENDENCY_OBJECTS = [
+  {
+    selector: `TSInterfaceDeclaration[id.name=/Dependencies$/][id.name!='EstimetryDependencies'][body.body.length>${MAX_PARAMS}]`,
+    message: DEPENDENCIES_MESSAGE,
+  },
+  {
+    selector: `MethodDefinition[kind='constructor'] TSParameterProperty > Identifier > TSTypeAnnotation > TSTypeLiteral[members.length>${MAX_PARAMS}], MethodDefinition[kind='constructor'] > FunctionExpression > Identifier > TSTypeAnnotation > TSTypeLiteral[members.length>${MAX_PARAMS}]`,
+    message: DEPENDENCIES_MESSAGE,
+  },
+];
+
 const NEW_DATE = {
   selector: "NewExpression[callee.name='Date'][arguments.length=0]",
   message: 'Domain gets time from the caller (Clock port).',
@@ -71,7 +87,7 @@ function syntaxRules(debt) {
   return [
     { files: ['src/**'], rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST] } },
     { files: ['src/domain/**'], rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST, NEW_DATE] } },
-    { files: ['src/application/**'], ignores: debtFiles, rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST, ...status] } },
+    { files: ['src/application/**'], ignores: debtFiles, rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST, ...status, ...DEPENDENCY_OBJECTS] } },
   ];
 }
 

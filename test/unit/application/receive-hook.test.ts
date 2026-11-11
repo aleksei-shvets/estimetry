@@ -6,7 +6,13 @@ import { CommitRecords, CommitTask } from '../../../src/application/hooks/commit
 import { RecentSessions } from '../../../src/application/hooks/recent-sessions.js';
 import { BindSession } from '../../../src/application/task/bind-session.js';
 import { Checkpoints } from '../../../src/application/hooks/checkpoints.js';
-import { ReceiveHook, SESSION_END_IMPORT_BUDGET_MS } from '../../../src/application/hooks/receive-hook.js';
+import { ActivityRecorder } from '../../../src/application/hooks/activity-recorder.js';
+import { PendingProposal } from '../../../src/application/hooks/pending-proposal.js';
+import { PromptContext } from '../../../src/application/hooks/prompt-context.js';
+import { ReceiveHook } from '../../../src/application/hooks/receive-hook.js';
+import { ReceiveSessionHook } from '../../../src/application/hooks/receive-session-hook.js';
+import { SESSION_END_IMPORT_BUDGET_MS, SessionEndImport } from '../../../src/application/hooks/session-end-import.js';
+import { SessionStartContext } from '../../../src/application/hooks/session-start-context.js';
 import type { SessionImportRequest } from '../../../src/application/task/import-session-logs.js';
 import { SessionTask } from '../../../src/application/hooks/session-task.js';
 import { SessionId } from '../../../src/domain/measurement/session-id.js';
@@ -89,30 +95,30 @@ beforeEach(() => {
   const authors = new FakeAuthorProvider();
   const status = new RepositoryTaskStatusReader(tasks);
   const recent = new RecentSessions(state, settings);
-  receive = new ReceiveHook({
-    adapters: new ListRegistry<HookSource>([new FakeHookAdapter(), gitHooks, hgHooks]),
-    locator: new FakeProjectLocator(),
-    sessionTask: new SessionTask(bindings, status, journal, ids, authors),
-    checkpoints: new Checkpoints(state, journal, new CheckpointSnapshot(new FakeProjectPlans(), git, git), settings, errors, new EventMetaSource({ now: () => { throw new Error('the clock is not read here'); } }, ids, authors)),
-    completions: { check: (task) => void checked.push(task.id) },
-    proposals,
-    planOf: async () => ({ of: () => ({ done: 51, unfinished: ['release'] }) }),
+  const checkpoints = new Checkpoints(
+    state,
     journal,
-    tasks: status,
-    bindings,
-    commits: new CommitRecords(new FakeProjectLocator(), git, new CommitTask(bindings, status, recent), journal, new EventMetaSource(clock, ids, authors)),
-    recent,
-    facts: async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5, planDone: 51 }) }),
-    clock,
-    ids,
-    authors,
-    logs: async () => ({
+    new CheckpointSnapshot(new FakeProjectPlans(), git, git),
+    settings,
+    errors,
+    new EventMetaSource({ now: () => { throw new Error('the clock is not read here'); } }, ids, authors),
+  );
+  const proposal = new PendingProposal(proposals, recent, async () => ({ of: () => ({ done: 51, unfinished: ['release'] }) }));
+  const sessions = new ReceiveSessionHook(
+    new FakeProjectLocator(),
+    new SessionTask(bindings, status, journal, ids, authors),
+    new ActivityRecorder(journal, bindings, checkpoints, { check: (task) => void checked.push(task.id) }, new EventMetaSource(clock, ids, authors)),
+    new SessionStartContext(async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5, planDone: 51 }) }), checkpoints, proposal),
+    new PromptContext(checkpoints, proposal),
+    new SessionEndImport(bindings, status, async () => ({
       execute: (request: SessionImportRequest) => {
         imports.push(request);
         return [];
       },
-    }),
-  });
+    })),
+  );
+  const commits = new CommitRecords(new FakeProjectLocator(), git, new CommitTask(bindings, status, recent), journal, new EventMetaSource(clock, ids, authors));
+  receive = new ReceiveHook(new ListRegistry<HookSource>([new FakeHookAdapter(), gitHooks, hgHooks]), clock, commits, sessions);
   bind = new BindSession(bindings, status, journal, ids, authors);
 });
 

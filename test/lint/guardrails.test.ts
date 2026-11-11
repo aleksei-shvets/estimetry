@@ -102,6 +102,18 @@ describe('architecture checks', () => {
     expect(await rules(`export function f(${params(6)}): number {\n  return p0 + p1 + p2 + p3 + p4 + p5;\n}\n`)).toEqual([]);
   });
 
+  it('an object of more than six dependencies in application is an error, except the ports of the facade', async () => {
+    const fields = (count: number) => Array.from({ length: count }, (_, i) => `readonly d${i}: number;`).join(' ');
+    const errors = async (code: string, file = 'src/application/hooks/x.ts') =>
+      (await messages(code, file)).filter((m) => m.ruleId === 'no-restricted-syntax').map((m) => m.message);
+    expect((await errors(`export interface HookDependencies { ${fields(7)} }\n`)).join('\n')).toMatch(/group|by meaning/);
+    expect(await errors(`export class X {\n  constructor(private readonly deps: { ${fields(7)} }) {}\n}\n`, 'src/application/task/x.ts')).toHaveLength(1);
+    expect(await errors(`export interface InstallDependencies { ${fields(6)} }\n`, 'src/application/project/x.ts')).toEqual([]);
+    expect(await errors(`export class X {\n  constructor(private readonly deps: { ${fields(6)} }) {}\n}\n`, 'src/application/task/x.ts')).toEqual([]);
+    expect(await errors(`export interface EstimetryDependencies { ${fields(27)} }\n`, 'src/application/estimetry.ts')).toEqual([]);
+    expect(await errors(`export interface CardFields { ${fields(9)} }\n`, 'src/application/task/x.ts')).toEqual([]);
+  });
+
   it('the whole of src passes with the list of debt', async () => {
     const results = await eslint(guardrails.DEBT).lintFiles(['src']);
     const errors = results.flatMap((r) => r.messages.map((m) => `${r.filePath}:${m.line} ${m.message}`));
