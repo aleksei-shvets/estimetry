@@ -61,32 +61,36 @@ export interface TaskRetro {
   readonly recordedAt: Timestamp;
 }
 
-/** State of the aggregate in value objects; strings are parsed only from events and snapshots. */
+/**
+ * State of the aggregate in value objects; strings are parsed only from events
+ * and snapshots. Immutable: applying an event gives a new state, so nothing
+ * outside the aggregate can change the one it holds.
+ */
 export interface TaskState {
-  id: TaskId;
-  title: string;
-  type: TaskType;
-  ticket: string | undefined;
-  status: TaskStatus;
-  estimated: boolean;
-  projects: ProjectId[];
-  author: Author;
-  createdAt: Timestamp;
-  startedAt: Timestamp | undefined;
-  estimate: Estimate | undefined;
-  manual: ManualRecord[];
-  extras: ExtraRecord[];
-  parallelMode: ParallelPeriod[];
-  spawnedFrom: TaskId | undefined;
-  closures: TaskClosure[];
-  retro: TaskRetro | undefined;
+  readonly id: TaskId;
+  readonly title: string;
+  readonly type: TaskType;
+  readonly ticket: string | undefined;
+  readonly status: TaskStatus;
+  readonly estimated: boolean;
+  readonly projects: readonly ProjectId[];
+  readonly author: Author;
+  readonly createdAt: Timestamp;
+  readonly startedAt: Timestamp | undefined;
+  readonly estimate: Estimate | undefined;
+  readonly manual: readonly ManualRecord[];
+  readonly extras: readonly ExtraRecord[];
+  readonly parallelMode: readonly ParallelPeriod[];
+  readonly spawnedFrom: TaskId | undefined;
+  readonly closures: readonly TaskClosure[];
+  readonly retro: TaskRetro | undefined;
   /** Latest moment the aggregate knows of: event times and ends of manual time. */
-  lastEventAt: Timestamp;
-  firstEstimate: Estimate | undefined;
-  estimatedAfterStart: boolean;
-  revisions: TaskRevision[];
+  readonly lastEventAt: Timestamp;
+  readonly firstEstimate: Estimate | undefined;
+  readonly estimatedAfterStart: boolean;
+  readonly revisions: readonly TaskRevision[];
   /** When manual time of an estimate part was last recorded: a revision cannot start before it. */
-  lastPartRecordAt: Timestamp | undefined;
+  readonly lastPartRecordAt: Timestamp | undefined;
 }
 
 export function later(a: Timestamp, b: Timestamp): Timestamp {

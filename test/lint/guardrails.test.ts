@@ -102,6 +102,17 @@ describe('architecture checks', () => {
     expect(await rules(`export function f(${params(6)}): number {\n  return p0 + p1 + p2 + p3 + p4 + p5;\n}\n`)).toEqual([]);
   });
 
+  it('the inside of the Task aggregate is imported only from src/domain/task', async () => {
+    const restricted = async (code: string, file: string) => (await messages(code, file)).filter((m) => m.ruleId === 'no-restricted-imports').map((m) => m.message);
+    const state = "import type { TaskState } from '../task/task-state.js';\nexport type S = TaskState;\n";
+    expect((await restricted(state, 'src/domain/card/x.ts')).join('\n')).toMatch(/internal to src\/domain\/task/);
+    expect(await restricted("import { applyEvent } from '../../domain/task/task-apply.js';\nexport const a = applyEvent;\n", 'src/application/task/x.ts')).toHaveLength(1);
+    expect(await restricted("import { applyRevision } from '../domain/task/task-revisions.js';\nexport const a = applyRevision;\n", 'src/bootstrap/x.ts')).toHaveLength(1);
+    expect(await restricted("import type { TaskState } from '../../domain/task/task-state.js';\nexport type S = TaskState;\n", 'src/infrastructure/persistence/x.ts')).toHaveLength(1);
+    expect(await restricted("import type { TaskState } from './task-state.js';\nexport type S = TaskState;\n", 'src/domain/task/x.ts')).toEqual([]);
+    expect(await restricted("import type { TaskSnapshot } from '../../domain/task/task-snapshot.js';\nexport type S = TaskSnapshot;\n", 'src/infrastructure/persistence/x.ts')).toEqual([]);
+  });
+
   it('an object of more than six dependencies in application is an error, except the ports of the facade', async () => {
     const fields = (count: number) => Array.from({ length: count }, (_, i) => `readonly d${i}: number;`).join(' ');
     const errors = async (code: string, file = 'src/application/hooks/x.ts') =>

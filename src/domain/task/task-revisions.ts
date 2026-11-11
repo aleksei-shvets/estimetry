@@ -2,7 +2,7 @@ import { Estimate } from '../estimate/estimate.js';
 import type { EstimateRevision } from '../estimate/estimate-revision.js';
 import { LostWindow } from '../estimate/lost-window.js';
 import { InvalidValue } from '../shared/domain-error.js';
-import { Timestamp } from '../shared/timestamp.js';
+import type { Timestamp } from '../shared/timestamp.js';
 import type { TaskEstimateRevised } from './task-events.js';
 import { revisionOf } from './task-snapshot.js';
 import { later, type TaskState } from './task-state.js';
@@ -43,7 +43,7 @@ export function revisedData(state: TaskState, revision: EstimateRevision, moment
     ['the start', moments.startedAt],
     ['the previous revision', state.revisions.at(-1)?.at],
     ['the last reopening', moments.lastReopening],
-    ['the end of parallel mode', parallelEnd === undefined ? undefined : Timestamp.parse(parallelEnd)],
+    ['the end of parallel mode', parallelEnd],
     ['the last manual time of an estimate part', state.lastPartRecordAt],
   ];
   for (const [what, floor] of floors) {
@@ -112,33 +112,31 @@ function checkCovers(state: TaskState, revision: EstimateRevision): void {
 }
 
 /** The first estimate after the start is no revision; any later one is, with the plan before and after it. */
-export function applyRevision(state: TaskState, event: TaskEstimateRevised): void {
+export function applyRevision(state: TaskState, event: TaskEstimateRevised): TaskState {
   const before = state.estimate;
   const after = Estimate.fromData(event.data.estimate);
+  const plan: TaskState = {
+    ...state,
+    estimate: after,
+    estimated: true,
+    ...(event.data.taskType === undefined ? {} : { type: TaskType.restore(event.data.taskType) }),
+  };
   if (before === undefined) {
-    state.estimatedAfterStart = true;
-  } else {
-    state.firstEstimate ??= before;
-    state.revisions.push(
-      revisionOf({
-        id: event.id,
-        at: event.data.at,
-        ...(event.data.lostFrom === undefined ? {} : { lostFrom: event.data.lostFrom }),
-        reason: event.data.reason,
-        ...(event.data.category === undefined ? {} : { category: event.data.category }),
-        ...(event.data.spent === undefined ? {} : { spent: event.data.spent }),
-        baseLikelyBefore: before.baseLikely,
-        baseLikelyAfter: after.baseLikely,
-        typeBefore: state.type.value,
-        typeAfter: event.data.taskType ?? state.type.value,
-        covers: [...event.data.covers],
-        ...(event.data.excluded === undefined ? {} : { excluded: event.data.excluded }),
-      }),
-    );
+    return { ...plan, estimatedAfterStart: true };
   }
-  state.estimate = after;
-  state.estimated = true;
-  if (event.data.taskType !== undefined) {
-    state.type = TaskType.restore(event.data.taskType);
-  }
+  const revision = revisionOf({
+    id: event.id,
+    at: event.data.at,
+    ...(event.data.lostFrom === undefined ? {} : { lostFrom: event.data.lostFrom }),
+    reason: event.data.reason,
+    ...(event.data.category === undefined ? {} : { category: event.data.category }),
+    ...(event.data.spent === undefined ? {} : { spent: event.data.spent }),
+    baseLikelyBefore: before.baseLikely,
+    baseLikelyAfter: after.baseLikely,
+    typeBefore: state.type.value,
+    typeAfter: event.data.taskType ?? state.type.value,
+    covers: [...event.data.covers],
+    ...(event.data.excluded === undefined ? {} : { excluded: event.data.excluded }),
+  });
+  return { ...plan, firstEstimate: state.firstEstimate ?? before, revisions: [...state.revisions, revision] };
 }

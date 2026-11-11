@@ -2,7 +2,7 @@ import { Estimate, type EstimateData } from '../estimate/estimate.js';
 import type { ExcludedArchives, SpentPolicy } from '../estimate/estimate-revision.js';
 import { Extra, type ExtraCategory, type ExtraData } from '../measurement/extra.js';
 import { ManualTime, type ManualTimeData } from '../measurement/manual-time.js';
-import type { ParallelPeriod } from '../measurement/parallel-mode.js';
+import { parallelPeriodData, parallelPeriodOf, type ParallelPeriodData } from '../measurement/parallel-mode.js';
 import { ProjectId } from '../project/project-id.js';
 import { Author } from '../shared/author.js';
 import { Timestamp } from '../shared/timestamp.js';
@@ -69,7 +69,7 @@ export interface TaskSnapshot {
   readonly estimate?: EstimateData;
   readonly manualTime: readonly ManualTimeData[];
   readonly extras: readonly ExtraData[];
-  readonly parallelMode: readonly ParallelPeriod[];
+  readonly parallelMode: readonly ParallelPeriodData[];
   readonly spawnedFrom?: string;
   readonly closures?: readonly TaskClosureData[];
   readonly retro?: TaskRetroData;
@@ -168,7 +168,7 @@ export function stateFromSnapshot(snapshot: TaskSnapshot): TaskState {
       const record = snapshot.extraRecords?.[i];
       return { extra: Extra.fromData(data), ...field('id', record?.id), ...field('at', time(record?.at)) };
     }),
-    parallelMode: [...snapshot.parallelMode],
+    parallelMode: snapshot.parallelMode.map(parallelPeriodOf),
     spawnedFrom: snapshot.spawnedFrom === undefined ? undefined : TaskId.parse(snapshot.spawnedFrom),
     closures: (snapshot.closures ?? []).map(closureOf),
     retro: snapshot.retro === undefined ? undefined : retroOf(snapshot.retro),
@@ -198,7 +198,7 @@ export function snapshotOf(s: TaskState, version: { readonly count: number; read
     ...field('estimate', s.estimate?.toData()),
     manualTime: s.manual.map(({ manual }) => manual.toData()),
     extras: s.extras.map(({ extra }) => extra.toData()),
-    parallelMode: [...s.parallelMode],
+    parallelMode: s.parallelMode.map(parallelPeriodData),
     ...field('spawnedFrom', s.spawnedFrom?.toString()),
     ...(s.closures.length === 0 ? {} : { closures: s.closures.map(closureData) }),
     ...(s.retro === undefined ? {} : { retro: { reasons: s.retro.reasons, lesson: s.retro.lesson, recordedAt: s.retro.recordedAt.toISOString() } }),

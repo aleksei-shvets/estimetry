@@ -402,8 +402,8 @@ describe('auxiliary metrics', () => {
 
   it('sequential equivalent and parallel flag come from the parallel periods', () => {
     const parallel: ParallelPeriod[] = [
-      { enabledAt: at('10:00').toISOString(), disabledAt: at('10:30').toISOString(), change: { agents: 2, parts: [] } },
-      { enabledAt: at('11:00').toISOString(), change: { agents: 3, parts: [] } },
+      { enabledAt: at('10:00'), disabledAt: at('10:30'), change: { agents: 2, parts: [] } },
+      { enabledAt: at('11:00'), change: { agents: 3, parts: [] } },
     ];
     const events = [ev.prompt('10:00'), ev.agentStarted('10:00', 'a1', { background: true }), ev.stop('10:30'), ev.agentStopped('10:30', 'a1')];
     const { report } = measure(events, { parallel, now: '12:00' });

@@ -12,6 +12,9 @@ import { Author } from '../../../src/domain/shared/author.js';
 import type { EventMeta } from '../../../src/domain/shared/event-envelope.js';
 import { Timestamp } from '../../../src/domain/shared/timestamp.js';
 import { Task, type TaskSnapshot } from '../../../src/domain/task/task.js';
+import { applyEvent } from '../../../src/domain/task/task-apply.js';
+import { snapshotOf } from '../../../src/domain/task/task-snapshot.js';
+import { initialState, type TaskState } from '../../../src/domain/task/task-state.js';
 import { TaskNotClosed, TaskNotStarted } from '../../../src/domain/task/task-errors.js';
 import { TaskId } from '../../../src/domain/task/task-id.js';
 import { isClosed, isInProgress, TASK_STATUSES } from '../../../src/domain/task/task-status.js';
@@ -133,5 +136,31 @@ describe('status without strings', () => {
   it('functions of a status read from a snapshot', () => {
     expect(TASK_STATUSES.filter(isInProgress)).toEqual(['in-progress']);
     expect(TASK_STATUSES.filter(isClosed)).toEqual(['closed']);
+  });
+});
+
+describe('the state of the aggregate is immutable', () => {
+  it('applying an event gives a new state and leaves the one it was given as it was', () => {
+    const [first, ...rest] = lived().pullEvents();
+    if (first?.type !== 'task.created') {
+      throw new Error('the journal starts with task.created');
+    }
+    const version = { count: 1, lastEventId: first.id };
+    const states: TaskState[] = [initialState(first)];
+    const seen: string[] = [JSON.stringify(snapshotOf(states[0] as TaskState, version))];
+    for (const event of rest) {
+      const next = applyEvent(states.at(-1) as TaskState, event);
+      expect(next).not.toBe(states.at(-1));
+      states.push(next);
+      seen.push(JSON.stringify(snapshotOf(next, version)));
+    }
+    expect(states.map((state) => JSON.stringify(snapshotOf(state, version)))).toEqual(seen);
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  it('periods of parallel mode keep their moments as Timestamp', () => {
+    const task = lived();
+    expect(task.parallelMode).toEqual([{ enabledAt: at('10:20'), disabledAt: at('10:30'), change: { agents: 2, parts: [] } }]);
+    expect(task.toSnapshot().parallelMode).toEqual([{ enabledAt: at('10:20').toISOString(), disabledAt: at('10:30').toISOString(), change: { agents: 2, parts: [] } }]);
   });
 });

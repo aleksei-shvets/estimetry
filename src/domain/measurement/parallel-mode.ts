@@ -1,4 +1,5 @@
 import { InvalidValue } from '../shared/domain-error.js';
+import { Timestamp } from '../shared/timestamp.js';
 
 export interface ParallelModeChangeData {
   readonly reason?: string;
@@ -60,7 +61,31 @@ export class ParallelModeChange {
 
 /** One stretch of parallel mode as the task remembers it. */
 export interface ParallelPeriod {
+  readonly enabledAt: Timestamp;
+  readonly disabledAt?: Timestamp;
+  readonly change: ParallelModeChangeData;
+}
+
+/** A stretch of parallel mode as the snapshot keeps it. */
+export interface ParallelPeriodData {
   readonly enabledAt: string;
   readonly disabledAt?: string;
   readonly change: ParallelModeChangeData;
+}
+
+export function parallelPeriodOf(data: ParallelPeriodData): ParallelPeriod {
+  return {
+    enabledAt: Timestamp.parse(data.enabledAt),
+    ...(data.disabledAt === undefined ? {} : { disabledAt: Timestamp.parse(data.disabledAt) }),
+    change: data.change,
+  };
+}
+
+export function parallelPeriodData(period: ParallelPeriod): ParallelPeriodData {
+  // The order of the keys is that of snapshots written before: the end is added to a period that has begun.
+  return {
+    enabledAt: period.enabledAt.toISOString(),
+    change: period.change,
+    ...(period.disabledAt === undefined ? {} : { disabledAt: period.disabledAt.toISOString() }),
+  };
 }

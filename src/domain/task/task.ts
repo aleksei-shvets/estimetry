@@ -393,7 +393,7 @@ export class Task {
   }
 
   private apply(event: TaskEvent): void {
-    applyEvent(this.state, event);
+    this.state = applyEvent(this.state, event);
     this.log.noteApplied(event);
   }
 }

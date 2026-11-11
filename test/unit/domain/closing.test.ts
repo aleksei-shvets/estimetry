@@ -61,7 +61,7 @@ describe('closing a task', () => {
     task.enableParallelMode(ParallelModeChange.of({ agents: 2 }), meta('10:00'));
     task.close({ at: at('17:00'), outcome: 'completed' }, meta('18:00'));
     expect(task.status).toBe('closed');
-    expect(task.parallelMode.at(-1)?.disabledAt).toBe(at('17:00').toISOString());
+    expect(task.parallelMode.at(-1)?.disabledAt).toEqual(at('17:00'));
     expect(task.closedAt?.toISOString()).toBe(at('17:00').toISOString());
     expect(() => task.recordExtra(Extra.of({ category: 'rework', description: 'x' }), meta('18:10'))).toThrow(TaskClosed);
     expect(() => task.attach(ProjectId.parse('web'), meta('18:10'))).toThrow(TaskClosed);
