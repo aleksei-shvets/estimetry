@@ -12,6 +12,7 @@ interface Debt {
   nodePath: Record<string, number>;
   maxLines: Record<string, number>;
   maxFunctionLines: Record<string, number>;
+  maxParams: Record<string, number>;
 }
 
 interface Guardrails {
@@ -79,6 +80,15 @@ describe('architecture checks', () => {
     expect(await sizes(longFunction(78), 'src/application/x.ts')).toEqual(['max-lines-per-function']);
   });
 
+  it('a function of application with more than six parameters is an error', async () => {
+    const params = (count: number) => Array.from({ length: count }, (_, i) => `p${i}: number`).join(', ');
+    const constructor = (count: number) => `export class X {\n  constructor(${params(count).replaceAll('p', 'private readonly p')}) {}\n}\n`;
+    const rules = async (code: string) => (await messages(code, 'src/application/task/x.ts')).map((m) => m.ruleId).filter((id) => id === 'max-params');
+    expect(await rules(constructor(7))).toEqual(['max-params']);
+    expect(await rules(constructor(6))).toEqual([]);
+    expect(await rules(`export function f(${params(6)}): number {\n  return p0 + p1 + p2 + p3 + p4 + p5;\n}\n`)).toEqual([]);
+  });
+
   it('the whole of src passes with the list of debt', async () => {
     const results = await eslint(guardrails.DEBT).lintFiles(['src']);
     const errors = results.flatMap((r) => r.messages.map((m) => `${r.filePath}:${m.line} ${m.message}`));
@@ -110,9 +120,10 @@ describe('the list of debt', () => {
   }, 120_000);
 
   it('every ceiling equals the current size', async () => {
-    const sizes: [keyof Pick<Debt, 'maxLines' | 'maxFunctionLines'>, string][] = [
+    const sizes: [keyof Pick<Debt, 'maxLines' | 'maxFunctionLines' | 'maxParams'>, string][] = [
       ['maxLines', 'max-lines'],
       ['maxFunctionLines', 'max-lines-per-function'],
+      ['maxParams', 'max-params'],
     ];
     for (const [list, rule] of sizes) {
       for (const [file, ceiling] of Object.entries(guardrails.DEBT[list])) {

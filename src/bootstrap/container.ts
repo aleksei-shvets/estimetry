@@ -165,7 +165,7 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
           if (found === undefined) {
             return { unfinished: [] };
           }
-          const plan = snapshots.closing(found, near);
+          const plan = snapshots.closing(found, { near });
           return { ...(plan.done === undefined ? {} : { done: plan.done }), unfinished: plan.unfinishedGroups };
         },
       };
@@ -341,20 +341,16 @@ async function buildApp(layout: StorageLayout, environment: Environment, errors:
     projectConfig,
     install,
     plans: new FlowProjectPlans(projectConfig, install.flows, install.files, projects),
-    workspaceDir: cwd,
-    closing: {
-      cards: new YamlCardStore(layout),
-      calibration: new JsonCalibrationStore(layout, () => new Date().toISOString()),
-      settings: config,
-      proposals: new FileCloseProposals(layout),
-      code: new GitCodeMeasurer(),
-      head: new FsGitHead(),
-      errors,
-      logs: {
-        readers: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(claudeConfigDir(environment))),
-        state: new YamlLogImportState(layout),
-      },
-    },
-    sessions: { bindings: new YamlSessionStore(layout), tasks: new FileTaskStatusReader(layout) },
+    sessionBindings: new YamlSessionStore(layout),
+    taskStatus: new FileTaskStatusReader(layout),
+    cards: new YamlCardStore(layout),
+    calibration: new JsonCalibrationStore(layout, () => new Date().toISOString()),
+    calibrationSettings: config,
+    proposals: new FileCloseProposals(layout),
+    codeMeasurer: new GitCodeMeasurer(),
+    gitHead: new FsGitHead(),
+    errors,
+    logReaders: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(claudeConfigDir(environment))),
+    logImportState: new YamlLogImportState(layout),
   });
 }

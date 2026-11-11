@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { fakeClosing } from '../../support/closing-fakes.js';
+import { closingPorts, fakeClosing } from '../../support/closing-fakes.js';
 import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
 import { InstallBlocked } from '../../../src/application/contracts/install-blocked.js';
 import type { InstallDependencies } from '../../../src/application/project/init-project.js';
@@ -53,9 +53,9 @@ function build(overrides: Partial<InstallDependencies> = {}): void {
     estimates: new InMemoryEstimateReader(),
     projectConfig: new InMemoryProjectConfigFile(files),
     install: fakeInstallDependencies(files, { tools: new ListRegistry([tool]), commitHook: hook, sharing, excludes, ...overrides }),
-    sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(new InMemoryTaskRepository()) },
+    sessionBindings: new InMemorySessionBindings(), taskStatus: new RepositoryTaskStatusReader(new InMemoryTaskRepository()),
     plans: new FakeProjectPlans(),
-    closing: fakeClosing(),
+    ...closingPorts(fakeClosing()),
   });
 }
 
@@ -73,7 +73,7 @@ beforeEach(() => {
 describe('init', () => {
   it('installs with defaults: detected flow, no shared install, no git hook', () => {
     files.write(`${ROOT}/openspec/project.md`, '# x\n');
-    const report = app.initProject({});
+    const report = app.project.init({});
     expect(report).toMatchObject({ project: 'api', flow: 'openspec', tools: ['fake-tool'], stack: ['go'], share: 'none' });
     expect(report.files).toEqual([
       { path: '.fake/settings.local.json', status: 'created' },
@@ -86,24 +86,24 @@ describe('init', () => {
   });
 
   it('is idempotent', () => {
-    app.initProject({});
-    const second = app.initProject({});
+    app.project.init({});
+    const second = app.project.init({});
     expect(second.files.every((file) => file.status === 'unchanged')).toBe(true);
   });
 
   it('takes the defaults of a repeated run from what is installed, not from the project config', () => {
-    app.initProject({ shared: true, trackCommits: true });
+    app.project.init({ shared: true, trackCommits: true });
     hook.isInstalled = true;
     expect(files.read(`${ROOT}/.estimetry/config.yaml`)).not.toMatch(/shared|track/i);
-    expect(app.initChoices().defaults).toMatchObject({ shared: true, trackCommits: true, tools: ['fake-tool'] });
-    app.initProject({});
+    expect(app.project.choices().defaults).toMatchObject({ shared: true, trackCommits: true, tools: ['fake-tool'] });
+    app.project.init({});
     expect(files.read(`${ROOT}/.fake/settings.json`)).toBeDefined();
     expect(hook.plans.at(-1)).toBe(true);
   });
 
   it('a colleague with the same project config gets the personal install', () => {
     files.write(`${ROOT}/.estimetry/config.yaml`, 'project: api\nflow: none\nnote: shared\n');
-    const report = app.initProject({});
+    const report = app.project.init({});
     expect(report.flow).toBe('none');
     expect(files.read(`${ROOT}/.fake/settings.local.json`)).toBeDefined();
     expect(files.read(`${ROOT}/.fake/settings.json`)).toBeUndefined();
@@ -111,33 +111,33 @@ describe('init', () => {
   });
 
   it('rejects unknown choices before touching anything', () => {
-    expect(() => app.initProject({ tools: ['cursor'] })).toThrow(/expected one of: fake-tool/);
-    expect(() => app.initProject({ flow: 'spec-kit' })).toThrow(InvalidValue);
-    expect(() => app.initProject({ share: 'everyone' })).toThrow(/none, calibration, cards/);
+    expect(() => app.project.init({ tools: ['cursor'] })).toThrow(/expected one of: fake-tool/);
+    expect(() => app.project.init({ flow: 'spec-kit' })).toThrow(InvalidValue);
+    expect(() => app.project.init({ share: 'everyone' })).toThrow(/none, calibration, cards/);
     expect(files.writes).toEqual([]);
     expect([...projects.ids()]).toEqual([]);
   });
 
   it('passes on what the chosen flow still needs', () => {
-    expect(app.initProject({ flow: 'openspec' }).warnings).toContain('run `openspec init`');
-    expect(app.initProject({ flow: 'none' }).warnings).not.toContain('run `openspec init`');
+    expect(app.project.init({ flow: 'openspec' }).warnings).toContain('run `openspec init`');
+    expect(app.project.init({ flow: 'none' }).warnings).not.toContain('run `openspec init`');
   });
 
   it('accepts an alias of the tool', () => {
-    expect(app.initProject({ tools: ['fake'] }).tools).toEqual(['fake-tool']);
+    expect(app.project.init({ tools: ['fake'] }).tools).toEqual(['fake-tool']);
   });
 
   it('a blocked installer leaves the files and the registry untouched', () => {
     tool.blocked = '.fake/settings.local.json: not valid JSON';
-    expect(() => app.initProject({ trackCommits: true })).toThrow(InstallBlocked);
+    expect(() => app.project.init({ trackCommits: true })).toThrow(InstallBlocked);
     expect(files.writes).toEqual([]);
     expect([...projects.ids()]).toEqual([]);
   });
 
   it('saves the share mode and uses it as the default next time', () => {
-    app.initProject({ share: 'calibration' });
+    app.project.init({ share: 'calibration' });
     expect(sharing.saved).toBe('calibration');
-    expect(app.initChoices().defaults.share).toBe('calibration');
+    expect(app.project.choices().defaults.share).toBe('calibration');
   });
 
   it('warns about a broken manifest, a missing estimetry on PATH and an id taken by another repository', () => {
@@ -152,16 +152,16 @@ describe('init', () => {
           taskTypes: new InMemoryTaskTypeCatalog(['feature']), clock: new FixedClock(), ids: new SequentialIdGenerator(),
           journal: new InMemoryEventJournal(), measurement: new FixedMeasurementSettings(), estimates: new InMemoryEstimateReader(),
           projectConfig: new InMemoryProjectConfigFile(files), install: fakeInstallDependencies(files),
-    sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(new InMemoryTaskRepository()) },
-    plans: new FakeProjectPlans(),
-    closing: fakeClosing(),
+          sessionBindings: new InMemorySessionBindings(), taskStatus: new RepositoryTaskStatusReader(new InMemoryTaskRepository()),
+          plans: new FakeProjectPlans(),
+          ...closingPorts(fakeClosing()),
         });
-        resolve.createTask({ title: 'x' });
+        resolve.tasks.create({ title: 'x' });
         return projects.findByPath('/elsewhere/api')!;
       })(),
     );
     files.write(`${ROOT}/.estimetry/config.yaml`, 'project: api\n');
-    const report = app.initProject({});
+    const report = app.project.init({});
     expect(report.project).toBe('api-2');
     expect(report.warnings.join('\n')).toMatch(/go\.mod: not a go\.mod/);
     expect(report.warnings.join('\n')).toMatch(/not on PATH/);
@@ -171,20 +171,20 @@ describe('init', () => {
 
   it('asks to exclude personal files git does not ignore, and only warns without consent', () => {
     excludes.ignored = false;
-    expect(app.initChoices().unignoredPersonalFiles).toEqual(['.fake/settings.local.json']);
-    const warned = app.initProject({});
+    expect(app.project.choices().unignoredPersonalFiles).toEqual(['.fake/settings.local.json']);
+    const warned = app.project.init({});
     expect(warned.warnings.join('\n')).toContain(`echo '**/.fake/settings.local.json' >> ${excludes.file}`);
     expect(files.read(excludes.file)).toBeUndefined();
 
     files.write(excludes.file, '*.swp');
-    const excluded = app.initProject({ excludePersonalFiles: true });
+    const excluded = app.project.init({ excludePersonalFiles: true });
     expect(files.read(excludes.file)).toBe('*.swp\n**/.fake/settings.local.json\n');
     expect(excluded.files).toContainEqual({ path: excludes.file, status: 'updated' });
   });
 
   it('does not ask about personal files for a shared install', () => {
     excludes.ignored = false;
-    const report = app.initProject({ shared: true });
+    const report = app.project.init({ shared: true });
     expect(report.warnings.join('\n')).not.toContain('not ignored');
   });
 });

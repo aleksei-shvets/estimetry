@@ -10,7 +10,7 @@ import { Timestamp } from '../../../src/domain/shared/timestamp.js';
 import { TaskClosed, TaskNotClosed } from '../../../src/domain/task/task-errors.js';
 import { TaskId } from '../../../src/domain/task/task-id.js';
 import { activity } from '../../support/activity.js';
-import { fakeClosing, type FakeSessionLogs } from '../../support/closing-fakes.js';
+import { closingPorts, fakeClosing, type FakeSessionLogs } from '../../support/closing-fakes.js';
 import type { SessionLogRead } from '../../../src/application/contracts/session-logs.js';
 import {
   FakeAuthorProvider,
@@ -54,12 +54,12 @@ function plan(parts: { id: string; group?: string; likely: number }[]): Estimate
 /** T-1 with an estimate by groups `a` (4 h) and `b` (6 h), started at 09:00; the clock is at 10:00. */
 function startedTask(): void {
   estimates.files.set('plan.yaml', plan([{ id: 'a', group: 'a', likely: 4 }, { id: 'b', group: 'b', likely: 6 }]));
-  app.createTask({ title: 'Webhook' });
-  app.saveEstimate({ file: 'plan.yaml' });
+  app.tasks.create({ title: 'Webhook' });
+  app.estimates.save({ file: 'plan.yaml' });
   plans.readings = [
     { project: 'api', root: ROOT, flow: 'openspec', changes: [{ change: 'a', archived: false, done: 0, total: 2 }, { change: 'b', archived: false, done: 0, total: 3 }], archived: [] },
   ];
-  app.startTask({ at: time('09:00') });
+  app.tasks.start({ at: time('09:00') });
 }
 
 const records = (task = 'T-1') => journal.readRecords(T(task));
@@ -88,10 +88,9 @@ beforeEach(() => {
     estimates,
     projectConfig: new InMemoryProjectConfigFile(files),
     install: fakeInstallDependencies(files),
-    sessions: { bindings, tasks: new RepositoryTaskStatusReader(tasks) },
+    sessionBindings: bindings, taskStatus: new RepositoryTaskStatusReader(tasks),
     plans,
-    closing,
-    workspaceDir: ROOT,
+    ...closingPorts(closing),
   });
 });
 
@@ -110,9 +109,9 @@ describe('close', () => {
     journal.append(activity('turn.started', '09:00', { origin: 'user' }));
     journal.append(activity('turn.ended', '09:25'));
     plans.readings = [{ ...plans.readings[0]!, changes: [{ change: 'a', archived: true, archivedOn: '2026-10-27', done: 2, total: 2 }, { change: 'b', archived: false, done: 1, total: 3 }] }];
-    expect(app.closeSummary({})).toMatchObject({ fact: 25, estimateHours: 10, planDone: 60, unfinishedGroups: ['b'] });
+    expect(app.closing.summary({})).toMatchObject({ fact: 25, estimateHours: 10, planDone: 60, unfinishedGroups: ['b'] });
 
-    const closed = app.closeTask({});
+    const closed = app.closing.close({});
     expect(closed).toMatchObject({ outcome: 'completed', fact: 25, warnings: [] });
     expect(records().map((r) => r.type)).toEqual(['plan.started', 'code.measured', 'plan.closing']);
     expect(records()[2]).toMatchObject({ data: { done: 60, completedGroups: ['a'], unfinishedGroups: ['b'] } });
@@ -126,8 +125,8 @@ describe('close', () => {
 
   it('refuses a closing moment before the last record and writes nothing', () => {
     startedTask();
-    app.recordExtra({ category: 'rework', description: 'late fix' });
-    expect(() => app.closeTask({ at: time('09:30') })).toThrow(/before the last record/);
+    app.measuring.extra({ category: 'rework', description: 'late fix' });
+    expect(() => app.closing.close({ at: time('09:30') })).toThrow(/before the last record/);
     expect(records().map((r) => r.type)).toEqual(['plan.started']);
   });
 
@@ -137,17 +136,17 @@ describe('close', () => {
     journal.appendRecord = () => {
       throw new Error('disk full');
     };
-    expect(() => app.closeTask({})).toThrow('disk full');
-    expect(app.showTask({ task: T('T-1') }).status).toBe('in-progress');
+    expect(() => app.closing.close({})).toThrow('disk full');
+    expect(app.tasks.show({ task: T('T-1') }).status).toBe('in-progress');
     journal.appendRecord = append;
-    expect(app.closeTask({}).outcome).toBe('completed');
+    expect(app.closing.close({}).outcome).toBe('completed');
   });
 
   it('closes even when the calibration fails, with a warning', () => {
     startedTask();
     closing.calibration.fail = true;
-    const closed = app.closeTask({});
-    expect(app.showTask({ task: T('T-1') }).status).toBe('closed');
+    const closed = app.closing.close({});
+    expect(app.tasks.show({ task: T('T-1') }).status).toBe('closed');
     expect(closed.warnings).toEqual([expect.stringMatching(/calibration\.json.*emt rebuild/)]);
   });
 
@@ -155,7 +154,7 @@ describe('close', () => {
     startedTask();
     journal.append(activity('turn.started', '09:00', { origin: 'user' }));
     journal.append(activity('turn.ended', '09:30'));
-    app.closeTask({ abandoned: true });
+    app.closing.close({ abandoned: true });
     expect(closing.cards.cards.get('T-1')?.outcome).toBe('abandoned');
     expect(closing.calibration.current?.authors['dev@example.com']?.ratio.overall).toMatchObject({ n: 0, excluded: { abandoned: 1 } });
   });
@@ -164,7 +163,7 @@ describe('close', () => {
     startedTask();
     bindings.update(SessionId.parse('s1'), () => ({ session: 's1', project: 'api', root: ROOT, task: 'T-1', since: time('09:00').toISOString(), everBound: true }));
     closing.proposals.put('T-1', { change: 'a', completedAt: time('09:40').toISOString(), session: 's1' });
-    app.closeTask({});
+    app.closing.close({});
     expect(bindings.get(SessionId.parse('s1'))).toMatchObject({ closedTask: 'T-1', everBound: true });
     expect(bindings.get(SessionId.parse('s1'))?.task).toBeUndefined();
     expect(journal.readActivity(T('T-1')).at(-1)).toMatchObject({ type: 'session.unbound', ts: time('10:00').toISOString() });
@@ -189,7 +188,7 @@ describe('close', () => {
     closing.code.reachableShas.set(ROOT, new Set(['c2']));
     closing.code.pending.set(ROOT, [{ path: 'test/a.test.ts', added: 5, deleted: 0 }]);
     closing.code.authored.set(ROOT, [{ sha: 'c2', files: [] }, { sha: 'x9', files: [{ path: 'src/b.ts', added: 4, deleted: 0 }] }]);
-    app.closeTask({});
+    app.closing.close({});
     const card = closing.cards.cards.get('T-1');
     // c2 recorded and reachable, x9 never recorded but the author's: both count; c1 was rewritten.
     expect(card?.code?.lines).toMatchObject({ production: { added: 16 }, tests: { added: 5 } });
@@ -198,13 +197,13 @@ describe('close', () => {
 
   it('marks a closed task for every later record', () => {
     startedTask();
-    app.closeTask({});
-    expect(() => app.recordExtra({ task: T('T-1'), category: 'rework', description: 'x' })).toThrow(TaskClosed);
-    expect(() => app.recordManualTime({ task: T('T-1'), kind: 'user', duration: Duration.ofMinutes(5), description: 'x' })).toThrow(TaskClosed);
-    expect(app.listTasks({}).map((t) => t.id)).toEqual([]);
-    expect(app.listTasks({ closed: true }).map((t) => t.id)).toEqual(['T-1']);
-    expect(app.showStatus({ task: T('T-1') }).task.closedAt).toBe(time('10:00').toISOString());
-    expect(app.showTask({ task: T('T-1') }).card?.outcome).toBe('completed');
+    app.closing.close({});
+    expect(() => app.measuring.extra({ task: T('T-1'), category: 'rework', description: 'x' })).toThrow(TaskClosed);
+    expect(() => app.measuring.manual({ task: T('T-1'), kind: 'user', duration: Duration.ofMinutes(5), description: 'x' })).toThrow(TaskClosed);
+    expect(app.tasks.list({}).map((t) => t.id)).toEqual([]);
+    expect(app.tasks.list({ closed: true }).map((t) => t.id)).toEqual(['T-1']);
+    expect(app.measuring.status({ task: T('T-1') }).task.closedAt).toBe(time('10:00').toISOString());
+    expect(app.tasks.show({ task: T('T-1') }).card?.outcome).toBe('completed');
   });
 });
 
@@ -227,7 +226,7 @@ describe('session logs at the closing', () => {
     journal.append(activity('turn.started', '09:00', { origin: 'user', source: 'claude-code' }));
     journal.append(activity('tool.used', '09:10', { source: 'claude-code' }));
     reader().logs.set('s1', logRead('09:25', 10));
-    const closed = app.closeTask({});
+    const closed = app.closing.close({});
     expect(closed).toMatchObject({ fact: 25, warnings: [] }); // the turn without its end closes where the log ends it
     expect(records().map((r) => r.type)).toEqual(['plan.started', 'log.session', 'code.measured', 'plan.closing']);
     expect(closing.cards.cards.get('T-1')?.usage).toMatchObject({ costUSD: 3, approximate: false, sessions: 1, withLogs: 1, tokens: { m: { output: 100 } } });
@@ -238,12 +237,12 @@ describe('session logs at the closing', () => {
     journal.append(activity('turn.started', '09:00', { origin: 'user', source: 'claude-code' }));
     journal.append(activity('turn.ended', '09:05', { source: 'claude-code' }));
     reader().logs.set('s1', logRead('09:05', 10));
-    app.closeTask({});
+    app.closing.close({});
     reader().logs.set('s1', logRead('09:06', 20));
     clock.advanceMinutes(30);
-    app.reopenTask({ task: T('T-1') });
+    app.closing.reopen({ task: T('T-1') });
     clock.advanceMinutes(30);
-    app.closeTask({});
+    app.closing.close({});
     expect(records().filter((r) => r.type === 'log.session')).toHaveLength(2);
   });
 
@@ -255,7 +254,7 @@ describe('session logs at the closing', () => {
     reader().read = () => {
       throw new Error('broken');
     };
-    const closed = app.closeTask({});
+    const closed = app.closing.close({});
     expect(closed.outcome).toBe('completed');
     expect(closed.warnings).toEqual(['the log of session s1 was not imported (failed); the fact goes without it']);
   });
@@ -264,31 +263,53 @@ describe('session logs at the closing', () => {
 describe('reopen and retro', () => {
   it('reopens a task, removes its card and marks an earlier retro stale at the next closing', () => {
     startedTask();
-    app.closeTask({});
-    app.recordRetro({ reasons: ['a: harder than it looked'], lesson: 'split the change' });
+    app.closing.close({});
+    app.closing.retro({ reasons: ['a: harder than it looked'], lesson: 'split the change' });
     expect(closing.cards.cards.get('T-1')?.retro).toEqual({ status: 'current', reasons: [{ part: 0 }] });
     clock.advanceMinutes(30);
-    app.reopenTask({ task: T('T-1') });
+    app.closing.reopen({ task: T('T-1') });
     expect(closing.cards.cards.get('T-1')).toBeUndefined();
     clock.advanceMinutes(30);
-    app.closeTask({});
+    app.closing.close({});
     expect(closing.cards.cards.get('T-1')).toMatchObject({ retro: { status: 'stale' }, closedMinutes: 30 });
   });
 
   it('records a retro of the task closed last, replaces it, and refuses a task in progress', () => {
     startedTask();
-    expect(() => app.recordRetro({ task: T('T-1'), reasons: ['x'], lesson: 'y' })).toThrow(TaskNotClosed);
-    app.closeTask({});
-    app.recordRetro({ reasons: ['note: API changed twice'], lesson: 'first' });
-    const second = app.recordRetro({ reasons: ['b: tests took long'], lesson: 'second' });
+    expect(() => app.closing.retro({ task: T('T-1'), reasons: ['x'], lesson: 'y' })).toThrow(TaskNotClosed);
+    app.closing.close({});
+    app.closing.retro({ reasons: ['note: API changed twice'], lesson: 'first' });
+    const second = app.closing.retro({ reasons: ['b: tests took long'], lesson: 'second' });
     expect(second).toMatchObject({ reasons: [{ text: 'tests took long', part: 'b' }], lesson: 'second' });
   });
 });
 
+describe('the working copy of a request', () => {
+  it('reads the plan where the request comes from: at the start, in the status, the summary and the closing', () => {
+    estimates.files.set('plan.yaml', plan([{ id: 'a', group: 'a', likely: 4 }]));
+    app.tasks.create({ title: 'Webhook' });
+    app.estimates.save({ file: 'plan.yaml' });
+    plans.nears.length = 0;
+    app.tasks.start({ at: time('09:00'), near: '/work/api-2' });
+    app.measuring.status({ near: '/work/api-2' });
+    app.closing.summary({ near: '/work/api-2' });
+    app.closing.close({ near: '/work/api-2' });
+    expect(plans.nears.length).toBeGreaterThan(3);
+    expect(new Set(plans.nears)).toEqual(new Set(['/work/api-2']));
+  });
+});
+
 describe('renegotiate', () => {
+  it('names the task that would close before anything is written', () => {
+    startedTask();
+    expect(app.closing.renegotiationTarget({})).toMatchObject({ id: 'T-1', status: 'in-progress' });
+    expect(events().at(-1)).toBe('task.started');
+  });
+
+
   it('creates the spawned task, records the renegotiated extra and closes the original', () => {
     startedTask();
-    const result = app.renegotiate({ title: 'Webhooks v2', description: 'retry policy added' });
+    const result = app.closing.renegotiate({ title: 'Webhooks v2', description: 'retry policy added' });
     expect(result.spawned).toMatchObject({ id: 'T-2', spawnedFrom: 'T-1', status: 'new', type: 'feature' });
     expect(result.closed).toMatchObject({ outcome: 'renegotiated', task: { spawned: 'T-2' } });
     expect(events().slice(-2)).toEqual(['task.extra-recorded', 'task.closed']);
@@ -305,10 +326,10 @@ describe('renegotiate', () => {
       }
       save(task);
     };
-    expect(() => app.renegotiate({ title: 'Webhooks v2' })).toThrow('crash');
+    expect(() => app.closing.renegotiate({ title: 'Webhooks v2' })).toThrow('crash');
     tasks.save = save;
-    app.renegotiate({ title: 'Webhooks v2' });
-    expect(app.listTasks({ all: true, closed: true }).map((t) => t.id)).toEqual(['T-1', 'T-2']);
+    app.closing.renegotiate({ title: 'Webhooks v2' });
+    expect(app.tasks.list({ all: true, closed: true }).map((t) => t.id)).toEqual(['T-1', 'T-2']);
     expect(events().filter((e) => e === 'task.extra-recorded')).toHaveLength(1);
   });
 });
@@ -316,11 +337,11 @@ describe('renegotiate', () => {
 describe('rebuild', () => {
   it('writes the cards again and goes on past a broken task', () => {
     startedTask();
-    app.closeTask({});
-    app.createTask({ title: 'Broken' });
+    app.closing.close({});
+    app.tasks.create({ title: 'Broken' });
     tasks.broken.add('T-2');
     closing.cards.cards.clear();
-    const report = app.rebuild({});
+    const report = app.closing.rebuild({});
     expect(report).toMatchObject({ tasks: 2, cards: 1, failed: [{ task: 'T-2' }] });
     expect(closing.cards.cards.get('T-1')).toBeDefined();
   });

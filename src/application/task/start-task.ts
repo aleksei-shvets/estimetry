@@ -11,8 +11,9 @@ import type { PlanSnapshots } from './plan-snapshots.js';
 import { retryOnConflict } from '../shared/retry.js';
 import type { ResolveActiveTask } from './resolve-active-task.js';
 import { toTaskView, type TaskView } from './task-view.js';
+import type { WorkingCopy } from '../shared/working-copy.js';
 
-export interface StartTaskInput {
+export interface StartTaskInput extends WorkingCopy {
   /** Omitted: the only startable task of the current project. */
   readonly task?: TaskId;
   /** Backdated start, for work begun before the task was recorded. */
@@ -27,7 +28,6 @@ export class StartTask {
     private readonly meta: EventMetaSource,
     private readonly plans: PlanSnapshots,
     private readonly journal: Pick<EventJournal, 'appendRecord'>,
-    private readonly near: string | undefined,
   ) {}
 
   execute(input: StartTaskInput): TaskView {
@@ -39,7 +39,7 @@ export class StartTask {
       this.tasks.save(task);
       return task;
     });
-    this.recordPlan(task);
+    this.recordPlan(task, input);
     return toTaskView(task);
   }
 
@@ -48,13 +48,13 @@ export class StartTask {
    * from. Without it the first checkpoint is the base, so a failure here only
    * makes the fact by parts coarser.
    */
-  private recordPlan(task: Task): void {
+  private recordPlan(task: Task, where: WorkingCopy): void {
     try {
       const meta = this.meta.next();
       this.journal.appendRecord(
         journalEntry<PlanStarted>(
           'plan.started',
-          { source: CORE_SOURCE, projects: this.plans.started(task, this.near, task.startedAt ?? meta.at) },
+          { source: CORE_SOURCE, projects: this.plans.started(task, task.startedAt ?? meta.at, where) },
           { id: meta.id, at: meta.at, author: meta.author, project: task.homeProject.value, task: task.id.toString() },
         ),
       );

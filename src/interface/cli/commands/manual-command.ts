@@ -24,7 +24,7 @@ export function registerManualCommand(program: Command, ctx: CliContext): void {
     .option('--part <id>', 'id of the estimate part the time belongs to, e.g. manual-testing')
     .option('--json', 'print JSON')
     .action(async (duration: string, description: string, options: ManualOptions) => {
-      const recorded = (await ctx.app()).recordManualTime({
+      const recorded = (await ctx.app()).measuring.manual({
         kind: options.agent ? 'agent' : 'user',
         duration: parseDuration(duration),
         description,

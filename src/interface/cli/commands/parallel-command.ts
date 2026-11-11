@@ -23,8 +23,9 @@ export function registerParallelCommand(program: Command, ctx: CliContext): void
     .option('--task <id>', 'task id; defaults to the only task in progress in this project')
     .option('--json', 'print JSON')
     .action(async (options: OnOptions) => {
-      const changed = (await ctx.app()).changeParallelMode({
+      const changed = (await ctx.app()).measuring.parallel({
         enabled: true,
+        near: ctx.cwd,
         ...(options.reason === undefined ? {} : { reason: options.reason }),
         ...(options.agents === undefined ? {} : { agents: parseCount(options.agents, '--agents', 1) }),
         ...(options.parts === undefined ? {} : { parts: options.parts.split(',') }),
@@ -39,7 +40,7 @@ export function registerParallelCommand(program: Command, ctx: CliContext): void
     .option('--task <id>', 'task id; defaults to the only task in progress in this project')
     .option('--json', 'print JSON')
     .action(async (options: { task?: string; json?: boolean }) => {
-      const changed = (await ctx.app()).changeParallelMode({ enabled: false, ...parseTaskOption(options.task) });
+      const changed = (await ctx.app()).measuring.parallel({ enabled: false, near: ctx.cwd, ...parseTaskOption(options.task) });
       ctx.out.print(presenterFor(options).parallelModeChanged(changed));
     });
 }

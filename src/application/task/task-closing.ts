@@ -15,6 +15,7 @@ import type { PlanSnapshots } from './plan-snapshots.js';
 import { derivedWarning } from './derived-steps.js';
 import type { ImportSessionLogs } from './import-session-logs.js';
 import type { TaskCards } from './task-cards.js';
+import type { WorkingCopy } from '../shared/working-copy.js';
 
 /** Steps around `task.closed`, shared by `emt close` and `emt renegotiate`. */
 export class TaskClosing {
@@ -40,18 +41,18 @@ export class TaskClosing {
    * logs carry it, so they never fall after the closing. Returns warnings of
    * logs that could not be imported.
    */
-  prepare(task: Task, near: string | undefined, recordedAt: Timestamp): string[] {
+  prepare(task: Task, recordedAt: Timestamp, where: WorkingCopy = {}): string[] {
     const warnings = this.importLogs(task, recordedAt);
     const now = this.clock.now();
     const records = this.journal.readRecords(task.id);
     this.journal.appendRecord(
       journalEntry<CodeMeasured>(
         'code.measured',
-        { source: CORE_SOURCE, measuredAt: now.toISOString(), projects: this.code.measure(task, records, near) },
+        { source: CORE_SOURCE, measuredAt: now.toISOString(), projects: this.code.measure(task, records, where) },
         this.meta(task, now),
       ),
     );
-    this.journal.appendRecord(journalEntry<PlanClosing>('plan.closing', { source: CORE_SOURCE, ...this.plans.closing(task, near) }, this.meta(task, now)));
+    this.journal.appendRecord(journalEntry<PlanClosing>('plan.closing', { source: CORE_SOURCE, ...this.plans.closing(task, where) }, this.meta(task, now)));
     return warnings;
   }
 

@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
-import type { InitChoices, InitInput } from '../../../application/project/init-project.js';
+import type { InitInput } from '../../../application/project/init-project.js';
+import type { InitChoices } from '../../../application/project/show-init-choices.js';
 import { SHARE_MODES, type ShareMode } from '../../../application/ports/sharing-preference.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
 import { Prompts } from '../prompts.js';
@@ -50,9 +51,9 @@ export function registerInitCommand(program: Command, ctx: CliContext): void {
     .option('--json', 'print JSON')
     .action(async (options: InitOptions) => {
       const app = await ctx.app();
-      const choices = app.initChoices();
+      const choices = app.project.choices();
       const input = ctx.terminal.interactive && options.interactive && !options.json ? await ask(ctx, choices, options) : fromFlags(options);
-      ctx.out.print(presenterFor(options).initReport(app.initProject(input)));
+      ctx.out.print(presenterFor(options).initReport(app.project.init(input)));
     });
 }
 

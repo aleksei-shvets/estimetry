@@ -52,13 +52,13 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
     .option('--json', 'print JSON')
     .action(async (id: string | undefined, options: CloseOptions) => {
       const app = await ctx.app();
-      const task = parseTaskOption(id);
-      const go = await confirmed(ctx, options, 'closing a task', () => closeSummaryText(app.closeSummary(task)), 'Close the task?');
+      const task = { ...parseTaskOption(id), near: ctx.cwd };
+      const go = await confirmed(ctx, options, 'closing a task', () => closeSummaryText(app.closing.summary(task)), 'Close the task?');
       if (!go) {
         ctx.out.error('Not closed.');
         return;
       }
-      const closed = app.closeTask({
+      const closed = app.closing.close({
         ...task,
         ...(options.at === undefined ? {} : { at: parseTime(options.at) }),
         ...(options.abandoned ? { abandoned: true } : {}),
@@ -74,7 +74,7 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
     .argument('<task>', 'task id, e.g. T-12')
     .option('--json', 'print JSON')
     .action(async (id: string, options: { json?: boolean }) => {
-      const reopened = (await ctx.app()).reopenTask({ task: TaskId.parse(id) });
+      const reopened = (await ctx.app()).closing.reopen({ task: TaskId.parse(id) });
       printWarnings(ctx, reopened.warnings);
       ctx.out.print(presenterFor(options).taskReopened(reopened));
     });
@@ -88,7 +88,7 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
     .requiredOption('--lesson <text>', 'one lesson for the next estimate')
     .option('--json', 'print JSON')
     .action(async (id: string | undefined, options: { reason: string[]; lesson: string; json?: boolean }) => {
-      const recorded = (await ctx.app()).recordRetro({ ...parseTaskOption(id), reasons: options.reason, lesson: options.lesson });
+      const recorded = (await ctx.app()).closing.retro({ ...parseTaskOption(id), reasons: options.reason, lesson: options.lesson });
       printWarnings(ctx, recorded.warnings);
       ctx.out.print(presenterFor(options).retroRecorded(recorded));
     });
@@ -107,13 +107,13 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
     .option('--json', 'print JSON')
     .action(async (title: string, options: CloseOptions & { description?: string; category?: string; type?: string }) => {
       const app = await ctx.app();
-      const task = parseTaskOption(options.task);
+      const task = { ...parseTaskOption(options.task), near: ctx.cwd };
       const go = await confirmed(
         ctx,
         options,
         'renegotiating a task',
         () => {
-          const original = app.renegotiationTarget(task);
+          const original = app.closing.renegotiationTarget(task);
           return `${original.id} "${original.title}" closes as it is; the rest becomes the new task "${title}".`;
         },
         'Renegotiate?',
@@ -122,7 +122,7 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
         ctx.out.error('Nothing changed.');
         return;
       }
-      const result = app.renegotiate({
+      const result = app.closing.renegotiate({
         ...task,
         title,
         ...(options.description === undefined ? {} : { description: options.description }),
@@ -141,7 +141,7 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
     .argument('[task]', 'only this task')
     .option('--json', 'print JSON')
     .action(async (id: string | undefined, options: { json?: boolean }) => {
-      const report = (await ctx.app()).rebuild(parseTaskOption(id));
+      const report = (await ctx.app()).closing.rebuild(parseTaskOption(id));
       ctx.out.print(presenterFor(options).rebuildReport(report));
       if (report.failed.length > 0 || report.calibrationError !== undefined) {
         throw new ReportedFailure();

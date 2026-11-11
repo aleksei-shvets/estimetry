@@ -10,6 +10,7 @@ import { fileList } from '../../domain/progress/progress-records.js';
 import type { Task } from '../../domain/task/task.js';
 import type { CodeMeasurer } from '../ports/code-measurer.js';
 import type { ProjectPlans } from '../ports/project-plans.js';
+import { nearOf, type WorkingCopy } from '../shared/working-copy.js';
 
 /**
  * Code volume of a task by project, measured right before it closes
@@ -22,8 +23,8 @@ export class CodeVolumeService {
     private readonly git: CodeMeasurer,
   ) {}
 
-  measure(task: Task, records: readonly ProgressRecord[], near: string | undefined): ProjectCode[] {
-    const readings = this.plans.archives(task.projects, near === undefined ? {} : { near });
+  measure(task: Task, records: readonly ProgressRecord[], where: WorkingCopy = {}): ProjectCode[] {
+    const readings = this.plans.archives(task.projects, nearOf(where));
     return task.projects.map((project) => {
       const root = readings.find((reading) => reading.project === project)?.root;
       if (root === undefined) {

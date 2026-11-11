@@ -37,5 +37,6 @@ if (args[0] === 'hook') {
     errors: container.errors,
     terminal,
     out,
+    cwd: process.cwd(),
   });
 }

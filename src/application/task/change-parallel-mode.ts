@@ -7,8 +7,10 @@ import type { ResolveActiveTask } from './resolve-active-task.js';
 import type { TaskMeasurement } from './task-measurement.js';
 import type { TaskPlanProgress } from './task-plan-progress.js';
 import { toTaskView, type TaskView } from './task-view.js';
+import { nearOf, type WorkingCopy } from '../shared/working-copy.js';
 
-export type ChangeParallelModeInput =
+export type ChangeParallelModeInput = WorkingCopy &
+  (
   | {
       readonly enabled: true;
       readonly task?: TaskId;
@@ -16,7 +18,8 @@ export type ChangeParallelModeInput =
       readonly agents?: number;
       readonly parts?: readonly string[];
     }
-  | { readonly enabled: false; readonly task?: TaskId };
+  | { readonly enabled: false; readonly task?: TaskId }
+  );
 
 export interface ParallelModeChanged {
   readonly task: TaskView;
@@ -47,7 +50,7 @@ export class ChangeParallelMode {
       const likely = task.estimate?.total.likely;
       const budgetShare =
         likely === undefined ? undefined : Math.round((this.measurement.counted(task).fact.hours / likely) * 1000) / 1000;
-      const done = this.plan.of(task, { completions: false }).plan?.done;
+      const done = this.plan.of(task, { completions: false, ...nearOf(input) }).plan?.done;
       const planShare = done === undefined ? undefined : done / 100;
       task.enableParallelMode(
         ParallelModeChange.of({

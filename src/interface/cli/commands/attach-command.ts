@@ -11,7 +11,7 @@ export function registerAttachCommand(program: Command, ctx: CliContext): void {
     .option('--session <id>', 'also bind this session of the AI tool to the task (when several tasks are in progress)')
     .option('--json', 'print JSON')
     .action(async (id: string, options: { session?: string; json?: boolean }) => {
-      const result = (await ctx.app()).attachTask({ task: TaskId.parse(id), ...(options.session === undefined ? {} : { session: options.session }) });
+      const result = (await ctx.app()).tasks.attach({ task: TaskId.parse(id), ...(options.session === undefined ? {} : { session: options.session }) });
       ctx.out.print(presenterFor(options).taskAttached(result));
     });
 }

@@ -19,6 +19,8 @@ export interface CliContext {
   readonly hooks: () => Promise<{ receive(call: HookCall): Promise<string | undefined> }>;
   readonly out: CliOutput;
   readonly terminal: Terminal;
+  /** The directory the command runs in: the working copy whose plan a command reads (`near` of the application). */
+  readonly cwd: string;
 }
 
 export function presenterFor(options: { readonly json?: boolean }): Presenter {

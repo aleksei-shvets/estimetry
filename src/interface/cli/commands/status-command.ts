@@ -10,7 +10,7 @@ export function registerStatusCommand(program: Command, ctx: CliContext): void {
     .argument('[task]', 'task id; defaults to the only task in progress in this project')
     .option('--json', 'print JSON (durations in minutes)')
     .action(async (id: string | undefined, options: { json?: boolean }) => {
-      const view = (await ctx.app()).showStatus(parseTaskOption(id));
+      const view = (await ctx.app()).measuring.status({ ...parseTaskOption(id), near: ctx.cwd });
       ctx.out.print(presenterFor(options).status(view));
     });
 }

@@ -25,7 +25,7 @@ export function registerExtraCommand(program: Command, ctx: CliContext): void {
     .option('--task <id>', 'task id; defaults to the only task in progress in this project')
     .option('--json', 'print JSON')
     .action(async (description: string, options: ExtraOptions) => {
-      const recorded = (await ctx.app()).recordExtra({
+      const recorded = (await ctx.app()).measuring.extra({
         description,
         category: options.category,
         ...(options.time === undefined ? {} : { time: parseDuration(options.time) }),

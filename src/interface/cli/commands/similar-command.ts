@@ -13,7 +13,7 @@ export function registerSimilarCommand(program: Command, ctx: CliContext): void 
     .option('--limit <n>', 'how many tasks to show', '5')
     .option('--json', 'print JSON')
     .action(async (options: { type?: string; stack?: string; hours?: string; limit: string; json?: boolean }) => {
-      const view = (await ctx.app()).similarTasks({
+      const view = (await ctx.app()).estimates.similar({
         ...(options.type === undefined ? {} : { type: options.type }),
         ...(options.stack === undefined ? {} : { stack: parseLabels(options.stack) }),
         ...(options.hours === undefined ? {} : { hours: parsePositive(options.hours, '--hours') }),

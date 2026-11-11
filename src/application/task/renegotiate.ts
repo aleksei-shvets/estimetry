@@ -11,8 +11,9 @@ import type { ResolveActiveTask } from './resolve-active-task.js';
 import type { TaskClosing } from './task-closing.js';
 import type { TaskMeasurement } from './task-measurement.js';
 import { toTaskView, type TaskView } from './task-view.js';
+import type { WorkingCopy } from '../shared/working-copy.js';
 
-export interface RenegotiateInput {
+export interface RenegotiateInput extends WorkingCopy {
   readonly task?: TaskId;
   /** Title of the new task. */
   readonly title: string;
@@ -40,15 +41,7 @@ export class Renegotiate {
     private readonly measurement: TaskMeasurement,
     private readonly closing: TaskClosing,
     private readonly meta: EventMetaSource,
-    private readonly near: string | undefined,
   ) {}
-
-  /** The task that would close, for the confirmation. */
-  original(input: { readonly task?: TaskId }): TaskView {
-    const task = this.activeTask.inProgress(input.task);
-    task.assertCanClose();
-    return toTaskView(task);
-  }
 
   execute(input: RenegotiateInput): Renegotiated {
     const original = this.activeTask.inProgress(input.task);
@@ -69,7 +62,7 @@ export class Renegotiate {
         { next: () => this.meta.next() },
       );
       if (!prepared) {
-        imported = this.closing.prepare(task, this.near, meta.at);
+        imported = this.closing.prepare(task, meta.at, input);
         prepared = true;
       }
       this.tasks.save(task);
