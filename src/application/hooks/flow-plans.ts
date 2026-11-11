@@ -1,4 +1,3 @@
-import { sep } from 'node:path';
 import type { ChangeProgress } from '../../domain/progress/progress-records.js';
 import { ProjectId } from '../../domain/project/project-id.js';
 import type { ProjectRepository } from '../../domain/project/project-repository.js';
@@ -72,7 +71,7 @@ export class FlowProjectPlans implements ProjectPlans {
    */
   private rootOf(paths: readonly string[], near: string | undefined): string | undefined {
     const containing =
-      near === undefined ? undefined : paths.filter((path) => near === path || near.startsWith(path.endsWith(sep) ? path : `${path}${sep}`));
+      near === undefined ? undefined : paths.filter((path) => this.files.contains(path, near));
     // The deepest match: a worktree may live inside the main working copy.
     const best = containing?.sort((a, b) => b.length - a.length)[0];
     return best ?? paths.find((path) => this.files.isDirectory(path));

@@ -24,11 +24,7 @@ export const TASK_STATUS_VALUES = ['new', 'estimated', 'in-progress', 'closed'];
 export const DEBT = {
   statusLiteral: {},
   taskImportsHooks: {},
-  nodePath: {
-    'src/application/hooks/flow-plans.ts': 1,
-    'src/application/project/init-project.ts': 1,
-    'src/application/project/stack.ts': 1,
-  },
+  nodePath: {},
   maxLines: {
     'src/domain/card/card.ts': 421,
     'src/domain/progress/progress-records.ts': 440,

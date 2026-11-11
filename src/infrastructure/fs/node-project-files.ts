@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import type { ProjectFiles } from '../../application/ports/project-files.js';
 import { isNotFound } from './jsonl.js';
 
@@ -23,6 +23,27 @@ const SKIPPED_DIRECTORIES = new Set([
 const EMPTY_PARENTS_REMOVED = 2;
 
 export class NodeProjectFiles implements ProjectFiles {
+  inside(root: string, path: string): string | undefined {
+    const inside = relative(root, path);
+    return inside !== '' && !inside.startsWith('..') && !isAbsolute(inside) ? inside : undefined;
+  }
+
+  portable(path: string): string {
+    return path.split(sep).join('/');
+  }
+
+  contains(dir: string, path: string): boolean {
+    return path === dir || path.startsWith(dir.endsWith(sep) ? dir : `${dir}${sep}`);
+  }
+
+  dirname(path: string): string {
+    return dirname(path);
+  }
+
+  basename(path: string): string {
+    return basename(path);
+  }
+
   read(path: string): string | undefined {
     try {
       return readFileSync(path, 'utf8');
