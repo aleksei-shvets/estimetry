@@ -3,6 +3,9 @@ import type { Duration } from '../../domain/measurement/duration.js';
 import { usageSummary, type TaskUsage } from '../../domain/usage/task-usage.js';
 import type { ThreePointData } from '../../domain/estimate/three-point-estimate.js';
 import type { TaskId } from '../../domain/task/task-id.js';
+import type { Task } from '../../domain/task/task.js';
+import type { Extra } from '../../domain/measurement/extra.js';
+import type { EffortReport } from '../../domain/measurement/effort-report.js';
 import type { PlanProgress } from '../../domain/progress/plan-progress.js';
 import type { PlanUnavailable } from '../ports/project-plans.js';
 import type { ResolveActiveTask } from './resolve-active-task.js';
@@ -125,23 +128,10 @@ export class ShowStatus {
     );
     const estimate = task.estimate?.total;
     const extras = task.extras;
-    const extraMinutesByCategory: Record<string, number> = {};
-    for (const extra of extras) {
-      if (extra.time !== undefined) {
-        extraMinutesByCategory[extra.category] = (extraMinutesByCategory[extra.category] ?? 0) + minutes(extra.time);
-      }
-    }
-    const startedAt = task.startedAt?.toISOString();
     const progress = this.plans.of(task, { records: journal?.records ?? [], ...nearOf(input) });
     const plan = progress.plan;
     return {
-      task: {
-        id: task.id.toString(),
-        title: task.title,
-        status: task.status,
-        ...(startedAt === undefined ? {} : { startedAt }),
-        ...(task.closure === undefined ? {} : { closedAt: task.closure.at.toISOString() }),
-      },
+      task: taskHeader(task),
       fact: minutes(report.fact),
       agentTime: minutes(report.agentTime),
       userTime: minutes(report.userTime),
@@ -155,30 +145,9 @@ export class ShowStatus {
       estimate: estimate?.toData() ?? null,
       // Only the counted fact means anything against the current estimate.
       estimateShare: estimate === undefined || counted.fact.millis === 0 ? null : counted.fact.hours / estimate.likely,
-      counted: {
-        fact: minutes(counted.fact),
-        agentTime: minutes(counted.agentTime),
-        userTime: minutes(counted.userTime),
-        manualTime: minutes(counted.manualTime),
-        factLow: minutes(counted.factLow),
-        factHigh: minutes(counted.factHigh),
-        uncertainty: minutes(counted.uncertainty),
-        agentWork: minutes(counted.agentWork),
-        uncertaintyShare: counted.uncertaintyShare ?? null,
-        uncertaintyExceedsTarget: counted.exceedsUncertaintyTarget,
-        manualShare: counted.manualShare ?? null,
-      },
+      counted: countedView(counted),
       lost: Math.max(0, minutes(report.fact) - minutes(counted.fact)),
-      revisions: task.revisions.map((revision) => ({
-        at: revision.at.toISOString(),
-        lostFrom: revision.lostFrom?.toISOString() ?? null,
-        category: revision.category ?? null,
-        spent: revision.spent ?? null,
-        baseLikelyBefore: revision.baseLikelyBefore ?? null,
-        baseLikelyAfter: revision.baseLikelyAfter,
-        covers: revision.covers,
-        missingSnapshot: !snapshots.has(revision.id),
-      })),
+      revisions: revisionViews(task, snapshots),
       agentWork: minutes(report.agentWork),
       calendar: minutes(report.calendar),
       parallel: {
@@ -186,26 +155,79 @@ export class ShowStatus {
         maxAgents: report.parallel.maxAgents ?? null,
         sequentialEquivalent: report.sequentialEquivalent === undefined ? null : minutes(report.sequentialEquivalent),
       },
-      records: { manual: task.manualTime.length, extras: extras.length, extraMinutesByCategory },
-      plan:
-        plan === undefined
-          ? null
-          : {
-              done: plan.done,
-              mode: plan.mode,
-              groupedHours: plan.groupedHours ?? null,
-              estimateHours: plan.estimateHours ?? null,
-              notStarted: plan.notStarted,
-              possibleTypos: plan.possibleTypos,
-              archivedBeforeStart: plan.archivedBeforeStart,
-              archivedBeforeRevision: plan.archivedBeforeRevision,
-            },
+      records: { manual: task.manualTime.length, extras: extras.length, extraMinutesByCategory: extraMinutes(extras) },
+      plan: plan === undefined ? null : planView(plan),
       planUnavailable: progress.unavailable ?? null,
       untrackedProjects: progress.untracked,
       completedChanges: progress.completed,
       usage: usageView(this.measurement.usage(task, journal)),
     };
   }
+}
+
+function taskHeader(task: Task): StatusView['task'] {
+  const startedAt = task.startedAt?.toISOString();
+  return {
+    id: task.id.toString(),
+    title: task.title,
+    status: task.status,
+    ...(startedAt === undefined ? {} : { startedAt }),
+    ...(task.closure === undefined ? {} : { closedAt: task.closure.at.toISOString() }),
+  };
+}
+
+function countedView(counted: EffortReport): CountedFact {
+  return {
+    fact: minutes(counted.fact),
+    agentTime: minutes(counted.agentTime),
+    userTime: minutes(counted.userTime),
+    manualTime: minutes(counted.manualTime),
+    factLow: minutes(counted.factLow),
+    factHigh: minutes(counted.factHigh),
+    uncertainty: minutes(counted.uncertainty),
+    agentWork: minutes(counted.agentWork),
+    uncertaintyShare: counted.uncertaintyShare ?? null,
+    uncertaintyExceedsTarget: counted.exceedsUncertaintyTarget,
+    manualShare: counted.manualShare ?? null,
+  };
+}
+
+/** A revision misses its snapshot when no `plan.revised` names it. */
+function revisionViews(task: Task, snapshots: ReadonlySet<string>): RevisionView[] {
+  return task.revisions.map((revision) => ({
+    at: revision.at.toISOString(),
+    lostFrom: revision.lostFrom?.toISOString() ?? null,
+    category: revision.category ?? null,
+    spent: revision.spent ?? null,
+    baseLikelyBefore: revision.baseLikelyBefore ?? null,
+    baseLikelyAfter: revision.baseLikelyAfter,
+    covers: revision.covers,
+    missingSnapshot: !snapshots.has(revision.id),
+  }));
+}
+
+/** Minutes of timed extra work by category. */
+function extraMinutes(extras: readonly Extra[]): Record<string, number> {
+  const byCategory: Record<string, number> = {};
+  for (const extra of extras) {
+    if (extra.time !== undefined) {
+      byCategory[extra.category] = (byCategory[extra.category] ?? 0) + minutes(extra.time);
+    }
+  }
+  return byCategory;
+}
+
+function planView(plan: PlanProgress): PlanView {
+  return {
+    done: plan.done,
+    mode: plan.mode,
+    groupedHours: plan.groupedHours ?? null,
+    estimateHours: plan.estimateHours ?? null,
+    notStarted: plan.notStarted,
+    possibleTypos: plan.possibleTypos,
+    archivedBeforeStart: plan.archivedBeforeStart,
+    archivedBeforeRevision: plan.archivedBeforeRevision,
+  };
 }
 
 function minutes(duration: Duration): number {

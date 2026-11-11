@@ -40,6 +40,15 @@ function printWarnings(ctx: CliContext, warnings: readonly string[]): void {
 }
 
 export function registerCloseCommands(program: Command, ctx: CliContext): void {
+  registerClose(program, ctx);
+  registerReopen(program, ctx);
+  registerRetro(program, ctx);
+  registerRenegotiate(program, ctx);
+  registerRebuild(program, ctx);
+}
+
+/** `emt close`: asks for consent, closes, then points to the retro. */
+function registerClose(program: Command, ctx: CliContext): void {
   program
     .command('close')
     .helpGroup('Closing')
@@ -65,7 +74,10 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
       printWarnings(ctx, closed.warnings);
       ctx.out.print(presenterFor(options).taskClosed(closed));
     });
+}
 
+/** `emt reopen`: a task closed by mistake is in progress again. */
+function registerReopen(program: Command, ctx: CliContext): void {
   program
     .command('reopen')
     .helpGroup('Closing')
@@ -77,7 +89,10 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
       printWarnings(ctx, reopened.warnings);
       ctx.out.print(presenterFor(options).taskReopened(reopened));
     });
+}
 
+/** `emt retro`: why the fact differs from the estimate, and one lesson. */
+function registerRetro(program: Command, ctx: CliContext): void {
   program
     .command('retro')
     .helpGroup('Closing')
@@ -91,7 +106,10 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
       printWarnings(ctx, recorded.warnings);
       ctx.out.print(presenterFor(options).retroRecorded(recorded));
     });
+}
 
+/** `emt renegotiate`: the task closes as it is, a new one takes the rest. */
+function registerRenegotiate(program: Command, ctx: CliContext): void {
   program
     .command('renegotiate')
     .helpGroup('Closing')
@@ -132,7 +150,10 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
       printWarnings(ctx, result.closed.warnings);
       ctx.out.print(presenterFor(options).renegotiated(result));
     });
+}
 
+/** `emt rebuild`: snapshots, cards and calibration again from the journals. */
+function registerRebuild(program: Command, ctx: CliContext): void {
   program
     .command('rebuild')
     .helpGroup('Setup')
