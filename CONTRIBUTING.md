@@ -8,8 +8,11 @@ You need Node.js 22.12 or newer and git.
 npm ci
 npm run lint
 npm run typecheck
-npm test          # builds dist, then runs every test
+npm test               # builds dist, runs every test, then the hook budgets on their own
+npm run test:coverage  # unit tests with the coverage of src/domain and src/application
 ```
+
+The hook budgets measure wall time, so `npm test` runs them after the other tests, not beside them. The coverage of `src/domain` and `src/application` must not fall below the thresholds in `vitest.config.ts`; CI checks both.
 
 Tests never touch your own data: they run on temporary `ESTIMETRY_HOME`, `HOME` and `CLAUDE_CONFIG_DIR`. Fixtures are synthetic; never commit real Claude Code logs.
 
