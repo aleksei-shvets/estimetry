@@ -21,7 +21,7 @@ export class ShowTask {
   execute(input: { readonly task: TaskId }): TaskDetails {
     const task = this.tasks.get(input.task);
     const estimate = task.estimate === undefined ? {} : { estimate: task.estimate.toData() };
-    if (task.status !== 'closed') {
+    if (!task.isClosed) {
       return { ...toTaskView(task), ...estimate };
     }
     const card = this.cards.cardOf(task);

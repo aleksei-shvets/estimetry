@@ -36,7 +36,7 @@ export function toTaskView(task: Task): TaskView {
     createdAt: s.createdAt,
     ...(s.startedAt === undefined ? {} : { startedAt: s.startedAt }),
     ...closing(task),
-    ...(task.spawnedFrom === undefined ? {} : { spawnedFrom: task.spawnedFrom }),
+    ...(task.spawnedFrom === undefined ? {} : { spawnedFrom: task.spawnedFrom.toString() }),
   };
 }
 
@@ -44,5 +44,5 @@ function closing(task: Task): Partial<TaskView> {
   const closure = task.closure;
   return closure === undefined
     ? {}
-    : { closedAt: closure.at, outcome: closure.outcome, ...(closure.spawned === undefined ? {} : { spawned: closure.spawned }) };
+    : { closedAt: closure.at.toISOString(), outcome: closure.outcome, ...(closure.spawned === undefined ? {} : { spawned: closure.spawned.toString() }) };
 }

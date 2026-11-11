@@ -1,5 +1,6 @@
 import { exclusionsOf } from '../../src/domain/progress/plan-exclusions.js';
-import type { TaskRevision } from '../../src/domain/task/task.js';
+import type { TaskRevisionData } from '../../src/domain/task/task-snapshot.js';
+import type { TaskStatus } from '../../src/domain/task/task-status.js';
 import type { ActivityDraft, HookAdapter, HookKind, HookTranslation } from '../../src/application/contracts/hook-adapter.js';
 import type { CheckpointState, CheckpointStatus } from '../../src/application/ports/checkpoint-state.js';
 import type { CommitInfo, GitHead, GitSnapshots } from '../../src/application/ports/git-snapshot.js';
@@ -106,7 +107,7 @@ export class RepositoryTaskStatusReader implements TaskStatusReader {
   }
 }
 
-function toSummary(s: { id: string; title: string; status: string; startedAt?: string; projects: readonly string[]; revisions?: readonly TaskRevision[] }): TaskSummary {
+function toSummary(s: { id: string; title: string; status: TaskStatus; startedAt?: string; projects: readonly string[]; revisions?: readonly TaskRevisionData[] }): TaskSummary {
   const excluding = (s.revisions ?? []).some((revision) => revision.spent === 'exclude');
   return {
     id: s.id,

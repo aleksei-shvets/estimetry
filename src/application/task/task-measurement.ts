@@ -112,8 +112,7 @@ export class TaskMeasurement {
         ? task.manualTime
         : task.manualRecords
             .filter(({ manual: record, recordedAt }) => {
-              const made = recordedAt === '' ? undefined : Timestamp.parse(recordedAt);
-              return (made === undefined || made.toMillis() <= until.toMillis()) && (record.at === undefined || record.at.toMillis() <= until.toMillis());
+              return (recordedAt === undefined || recordedAt.toMillis() <= until.toMillis()) && (record.at === undefined || record.at.toMillis() <= until.toMillis());
             })
             .map(({ manual: record }) => record);
     const lost = options.lost ?? [];

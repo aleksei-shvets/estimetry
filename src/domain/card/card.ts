@@ -208,24 +208,23 @@ export function buildCard(input: CardInput): Card {
   if (closure === undefined || startedAt === undefined) {
     throw new InvalidValue(`task ${task.id.toString()} is not closed, so it has no card`);
   }
-  const closedAt = Timestamp.parse(closure.at);
+  const closedAt = closure.at;
   const closing = last<PlanClosing>(input.records, 'plan.closing');
   const measured = last<CodeMeasured>(input.records, 'code.measured');
   const first = task.originalEstimate;
   const current = task.estimate;
   const revised = task.revisions.length > 0;
-  const closedMinutes = task.closures
-    .filter((c) => c.reopenedAt !== undefined)
-    .reduce((sum, c) => sum + (Timestamp.parse(c.reopenedAt as string).toMillis() - Timestamp.parse(c.at).toMillis()) / 60_000, 0);
+  const closedMinutes = task.closures.reduce((sum, c) => sum + (c.reopenedAt === undefined ? 0 : c.reopenedAt.toMillis() - c.at.toMillis()) / 60_000, 0);
   const completed = new Set(closing?.data.completedGroups ?? []);
   const firstParallel = task.parallelMode[0]?.change;
   const retro = task.retro;
-  const lastReopen = task.closures.map((c) => c.reopenedAt).filter((at): at is string => at !== undefined).at(-1);
+  const lastReopen = task.closures.flatMap((c) => (c.reopenedAt === undefined ? [] : [c.reopenedAt])).at(-1);
   const partIndex = (id: string | undefined) => {
     const index = id === undefined ? -1 : (current?.parts.findIndex((part) => part.id === id) ?? -1);
     return index < 0 ? {} : { part: index };
   };
   const covered = new Set(task.revisions.filter((revision) => revision.spent === 'exclude').flatMap((revision) => revision.covers));
+  const isCovered = (id: string | undefined) => id !== undefined && covered.has(id);
   const minutes = (millis: number) => Math.round(millis / 60_000);
   const cardParts = (estimate: Estimate | undefined, facts: PartFacts | undefined): CardPart[] => {
     const sizes = new Map<string, number>();
@@ -265,28 +264,28 @@ export function buildCard(input: CardInput): Card {
 
   return {
     schemaVersion: CARD_SCHEMA_VERSION,
-    author: task.author,
+    author: task.author.id,
     task: {
       id: task.id.toString(),
-      type: task.type,
+      type: task.type.value,
       stack: first && first.stack.length > 0 ? [...first.stack] : [...(closing?.data.stack ?? [])],
-      ...(task.spawnedFrom === undefined ? {} : { spawnedFrom: task.spawnedFrom }),
-      ...(closure.spawned === undefined ? {} : { spawned: closure.spawned }),
+      ...(task.spawnedFrom === undefined ? {} : { spawnedFrom: task.spawnedFrom.toString() }),
+      ...(closure.spawned === undefined ? {} : { spawned: closure.spawned.toString() }),
     },
     outcome: closure.outcome,
     startedAt: startedAt.toISOString(),
-    closedAt: closure.at,
+    closedAt: closure.at.toISOString(),
     calendarMinutes: minutes(closedAt.toMillis() - startedAt.toMillis()),
     closedMinutes: Math.round(closedMinutes),
-    estimate: cardEstimate(first, task.firstType),
-    currentEstimate: cardEstimate(current, task.type),
+    estimate: cardEstimate(first, task.firstType.value),
+    currentEstimate: cardEstimate(current, task.type.value),
     revisions: task.revisions.map((revision, i) => ({
-      at: revision.at,
-      ...(revision.lostFrom === undefined ? {} : { lostFrom: revision.lostFrom }),
+      at: revision.at.toISOString(),
+      ...(revision.lostFrom === undefined ? {} : { lostFrom: revision.lostFrom.toISOString() }),
       ...(revision.category === undefined ? {} : { category: revision.category }),
       ...(revision.spent === undefined ? {} : { spent: revision.spent }),
-      typeBefore: revision.typeBefore ?? task.firstType,
-      typeAfter: revision.typeAfter ?? task.type,
+      typeBefore: (revision.typeBefore ?? task.firstType).value,
+      typeAfter: (revision.typeAfter ?? task.type).value,
       baseLikelyBeforeHours: revision.baseLikelyBefore ?? null,
       baseLikelyAfterHours: revision.baseLikelyAfter,
       countedAtMinutes: input.revisionFacts?.[i]?.countedAtMinutes ?? 0,
@@ -318,8 +317,8 @@ export function buildCard(input: CardInput): Card {
     unattributedMinutes: input.partFacts.unattributed,
     beforeRevisionMinutes: input.partFacts.beforeRevision,
     plan: { done: closing?.data.done ?? null, unfinishedGroups: closing?.data.unfinishedGroups.length ?? 0 },
-    extras: tallyExtras(task.extraRecords.filter((record) => !covered.has(record.id)).map((record) => record.extra)),
-    coveredByRevision: tallyCovered(task.extraRecords.filter((record) => covered.has(record.id)).map((record) => record.extra)),
+    extras: tallyExtras(task.extraRecords.filter((record) => !isCovered(record.id)).map((record) => record.extra)),
+    coveredByRevision: tallyCovered(task.extraRecords.filter((record) => isCovered(record.id)).map((record) => record.extra)),
     code:
       measured === undefined
         ? null
@@ -340,13 +339,13 @@ export function buildCard(input: CardInput): Card {
       retro === undefined
         ? 'pending'
         : {
-            status: lastReopen !== undefined && Timestamp.parse(retro.recordedAt).toMillis() < Timestamp.parse(lastReopen).toMillis() ? 'stale' : 'current',
+            status: lastReopen !== undefined && retro.recordedAt.toMillis() < lastReopen.toMillis() ? 'stale' : 'current',
             reasons: retro.reasons.map((reason) => partIndex(reason.part)),
           },
     text: {
       title: task.title,
       ...(task.ticket === undefined ? {} : { ticket: task.ticket }),
-      projects: [...task.projects],
+      projects: task.projects.map((project) => project.value),
       parts: partNames(first),
       currentParts: partNames(current),
       revisions: task.revisions.map((revision) => ({ reason: revision.reason })),

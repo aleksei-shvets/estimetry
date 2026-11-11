@@ -24,8 +24,9 @@ export class CodeVolumeService {
   ) {}
 
   measure(task: Task, records: readonly ProgressRecord[], where: WorkingCopy = {}): ProjectCode[] {
-    const readings = this.plans.archives(task.projects, nearOf(where));
-    return task.projects.map((project) => {
+    const projects = task.projects.map((project) => project.value);
+    const readings = this.plans.archives(projects, nearOf(where));
+    return projects.map((project) => {
       const root = readings.find((reading) => reading.project === project)?.root;
       if (root === undefined) {
         return unknown(project, 'not-on-this-machine');

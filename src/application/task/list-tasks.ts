@@ -15,6 +15,6 @@ export class ListTasks {
   execute(input: { readonly all?: boolean; readonly closed?: boolean }): TaskView[] {
     const project = input.all ? undefined : this.currentProject.find();
     const tasks = input.all ? this.tasks.listAll() : project ? this.tasks.listByProject(project.id) : [];
-    return tasks.filter((task) => input.closed === true || task.status !== 'closed').map(toTaskView);
+    return tasks.filter((task) => input.closed === true || !task.isClosed).map(toTaskView);
   }
 }

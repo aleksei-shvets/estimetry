@@ -12,3 +12,12 @@ export function isTaskStatus(value: unknown): value is TaskStatus {
 }
 
 export const STARTABLE_STATUSES: readonly TaskStatus[] = ['new', 'estimated'];
+
+/** For a status read from a snapshot, without the aggregate: hooks and readers of summaries. */
+export function isInProgress(status: TaskStatus): boolean {
+  return status === 'in-progress';
+}
+
+export function isClosed(status: TaskStatus): boolean {
+  return status === 'closed';
+}

@@ -56,7 +56,7 @@ export class TaskPlanProgress {
       return { untracked: [], completed: [] };
     }
     const near = options.near;
-    const readings = this.plans.plans(task.projects, {
+    const readings = this.plans.plans(task.projects.map((project) => project.value), {
       ...(near === undefined ? {} : { near }),
       // Older archives only name groups `archived before start`: their tasks are not read.
       archivedSince: CalendarDate.of(startedAt).minusDays(1),

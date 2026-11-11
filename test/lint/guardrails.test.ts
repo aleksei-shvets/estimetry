@@ -52,6 +52,19 @@ describe('architecture checks', () => {
     expect(other).toEqual([]);
   });
 
+  it('a cast to Timestamp is an error anywhere in src, another cast is not', async () => {
+    const cast = "import type { Timestamp } from '../../domain/shared/timestamp.js';\ndeclare const task: { startedAt: Timestamp | undefined };\nexport const s = task.startedAt as Timestamp;\n";
+    const inApplication = await messages(cast, 'src/application/task/x.ts');
+    expect(inApplication.map((m) => m.message).join('\n')).toMatch(/requireStartedAt/);
+    const inDomain = await messages(cast.replace('../../domain/shared/', '../shared/'), 'src/domain/progress/x.ts');
+    expect(inDomain.some((m) => m.ruleId === 'no-restricted-syntax')).toBe(true);
+    // The status selectors of application stay next to the cast in the same rule.
+    const both = await messages(`${cast}declare const status: string;\nexport const c = status === 'closed';\n`, 'src/application/task/x.ts');
+    expect(both.filter((m) => m.ruleId === 'no-restricted-syntax')).toHaveLength(2);
+    const other = await messages('declare const value: unknown;\nexport const s = value as string;\n', 'src/application/task/x.ts');
+    expect(other).toEqual([]);
+  });
+
   it('the statuses of the rule are the statuses of a task', () => {
     expect([...guardrails.TASK_STATUS_VALUES].sort()).toEqual([...TASK_STATUSES].sort());
   });

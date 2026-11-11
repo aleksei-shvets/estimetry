@@ -2,6 +2,7 @@ import type { SessionId } from '../../domain/measurement/session-id.js';
 import type { ActivityEvent, SessionBound } from '../../domain/measurement/activity-events.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
 import { TaskId } from '../../domain/task/task-id.js';
+import { isInProgress } from '../../domain/task/task-status.js';
 import type { HookKind } from '../contracts/hook-adapter.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
 import type { EventJournal } from '../ports/event-journal.js';
@@ -109,6 +110,6 @@ export class SessionTask {
 
   private inProgress(task: string): TaskSummary | undefined {
     const summary = this.tasks.summary(task);
-    return summary?.status === 'in-progress' ? summary : undefined;
+    return summary !== undefined && isInProgress(summary.status) ? summary : undefined;
   }
 }

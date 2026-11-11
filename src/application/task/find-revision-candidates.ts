@@ -1,4 +1,4 @@
-import { Timestamp } from '../../domain/shared/timestamp.js';
+import type { Timestamp } from '../../domain/shared/timestamp.js';
 import type { Task } from '../../domain/task/task.js';
 import type { TaskId } from '../../domain/task/task-id.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
@@ -37,20 +37,21 @@ export function revisionCandidatesOf(task: Task, from: Timestamp | undefined, no
   if (from === undefined) {
     return { extras: [], untimedManual: [] };
   }
-  const inWindow = (at: string) => {
-    const millis = Timestamp.parse(at).toMillis();
-    return millis >= from.toMillis() && millis <= now.toMillis();
-  };
+  const inWindow = (at: Timestamp | undefined) => at !== undefined && at.toMillis() >= from.toMillis() && at.toMillis() <= now.toMillis();
   return {
-    extras: task.extraRecords
-      .filter((record) => record.at !== '' && inWindow(record.at))
-      .map((record) => ({
-        id: record.id,
-        at: record.at,
-        category: record.extra.category,
-        description: record.extra.description,
-        minutes: record.extra.time === undefined ? null : Math.round(record.extra.time.minutes),
-      })),
+    extras: task.extraRecords.flatMap(({ id, at, extra }) =>
+      id === undefined || at === undefined || !inWindow(at)
+        ? []
+        : [
+            {
+              id,
+              at: at.toISOString(),
+              category: extra.category,
+              description: extra.description,
+              minutes: extra.time === undefined ? null : Math.round(extra.time.minutes),
+            },
+          ],
+    ),
     untimedManual: task.manualRecords
       .filter((record) => record.manual.at === undefined && inWindow(record.recordedAt))
       .map((record) => ({ description: record.manual.description, minutes: Math.round(record.manual.duration.minutes) })),

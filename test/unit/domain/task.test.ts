@@ -70,7 +70,7 @@ describe('Task', () => {
     expect(task.attach(web, meta())).toBe(true);
     expect(task.attach(web, meta())).toBe(false);
     expect(task.attach(api, meta())).toBe(false);
-    expect(task.projects).toEqual(['api', 'web']);
+    expect(task.projects).toEqual([api, web]);
     expect(task.pullEvents().map((e) => e.type)).toEqual(['task.created', 'task.attached']);
   });
 

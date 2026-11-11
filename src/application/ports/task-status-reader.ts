@@ -1,10 +1,11 @@
 import type { PlanExclusions } from '../../domain/progress/plan-exclusions.js';
+import type { TaskStatus } from '../../domain/task/task-status.js';
 
 /** What the hook receiver needs of a task, read from its snapshot without checking the journal. */
 export interface TaskSummary {
   readonly id: string;
   readonly title: string;
-  readonly status: string;
+  readonly status: TaskStatus;
   readonly startedAt?: string;
   readonly projects: readonly string[];
   /** Groups of the estimate's parts: the changes of the task. */

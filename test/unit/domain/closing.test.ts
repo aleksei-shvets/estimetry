@@ -84,7 +84,7 @@ describe('closing a task', () => {
     task.close({ at: at('10:00'), outcome: 'completed' }, meta('10:00'));
     task.reopen(meta('11:00'));
     expect(task.status).toBe('in-progress');
-    expect(task.closures).toEqual([{ at: at('10:00').toISOString(), outcome: 'completed', recordedAt: at('10:00').toISOString(), reopenedAt: at('11:00').toISOString() }]);
+    expect(task.closures).toEqual([{ at: at('10:00'), outcome: 'completed', recordedAt: at('10:00'), reopenedAt: at('11:00') }]);
   });
 
   it('renegotiates in one save and does not repeat the extra work on a retry', () => {
@@ -93,12 +93,12 @@ describe('closing a task', () => {
     task.renegotiate({ at: at('12:00'), spawned: TaskId.fromNumber(2), category: 'new-requirement', description: 'v2' }, next);
     expect(task.pullEvents().map((e) => e.type).slice(-2)).toEqual(['task.extra-recorded', 'task.closed']);
     expect(task.extras[0]?.accounting).toBe('renegotiated');
-    expect(task.closure).toMatchObject({ outcome: 'renegotiated', spawned: 'T-2' });
+    expect(task.closure).toMatchObject({ outcome: 'renegotiated', spawned: TaskId.fromNumber(2) });
 
     // Backdated: the extra work is recorded later than the closing moment, and that is fine.
     const late = started();
     late.renegotiate({ at: at('11:00'), spawned: TaskId.fromNumber(3), category: 'new-requirement', description: 'v3' }, { next: () => meta('12:00') });
-    expect(late.closure).toMatchObject({ at: at('11:00').toISOString(), outcome: 'renegotiated' });
+    expect(late.closure).toMatchObject({ at: at('11:00'), outcome: 'renegotiated' });
 
     // A retry after the extra was saved but the task stayed open is modelled by an open task with that extra.
     const retry = started();

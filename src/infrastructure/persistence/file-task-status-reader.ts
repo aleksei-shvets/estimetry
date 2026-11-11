@@ -1,6 +1,7 @@
 import { readdirSync } from 'node:fs';
 import type { TaskStatusReader, TaskSummary } from '../../application/ports/task-status-reader.js';
 import { exclusionsOf } from '../../domain/progress/plan-exclusions.js';
+import { isInProgress } from '../../domain/task/task-status.js';
 import { readYaml } from '../fs/atomic-yaml.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
 import { parseTaskSnapshot } from './records.js';
@@ -27,7 +28,7 @@ export class FileTaskStatusReader implements TaskStatusReader {
     return names
       .filter((name) => /^T-\d+\.yaml$/.test(name))
       .map((name) => this.read(name.slice(0, -'.yaml'.length)))
-      .filter((task): task is TaskSummary => task?.status === 'in-progress' && task.projects.includes(project));
+      .filter((task): task is TaskSummary => task !== undefined && isInProgress(task.status) && task.projects.includes(project));
   }
 
   private read(task: string): TaskSummary | undefined {

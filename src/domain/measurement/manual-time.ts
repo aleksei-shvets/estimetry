@@ -1,6 +1,7 @@
 import { InvalidValue } from '../shared/domain-error.js';
 import { Timestamp } from '../shared/timestamp.js';
 import { Duration } from './duration.js';
+import { Interval } from './interval.js';
 
 export const MANUAL_TIME_KINDS = ['user', 'agent'] as const;
 export type ManualTimeKind = (typeof MANUAL_TIME_KINDS)[number];
@@ -58,6 +59,11 @@ export class ManualTime {
       description: data.description,
       ...(data.part === undefined ? {} : { part: data.part }),
     });
+  }
+
+  /** The interval of a record that ends at `at`; undefined for a record without a moment. */
+  interval(): Interval | undefined {
+    return this.at === undefined ? undefined : Interval.endingAt(this.at, this.duration);
   }
 
   toData(): ManualTimeData {

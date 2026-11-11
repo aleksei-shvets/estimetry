@@ -1,6 +1,5 @@
 import type { Estimate } from '../estimate/estimate.js';
 import { Duration } from '../measurement/duration.js';
-import { Interval } from '../measurement/interval.js';
 import { IntervalSet } from '../measurement/interval-set.js';
 import type { ManualTime } from '../measurement/manual-time.js';
 import { Timestamp } from '../shared/timestamp.js';
@@ -302,8 +301,8 @@ function timedSets(
   const timed = (kind: 'agent' | 'user') =>
     IntervalSet.of(
       manual
-        .filter((item) => item.record.kind === kind && item.record.at !== undefined && include(item))
-        .map(({ record }) => Interval.endingAt(record.at as Timestamp, record.duration)),
+        .filter((item) => item.record.kind === kind && include(item))
+        .flatMap(({ record }) => record.interval() ?? []),
     );
   return { agent: measured.agent.union(timed('agent')).minus(lost), user: measured.user.union(timed('user')).minus(lost) };
 }

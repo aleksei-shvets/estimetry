@@ -99,13 +99,7 @@ export const config = (debt) =>
           { object: 'Date', property: 'now', message: 'Domain gets time from the caller (Clock port).' },
           { object: 'Math', property: 'random', message: 'Domain gets ids from the caller (IdGenerator port).' },
         ],
-        'no-restricted-syntax': [
-          'error',
-          {
-            selector: "NewExpression[callee.name='Date'][arguments.length=0]",
-            message: 'Domain gets time from the caller (Clock port).',
-          },
-        ],
+        // `new Date()` is forbidden by the restricted syntax of eslint/guardrails.js, together with casts.
       },
     },
     ...guardrails(debt),

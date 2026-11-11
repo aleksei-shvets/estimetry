@@ -1,6 +1,6 @@
 import { EstimateRevision, type ExcludedArchives } from '../../domain/estimate/estimate-revision.js';
 import type { ThreePointData } from '../../domain/estimate/three-point-estimate.js';
-import { Timestamp } from '../../domain/shared/timestamp.js';
+import type { Timestamp } from '../../domain/shared/timestamp.js';
 import type { Task } from '../../domain/task/task.js';
 import type { TaskId } from '../../domain/task/task-id.js';
 import type { TaskRepository } from '../../domain/task/task-repository.js';
@@ -101,17 +101,17 @@ export class ReviseEstimate {
       writePlanRevised({ journal: this.journal, snapshots: this.snapshots, meta: this.meta }, task, revisionId, input);
       this.dropProposal(task, excluded);
     }
-    const lostFrom = revision?.lostFrom ?? null;
+    const lostFrom = revision?.lostFrom;
     return {
       task: toTaskView(task),
       total: estimate.total.toData(),
       firstEstimate: revision === undefined,
       spent: revision?.spent ?? null,
-      lostFrom,
+      lostFrom: lostFrom?.toISOString() ?? null,
       at,
       excluded: revision?.excluded ?? [],
       covers: revision?.covers ?? [],
-      candidates: revisionCandidatesOf(task, lostFrom === null ? undefined : Timestamp.parse(lostFrom), this.meta.next().at),
+      candidates: revisionCandidatesOf(task, lostFrom, this.meta.next().at),
     };
   }
 
@@ -124,7 +124,7 @@ export class ReviseEstimate {
   private archives(task: Task, from: Timestamp, at: Timestamp, where: WorkingCopy): ExcludedArchives[] {
     const fromDay = CalendarDate.of(from).minusDays(1);
     const atDay = CalendarDate.of(at);
-    return this.plans.archives(task.projects, nearOf(where)).flatMap((reading) => {
+    return this.plans.archives(task.projects.map((project) => project.value), nearOf(where)).flatMap((reading) => {
       if (reading.archived === undefined) {
         return [];
       }

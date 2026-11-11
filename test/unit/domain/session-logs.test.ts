@@ -67,9 +67,9 @@ describe('merging the records of a session log', () => {
   it('ignores records written while the task stayed closed', () => {
     const before = record({ turns: [turn(0, '10:00', '10:05')] }, '2026-10-27T17:00:00.000Z');
     const after = record({ from: 0, turns: [turn(0, '10:00', '10:30')] }, '2026-10-27T19:00:00.000Z');
-    const closed = [{ at: '2026-10-27T18:00:00.000Z' }];
+    const closed = [{ at: Timestamp.parse('2026-10-27T18:00:00.000Z') }];
     expect(sessionLogs([before, after], closed).get('s1')?.turns[0]?.end).toBe(ms('10:05'));
-    const reopened = [{ at: '2026-10-27T18:00:00.000Z', reopenedAt: '2026-10-27T18:30:00.000Z' }];
+    const reopened = [{ at: Timestamp.parse('2026-10-27T18:00:00.000Z'), reopenedAt: Timestamp.parse('2026-10-27T18:30:00.000Z') }];
     expect(sessionLogs([before, after], reopened).get('s1')?.turns[0]?.end).toBe(ms('10:30'));
   });
 

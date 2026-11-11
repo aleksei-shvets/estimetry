@@ -2,6 +2,7 @@ import type { SessionBound, SessionUnbound } from '../../domain/measurement/acti
 import { SessionId } from '../../domain/measurement/session-id.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
 import type { Timestamp } from '../../domain/shared/timestamp.js';
+import { isInProgress } from '../../domain/task/task-status.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
 import type { EventJournal } from '../ports/event-journal.js';
 import type { IdGenerator } from '../ports/id-generator.js';
@@ -27,7 +28,7 @@ export class BindSession {
 
   bind(sessionText: string, task: string, project: LocatedProject, now: Timestamp): void {
     const session = SessionId.parse(sessionText);
-    if (this.tasks.summary(task)?.status !== 'in-progress') {
+    if (!this.inProgress(task)) {
       throw new InvalidValue(`${task} is not in progress; start it with \`emt start ${task}\` first`);
     }
     let previous: { task: string; project: string } | undefined;
@@ -35,7 +36,7 @@ export class BindSession {
       if (current?.task === task) {
         return undefined; // already bound: nothing to switch
       }
-      if (current?.task !== undefined && this.tasks.summary(current.task)?.status === 'in-progress') {
+      if (current?.task !== undefined && this.inProgress(current.task)) {
         previous = { task: current.task, project: current.project };
       }
       return { session: session.value, project: project.id, root: project.root, task, since: now.toISOString(), everBound: true };
@@ -46,6 +47,11 @@ export class BindSession {
     if (this.bindings.get(session)?.since === now.toISOString()) {
       this.mark<SessionBound>('session.bound', session, task, project.id, now);
     }
+  }
+
+  private inProgress(task: string): boolean {
+    const summary = this.tasks.summary(task);
+    return summary !== undefined && isInProgress(summary.status);
   }
 
   private mark<T extends SessionBound | SessionUnbound>(type: T['type'], session: SessionId, task: string, project: string, at: Timestamp): void {
