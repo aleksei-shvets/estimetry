@@ -51,7 +51,7 @@ export class TaskMeasurement {
    */
   countedAt(task: Task, at: Timestamp, journal?: JournalContent): EffortReport {
     return this.report(task, journal, {
-      lost: task.lostWindows.filter((window) => window.to.toMillis() <= at.toMillis()),
+      lost: task.lostWindows.filter((window) => window.endsBy(at)),
       until: at,
     });
   }

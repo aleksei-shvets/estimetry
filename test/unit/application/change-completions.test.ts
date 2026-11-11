@@ -21,6 +21,9 @@ import { FakeAuthorProvider, RecordingErrorReporter, SequentialIdGenerator } fro
 import { InMemoryProjectConfigFile, InMemoryProjectFiles, ListRegistry } from '../../support/in-memory-files.js';
 import { InMemoryEventJournal, InMemoryProjectRepository } from '../../support/in-memory-repositories.js';
 import { InMemoryCloseProposals } from '../../support/closing-fakes.js';
+import { ChangeArchives } from '../../../src/application/shared/change-archives.js';
+import { EventMetaSource } from '../../../src/application/shared/event-meta-source.js';
+import { ProgressLog } from '../../../src/application/hooks/progress-log.js';
 
 const START = '2026-10-26T18:57:00.000Z';
 const START_MS = Date.parse(START);
@@ -100,13 +103,10 @@ beforeEach(() => {
   proposals = new InMemoryCloseProposals();
   plans = new FlowProjectPlans(new InMemoryProjectConfigFile(files), new ListRegistry([openSpecFlow, noneFlow]), files, projects);
   completions = new ChangeCompletions(
-    plans,
-    files,
-    state,
-    journal,
+    new ChangeArchives(plans, files),
+    new ProgressLog(state, journal),
     { inProgress: () => inProgress },
-    new SequentialIdGenerator(),
-    new FakeAuthorProvider(),
+    new EventMetaSource({ now: () => { throw new Error('the clock is not read here'); } }, new SequentialIdGenerator(), new FakeAuthorProvider()),
     errors,
     proposals,
   );

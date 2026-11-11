@@ -26,6 +26,8 @@ import {
 } from '../../support/hook-fakes.js';
 import { ListRegistry } from '../../support/in-memory-files.js';
 import { InMemoryEventJournal, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
+import { CheckpointSnapshot } from '../../../src/application/hooks/checkpoint-snapshot.js';
+import { EventMetaSource } from '../../../src/application/shared/event-meta-source.js';
 
 const API = '/work/api';
 const day = (hhmm: string) => `2026-10-27T${hhmm}:00.000Z`;
@@ -85,7 +87,7 @@ beforeEach(() => {
     adapters: new ListRegistry([new FakeHookAdapter()]),
     locator: new FakeProjectLocator(),
     sessionTask: new SessionTask(bindings, status, journal, ids, authors),
-    checkpoints: new Checkpoints(state, journal, new FakeProjectPlans(), git, git, settings, errors, ids, authors),
+    checkpoints: new Checkpoints(state, journal, new CheckpointSnapshot(new FakeProjectPlans(), git, git), settings, errors, new EventMetaSource({ now: () => { throw new Error('the clock is not read here'); } }, ids, authors)),
     completions: { check: (task) => void checked.push(task.id) },
     proposals,
     planOf: async () => ({ of: () => ({ done: 51, unfinished: ['release'] }) }),

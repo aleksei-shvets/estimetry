@@ -58,6 +58,12 @@ import { ReopenTask, type TaskReopened } from './task/reopen-task.js';
 import type { TaskDetails } from './task/show-task.js';
 import { TaskCards } from './task/task-cards.js';
 import { TaskClosing } from './task/task-closing.js';
+import { CardBuilder } from './task/card-builder.js';
+import { ClosingFollowUp } from './task/closing-follow-up.js';
+import { ClosingRecords } from './task/closing-records.js';
+import { EstimateFile } from './task/estimate-file.js';
+import { RevisionRecords } from './task/revision-records.js';
+import { ChangeArchives } from './shared/change-archives.js';
 import { FindSimilarTasks, type SimilarTasksInput, type SimilarTasksView } from './task/find-similar-tasks.js';
 import { ShowCalibration, type CalibrationInput, type CalibrationView } from './task/show-calibration.js';
 
@@ -177,21 +183,21 @@ function coreServices(deps: EstimetryDependencies): CoreServices {
     errors: deps.errors,
   });
   const planSnapshots = new PlanSnapshots(deps.plans, deps.gitHead, deps.projects);
-  const taskCards = new TaskCards(deps.journal, measurement, deps.cards, deps.calibration, deps.calibrationSettings, deps.tasks, deps.errors, deps.authors);
-  const closing = new TaskClosing(
-    deps.journal,
-    new CodeVolumeService(deps.plans, deps.codeMeasurer),
-    planSnapshots,
-    deps.sessionBindings,
-    deps.proposals,
-    taskCards,
-    deps.clock,
-    deps.ids,
+  const meta = new EventMetaSource(deps.clock, deps.ids, deps.authors);
+  const taskCards = new TaskCards(
+    new CardBuilder(deps.journal, measurement, deps.tasks),
+    deps.cards,
+    deps.calibration,
+    deps.calibrationSettings,
+    deps.errors,
     deps.authors,
-    () => importLogs,
+  );
+  const closing = new TaskClosing(
+    new ClosingRecords(deps.journal, new CodeVolumeService(deps.plans, deps.codeMeasurer), planSnapshots, deps.sessionBindings, meta, () => importLogs),
+    new ClosingFollowUp(deps.journal, deps.sessionBindings, deps.proposals, taskCards, meta),
   );
   return {
-    meta: new EventMetaSource(deps.clock, deps.ids, deps.authors),
+    meta,
     currentProject,
     activeTask: new ResolveActiveTask(deps.tasks, currentProject),
     measurement,
@@ -230,21 +236,19 @@ function tasksGroup(deps: EstimetryDependencies, core: CoreServices): Estimetry[
 
 function estimatesGroup(deps: EstimetryDependencies, core: CoreServices): Estimetry['estimates'] {
   const { meta, currentProject, activeTask, planSnapshots, taskCards } = core;
-  const saveEstimate = new SaveEstimate(deps.tasks, activeTask, deps.estimates, deps.taskTypes, meta);
+  const estimateFile = new EstimateFile(deps.estimates, deps.taskTypes);
+  const revisionRecords = new RevisionRecords(deps.journal, planSnapshots, deps.proposals, meta);
+  const saveEstimate = new SaveEstimate(deps.tasks, activeTask, estimateFile, meta);
   const reviseEstimate = new ReviseEstimate(
     deps.tasks,
     activeTask,
-    deps.estimates,
-    deps.taskTypes,
-    deps.plans,
-    deps.install.files,
-    planSnapshots,
-    deps.journal,
-    deps.proposals,
+    estimateFile,
+    new ChangeArchives(deps.plans, deps.install.files),
+    revisionRecords,
     meta,
   );
   const findRevisionCandidates = new FindRevisionCandidates(activeTask, meta);
-  const repairRevision = new RepairRevision(activeTask, deps.journal, planSnapshots, meta);
+  const repairRevision = new RepairRevision(activeTask, revisionRecords);
   const findSimilar = new FindSimilarTasks(taskCards, currentProject, deps.authors, deps.taskTypes);
   const showCalibration = new ShowCalibration(taskCards, currentProject, deps.authors, deps.taskTypes, deps.calibrationSettings);
   return {

@@ -1,78 +1,31 @@
-import { buildCard, type Card } from '../../domain/card/card.js';
+import type { Card } from '../../domain/card/card.js';
 import { CardsTooNew } from '../../domain/card/card-errors.js';
 import { upgradeCardV1, type CardV1 } from '../../domain/card/card-v1.js';
 import { upgradeCardV2, type CardV2 } from '../../domain/card/card-v2.js';
 import { calibrate, type Calibration } from '../../domain/calibration/calibration.js';
-import type { EffortReport } from '../../domain/measurement/effort-report.js';
-import { Interval } from '../../domain/measurement/interval.js';
-import { IntervalSet } from '../../domain/measurement/interval-set.js';
-import { partFacts, type CompletionPoint, type PlanPoint } from '../../domain/progress/part-facts.js';
-import type { ProgressRecord } from '../../domain/progress/progress-records.js';
-import { Timestamp } from '../../domain/shared/timestamp.js';
 import { TaskId } from '../../domain/task/task-id.js';
-import type { TaskRepository } from '../../domain/task/task-repository.js';
 import type { Task } from '../../domain/task/task.js';
+import type { AuthorProvider } from '../ports/author-provider.js';
 import type { CalibrationSettings } from '../ports/calibration-settings.js';
 import type { CalibrationStore } from '../ports/calibration-store.js';
-import type { AuthorProvider } from '../ports/author-provider.js';
 import type { CardStore } from '../ports/card-store.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';
-import type { EventJournal } from '../ports/event-journal.js';
-import type { TaskMeasurement } from './task-measurement.js';
-import type { TaskUsage } from '../../domain/usage/task-usage.js';
+import type { CardBuilder } from './card-builder.js';
 
-/** Cards of closed tasks and the calibration derived from them: both are rebuilt from journals. */
+/** Stored cards of closed tasks and the calibration derived from them: both are rebuilt from journals. */
 export class TaskCards {
   constructor(
-    private readonly journal: Pick<EventJournal, 'readAll'>,
-    private readonly measurement: TaskMeasurement,
+    private readonly builder: CardBuilder,
     private readonly cards: CardStore,
     private readonly calibration: CalibrationStore,
     private readonly settings: CalibrationSettings,
-    private readonly tasks: Pick<TaskRepository, 'find'>,
     private readonly errors: ErrorReporter,
     private readonly authors: AuthorProvider,
   ) {}
 
   /** The card of a closed task, built from its journal alone. */
   build(task: Task): Card {
-    const content = this.journal.readAll(task.id);
-    const { activity, records } = content;
-    const report = this.measurement.measure(task, content);
-    const counted = this.measurement.counted(task, content);
-    const startedAt = task.requireStartedAt();
-    const closedAt = task.requireClosedAt();
-    const last = task.revisions.at(-1);
-    const numerator = (r: EffortReport) => (r.parallel.used && r.sequentialEquivalent !== undefined ? r.sequentialEquivalent : r.fact).minutes;
-    return buildCard({
-      task,
-      report,
-      counted,
-      partFacts: partFacts({
-        estimate: task.estimate,
-        startedAt,
-        closedAt,
-        points: planPoints(records),
-        completions: completions(records),
-        measured: counted.measured,
-        manual: task.manualTime,
-        manualRecordedAt: task.manualRecords.map((record) => record.recordedAt),
-        lost: IntervalSet.of(task.lostWindows.map((window) => Interval.of(window.from, window.to))),
-        ...(last === undefined ? {} : { revision: { id: last.id, at: last.at, exclusions: task.planExclusions } }),
-      }),
-      revisionFacts: task.revisions.map((revision) => {
-        const at = revision.at;
-        const countedAt = Math.round(this.measurement.countedAt(task, at, content).fact.minutes);
-        if (revision.spent !== 'exclude' || revision.lostFrom === undefined) {
-          return { countedAtMinutes: countedAt, lostMinutes: 0 };
-        }
-        const without = this.measurement.without(task, { from: revision.lostFrom, to: at }, content);
-        return { countedAtMinutes: countedAt, lostMinutes: Math.max(0, Math.round(numerator(report) - numerator(without))) };
-      }),
-      records,
-      hasActivity: activity.length > 0,
-      ...usageOf(this.measurement.usage(task, content)),
-    });
+    return this.builder.build(task);
   }
 
   /** Writes the card of a closed task, removes the card of any other. */
@@ -149,8 +102,7 @@ export class TaskCards {
   private upgrade(card: CardV1 | CardV2, write = true): Card | undefined {
     let rebuilt: Card | undefined;
     try {
-      const task = this.tasks.find(TaskId.parse(card.task.id));
-      rebuilt = task?.isClosed === true ? this.build(task) : undefined;
+      rebuilt = this.builder.rebuild(TaskId.parse(card.task.id));
     } catch (error) {
       this.errors.report(`rebuilding the card of ${card.task.id}`, error);
     }
@@ -173,36 +125,4 @@ export class TaskCards {
       return undefined;
     }
   }
-}
-
-function usageOf(usage: TaskUsage | undefined): { usage?: TaskUsage } {
-  return usage === undefined ? {} : { usage };
-}
-
-/** Snapshots of the plan by project: at the start, at every checkpoint and revision, at the closing. */
-function planPoints(records: readonly ProgressRecord[]): PlanPoint[] {
-  const points: PlanPoint[] = [];
-  for (const record of records) {
-    const at = Timestamp.parse(record.ts);
-    if (record.type === 'plan.started' || record.type === 'plan.closing' || record.type === 'plan.revised') {
-      const revision = record.type === 'plan.revised' ? { revision: record.data.revision } : {};
-      for (const project of record.data.projects) {
-        if (project.changes !== undefined) {
-          points.push({ at, project: project.project, changes: project.changes, ...revision });
-        }
-      }
-    } else if (record.type === 'checkpoint.recorded' && record.data.plan !== undefined && record.project !== undefined) {
-      points.push({ at, project: record.project, changes: record.data.plan });
-    }
-  }
-  return points;
-}
-
-/** Exact completions only: an approximate moment says nothing about when the work was done. */
-function completions(records: readonly ProgressRecord[]): CompletionPoint[] {
-  return records.flatMap((record) =>
-    record.type === 'change.completed' && !record.data.approximate
-      ? [{ at: Timestamp.parse(record.data.completedAt), project: record.data.project, change: record.data.change, directory: record.data.directory }]
-      : [],
-  );
 }

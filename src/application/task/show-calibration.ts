@@ -60,12 +60,12 @@ export class ShowCalibration {
     const own = normalized(cards, aliases).filter((card) => card.author === author);
     const mine = calibrate(own, { minTasks }).authors[author];
     const revise = input.revise === true;
+    const type = query.type?.value;
     const pick = <T extends RatioStats>(slices: RatioSlices<T> | undefined, empty: T): RatioSlices<T> => ({
       overall: slices?.overall ?? empty,
-      byType: query.type === undefined ? {} : { [query.type]: slices?.byType[query.type] ?? empty },
+      byType: type === undefined ? {} : { [type]: slices?.byType[type] ?? empty },
       byStack: Object.fromEntries(query.stack.map((label) => [label, slices?.byStack[label] ?? empty])),
     });
-    const type = query.type;
     return {
       schemaVersion: CALIBRATION_VIEW_SCHEMA_VERSION,
       query: { type: type ?? null, stack: query.stack, revise },

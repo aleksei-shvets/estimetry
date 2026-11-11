@@ -2,11 +2,9 @@ import type { PartKind } from '../../domain/estimate/part-kind.js';
 import type { ThreePointData } from '../../domain/estimate/three-point-estimate.js';
 import type { TaskId } from '../../domain/task/task-id.js';
 import type { TaskRepository } from '../../domain/task/task-repository.js';
-import { TaskType } from '../../domain/task/task-type.js';
-import type { EstimateReader } from '../ports/estimate-reader.js';
-import type { TaskTypeCatalog } from '../ports/task-type-catalog.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
 import { retryOnConflict } from '../shared/retry.js';
+import type { EstimateFile } from './estimate-file.js';
 import type { ResolveActiveTask } from './resolve-active-task.js';
 import { toTaskView, type TaskView } from './task-view.js';
 
@@ -31,15 +29,13 @@ export class SaveEstimate {
   constructor(
     private readonly tasks: TaskRepository,
     private readonly activeTask: ResolveActiveTask,
-    private readonly reader: EstimateReader,
-    private readonly taskTypes: TaskTypeCatalog,
+    private readonly estimates: EstimateFile,
     private readonly meta: EventMetaSource,
   ) {}
 
   execute(input: SaveEstimateInput): EstimateSaved {
     // A broken file fails before any task is looked up.
-    const estimate = this.reader.read(input.file);
-    const type = estimate.type === undefined ? undefined : TaskType.of(estimate.type, this.taskTypes.allowed());
+    const { estimate, type } = this.estimates.read(input.file);
     return retryOnConflict(() => {
       const task = this.activeTask.toEstimate(input.task);
       task.saveEstimate(estimate, type, this.meta.next());

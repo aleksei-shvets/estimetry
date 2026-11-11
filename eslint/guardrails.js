@@ -33,13 +33,13 @@ export const DEBT = {
     'src/domain/card/card.ts': 421,
     'src/domain/measurement/effort-calculator.ts': 935,
     'src/domain/progress/progress-records.ts': 440,
-    'src/domain/task/task.ts': 782,
+    'src/domain/task/task.ts': 781,
     'src/interface/cli/presenters/text-presenter.ts': 594,
   },
   maxFunctionLines: {
     'src/application/task/show-status.ts': 93,
     'src/bootstrap/container.ts': 150,
-    'src/domain/card/card.ts': 156,
+    'src/domain/card/card.ts': 155,
     'src/domain/measurement/effort-calculator.ts': 158,
     'src/domain/progress/part-facts.ts': 136,
     'src/domain/progress/progress-records.ts': 99,
@@ -47,13 +47,7 @@ export const DEBT = {
     'src/interface/cli/commands/close-commands.ts': 108,
     'src/interface/cli/commands/estimate-command.ts': 82,
   },
-  maxParams: {
-    'src/application/hooks/change-completions.ts': 9,
-    'src/application/hooks/checkpoints.ts': 9,
-    'src/application/task/revise-estimate.ts': 10,
-    'src/application/task/task-cards.ts': 8,
-    'src/application/task/task-closing.ts': 10,
-  },
+  maxParams: {},
 };
 
 const MAX_LINES = 400;

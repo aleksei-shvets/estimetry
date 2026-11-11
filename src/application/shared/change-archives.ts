@@ -1,0 +1,25 @@
+import type { ArchivedChange } from '../contracts/flow.js';
+import type { ProjectFiles } from '../ports/project-files.js';
+import type { ProjectPlanReading, ProjectPlans } from '../ports/project-plans.js';
+import { nearOf, type WorkingCopy } from './working-copy.js';
+
+/**
+ * Archives of the flow with the time each directory changed: the moment a
+ * change was archived. The time is read only when asked for, one stat per
+ * directory, so a hook stats only the directories it looks at.
+ */
+export class ChangeArchives {
+  constructor(
+    private readonly plans: Pick<ProjectPlans, 'archives'>,
+    private readonly files: Pick<ProjectFiles, 'changedAt'>,
+  ) {}
+
+  read(projects: readonly string[], where: WorkingCopy = {}): ProjectPlanReading[] {
+    return this.plans.archives(projects, nearOf(where));
+  }
+
+  /** When the directory last changed (ms); undefined when it is gone. */
+  changedAt(dir: ArchivedChange): number | undefined {
+    return this.files.changedAt(dir.path);
+  }
+}

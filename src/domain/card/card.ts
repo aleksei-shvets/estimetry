@@ -10,6 +10,7 @@ import { InvalidValue } from '../shared/domain-error.js';
 import { Timestamp } from '../shared/timestamp.js';
 import type { TaskOutcome } from '../task/task-events.js';
 import type { Task } from '../task/task.js';
+import type { RevisionFact } from './revision-facts.js';
 import type { TokenCounts } from '../progress/session-log.js';
 import { usageSummary, type TaskUsage } from '../usage/task-usage.js';
 
@@ -192,7 +193,7 @@ export interface CardInput {
   /** Fact by parts of the current estimate. */
   readonly partFacts: PartFacts;
   /** Per revision, in their order: counted fact at its moment and the work of its window. */
-  readonly revisionFacts?: readonly { readonly countedAtMinutes: number; readonly lostMinutes: number }[];
+  readonly revisionFacts?: readonly RevisionFact[];
   readonly records: readonly ProgressRecord[];
   /** Whether the journal has activity from hooks; without it the fact is manual only. */
   readonly hasActivity: boolean;
@@ -288,8 +289,7 @@ export function buildCard(input: CardInput): Card {
       typeAfter: (revision.typeAfter ?? task.type).value,
       baseLikelyBeforeHours: revision.baseLikelyBefore ?? null,
       baseLikelyAfterHours: revision.baseLikelyAfter,
-      countedAtMinutes: input.revisionFacts?.[i]?.countedAtMinutes ?? 0,
-      lostMinutes: input.revisionFacts?.[i]?.lostMinutes ?? 0,
+      ...(input.revisionFacts?.[i] ?? { countedAtMinutes: 0, lostMinutes: 0 }),
     })),
     fact: {
       ...factOf(report),

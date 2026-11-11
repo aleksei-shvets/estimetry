@@ -1,4 +1,6 @@
+import { LostWindow } from '../../domain/estimate/lost-window.js';
 import type { Timestamp } from '../../domain/shared/timestamp.js';
+import { revisionCandidates } from '../../domain/task/revision-candidates.js';
 import type { Task } from '../../domain/task/task.js';
 import type { TaskId } from '../../domain/task/task-id.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
@@ -34,26 +36,20 @@ export class FindRevisionCandidates {
 
 /** Extra work and untimed manual time recorded between `from` and `now`; nothing without a window. */
 export function revisionCandidatesOf(task: Task, from: Timestamp | undefined, now: Timestamp): RevisionCandidates {
-  if (from === undefined) {
+  // A window that starts after now holds nothing yet; the revision itself rejects it.
+  const window = from === undefined ? undefined : LostWindow.between(from, now);
+  if (window === undefined) {
     return { extras: [], untimedManual: [] };
   }
-  const inWindow = (at: Timestamp | undefined) => at !== undefined && at.toMillis() >= from.toMillis() && at.toMillis() <= now.toMillis();
+  const found = revisionCandidates(task, window);
   return {
-    extras: task.extraRecords.flatMap(({ id, at, extra }) =>
-      id === undefined || at === undefined || !inWindow(at)
-        ? []
-        : [
-            {
-              id,
-              at: at.toISOString(),
-              category: extra.category,
-              description: extra.description,
-              minutes: extra.time === undefined ? null : Math.round(extra.time.minutes),
-            },
-          ],
-    ),
-    untimedManual: task.manualRecords
-      .filter((record) => record.manual.at === undefined && inWindow(record.recordedAt))
-      .map((record) => ({ description: record.manual.description, minutes: Math.round(record.manual.duration.minutes) })),
+    extras: found.extras.map(({ id, at, extra }) => ({
+      id,
+      at: at.toISOString(),
+      category: extra.category,
+      description: extra.description,
+      minutes: extra.time === undefined ? null : Math.round(extra.time.minutes),
+    })),
+    untimedManual: found.untimedManual.map((manual) => ({ description: manual.description, minutes: Math.round(manual.duration.minutes) })),
   };
 }
