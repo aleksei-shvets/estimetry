@@ -5,11 +5,11 @@ import { upgradeCardV2, type CardV2 } from '../../domain/card/card-v2.js';
 import { calibrate, type Calibration } from '../../domain/calibration/calibration.js';
 import { TaskId } from '../../domain/task/task-id.js';
 import type { Task } from '../../domain/task/task.js';
-import type { AuthorProvider } from '../ports/author-provider.js';
 import type { CalibrationSettings } from '../ports/calibration-settings.js';
 import type { CalibrationStore } from '../ports/calibration-store.js';
 import type { CardStore } from '../ports/card-store.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';
+import type { AuthorAliases } from './author-aliases.js';
 import type { CardBuilder } from './card-builder.js';
 
 /** Stored cards of closed tasks and the calibration derived from them: both are rebuilt from journals. */
@@ -20,13 +20,8 @@ export class TaskCards {
     private readonly calibration: CalibrationStore,
     private readonly settings: CalibrationSettings,
     private readonly errors: ErrorReporter,
-    private readonly authors: AuthorProvider,
+    private readonly aliases: AuthorAliases,
   ) {}
-
-  /** The card of a closed task, built from its journal alone. */
-  build(task: Task): Card {
-    return this.builder.build(task);
-  }
 
   /** Writes the card of a closed task, removes the card of any other. */
   refresh(task: Task): Card | undefined {
@@ -34,7 +29,7 @@ export class TaskCards {
       this.cards.remove(task.id.toString());
       return undefined;
     }
-    const card = this.build(task);
+    const card = this.builder.build(task);
     this.cards.write(card);
     return card;
   }
@@ -46,7 +41,7 @@ export class TaskCards {
       return stored.card;
     }
     // A newer card stays as it is: this binary shows its own reading of the journal.
-    return stored?.schema === 'newer' ? this.build(task) : (this.refresh(task) ?? this.build(task));
+    return stored?.schema === 'newer' ? this.builder.build(task) : (this.refresh(task) ?? this.builder.build(task));
   }
 
   /**
@@ -66,7 +61,7 @@ export class TaskCards {
       // A card that cannot be read even by its fields is left out, as a broken file is.
       return calibrate(
         cards.filter((card): card is Card => card !== undefined),
-        { minTasks: this.settings.minTasks(), aliases: this.aliases() },
+        { minTasks: this.settings.minTasks(), aliases: this.aliases.toCurrent() },
       );
     });
   }
@@ -90,12 +85,6 @@ export class TaskCards {
       }
     }
     return { cards, skipped };
-  }
-
-  /** The author's earlier ids, each to the current one. */
-  aliases(): ReadonlyMap<string, string> {
-    const author = this.authors.current().id;
-    return new Map(this.settings.authorAliases().map((alias) => [alias, author]));
   }
 
   /** A card of an older schema again from the journal of its task; by its fields when the journal is not here. */

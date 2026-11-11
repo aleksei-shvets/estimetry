@@ -1,6 +1,5 @@
 import type { InitReport } from '../../../../application/project/init-project.js';
 import type { StatusView } from '../../../../application/task/show-status.js';
-import type { TaskView } from '../../../../application/task/task-view.js';
 import { usageRows } from './closing-text.js';
 import { formatMinutes, localTime, percent, table } from './format.js';
 
@@ -139,9 +138,4 @@ export function initText(report: InitReport): string {
     'Next: ask the agent for an estimate (/emt-estimate) or create a task with `emt task new "<title>"`.',
   ];
   return lines.filter((line) => line !== '').join('\n');
-}
-
-/** Warning shown when work starts without an estimate. */
-export function unestimatedWarning(task: TaskView): string {
-  return `warning: ${task.id} has no estimate, so it will not be used for calibration`;
 }

@@ -2,9 +2,7 @@ import type { Command } from 'commander';
 import { InvalidValue } from '../../../domain/shared/domain-error.js';
 import { groupCommand } from '../help-command.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
-import { formatMinutes } from '../presenters/text/format.js';
 import { parseTaskOption, parseTime } from '../parse-input.js';
-import type { RevisionCandidates } from '../../../application/task/find-revision-candidates.js';
 
 interface ReviseOptions {
   readonly reason?: string;
@@ -62,9 +60,9 @@ function registerRevise(estimate: Command, ctx: CliContext): void {
 async function revise(ctx: CliContext, file: string | undefined, options: ReviseOptions): Promise<void> {
   const app = await ctx.app();
   const task = { ...parseTaskOption(options.task), near: ctx.cwd };
+  const presenter = presenterFor(options);
   if (options.repair) {
-    const repaired = app.estimates.repairRevision(task);
-    ctx.out.print(options.json ? JSON.stringify(repaired, null, 2) : `Wrote the plan snapshot of revision ${repaired.revision} of ${repaired.task.id}.`);
+    ctx.out.print(presenter.revisionRepaired(app.estimates.repairRevision(task)));
     return;
   }
   if (file === undefined || options.reason === undefined) {
@@ -72,15 +70,12 @@ async function revise(ctx: CliContext, file: string | undefined, options: Revise
   }
   const lostFrom = options.lostFrom === undefined ? undefined : parseTime(options.lostFrom);
   // What --covers may name and what stays counted, before anything is written.
-  printCandidates(
-    ctx,
-    app.estimates.revisionCandidates({
-      ...task,
-      ...(lostFrom === undefined ? {} : { lostFrom }),
-      ...(options.spent === undefined ? {} : { spent: options.spent }),
-    }),
-    options.covers ?? [],
-  );
+  const candidates = app.estimates.revisionCandidates({
+    ...task,
+    ...(lostFrom === undefined ? {} : { lostFrom }),
+    ...(options.spent === undefined ? {} : { spent: options.spent }),
+  });
+  presenter.notices.revisionCandidates(candidates, options.covers ?? []).forEach((line) => ctx.out.error(line));
   const revised = app.estimates.revise({
     ...task,
     file,
@@ -91,19 +86,5 @@ async function revise(ctx: CliContext, file: string | undefined, options: Revise
     ...(options.covers === undefined ? {} : { covers: options.covers }),
     ...(options.at === undefined ? {} : { at: parseTime(options.at) }),
   });
-  ctx.out.print(presenterFor(options).estimateRevised(revised));
-}
-
-/** Extra work the revision covers or leaves counted, and untimed manual time that stays. */
-function printCandidates(ctx: CliContext, candidates: RevisionCandidates, covers: readonly string[]): void {
-  for (const extra of candidates.extras) {
-    const covered = covers.includes(extra.id);
-    ctx.out.error(
-      `${covered ? 'covered by this revision' : 'note: not covered (add --covers ' + extra.id + ' if it is the same loss)'}: ` +
-        `extra ${extra.category}${extra.minutes === null ? '' : ` ${formatMinutes(extra.minutes)}`} "${extra.description}" [${extra.id}]`,
-    );
-  }
-  for (const manual of candidates.untimedManual) {
-    ctx.out.error(`note: manual time without a moment stays counted: ${formatMinutes(manual.minutes)} "${manual.description}"`);
-  }
+  ctx.out.print(presenter.estimateRevised(revised));
 }

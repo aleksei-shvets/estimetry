@@ -1,7 +1,6 @@
 import type { Command } from 'commander';
 import { presenterFor, type CliContext } from '../cli-context.js';
 import { parseDuration, parseTaskOption, parseTime } from '../parse-input.js';
-import { formatMinutes } from '../presenters/text/format.js';
 
 interface ManualOptions {
   readonly at?: string;
@@ -32,12 +31,8 @@ export function registerManualCommand(program: Command, ctx: CliContext): void {
         ...(options.part === undefined ? {} : { part: options.part }),
         ...parseTaskOption(options.task),
       });
-      if (recorded.overlapsMeasured) {
-        ctx.out.error(
-          `warning: the last ${formatMinutes(recorded.minutes)} of ${recorded.task.id} are already partly measured; ` +
-            'the record was added on top of them. If it is the same time, record it with --at so it merges instead',
-        );
-      }
-      ctx.out.print(presenterFor(options).manualTimeRecorded(recorded));
+      const presenter = presenterFor(options);
+      presenter.notices.manualTimeRecorded(recorded).forEach((line) => ctx.out.error(line));
+      ctx.out.print(presenter.manualTimeRecorded(recorded));
     });
 }

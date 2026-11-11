@@ -1,5 +1,6 @@
 import { DomainError } from '../shared/domain-error.js';
 import type { EventEnvelope } from '../shared/event-envelope.js';
+import { Timestamp } from '../shared/timestamp.js';
 
 /*
  * Normalized activity events: the contract between AI-tool adapters and the
@@ -235,4 +236,9 @@ function oneOf(record: Json, key: string, allowed: readonly string[], required: 
 
 function show(value: unknown): string {
   return value === undefined ? 'nothing' : JSON.stringify(value);
+}
+
+/** Activity up to a moment, the moment included: what had happened by a closing or a revision. */
+export function activityUntil(events: readonly ActivityEvent[], moment: Timestamp): readonly ActivityEvent[] {
+  return events.filter((event) => Timestamp.parse(event.ts).toMillis() <= moment.toMillis());
 }

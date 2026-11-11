@@ -1,12 +1,13 @@
 import { measureEffort, sessionSpans, type EffortInput } from '../../domain/measurement/effort-calculator.js';
-import type { ActivityEvent } from '../../domain/measurement/activity-events.js';
+import { activityUntil, type ActivityEvent } from '../../domain/measurement/activity-events.js';
 import type { EffortReport } from '../../domain/measurement/effort-report.js';
 import { Interval } from '../../domain/measurement/interval.js';
 import { IntervalSet } from '../../domain/measurement/interval-set.js';
+import { manualKnownBy } from '../../domain/measurement/manual-time.js';
 import type { ProgressRecord } from '../../domain/progress/progress-records.js';
 import { logBoundaries, sessionLogs, type LogSession, type SessionLog } from '../../domain/progress/session-log.js';
 import type { LogBoundaries } from '../../domain/measurement/log-boundaries.js';
-import { Timestamp } from '../../domain/shared/timestamp.js';
+import type { Timestamp } from '../../domain/shared/timestamp.js';
 import type { Task } from '../../domain/task/task.js';
 import { taskUsage, type TaskUsage } from '../../domain/usage/task-usage.js';
 import type { Clock } from '../ports/clock.js';
@@ -111,22 +112,10 @@ export class TaskMeasurement {
     const closedAt = options.until ?? task.closedAt;
     const now = closedAt ?? this.clock.now();
     const startedAt = task.startedAt;
-    const all = content.activity;
-    const until = options.until;
-    const manual =
-      until === undefined
-        ? task.manualTime
-        : task.manualRecords
-            .filter(({ manual: record, recordedAt }) => {
-              return (
-                (recordedAt === undefined || recordedAt.toMillis() <= until.toMillis()) &&
-                (record.at === undefined || record.at.toMillis() <= until.toMillis())
-              );
-            })
-            .map(({ manual: record }) => record);
+    const manual = options.until === undefined ? task.manualTime : manualKnownBy(task.manualRecords, options.until);
     const lost = options.lost ?? [];
     return {
-      activity: closedAt === undefined ? all : all.filter((event) => Timestamp.parse(event.ts).toMillis() <= closedAt.toMillis()),
+      activity: closedAt === undefined ? content.activity : activityUntil(content.activity, closedAt),
       startedAt: startedAt ?? now,
       manual,
       parallel: task.parallelMode,

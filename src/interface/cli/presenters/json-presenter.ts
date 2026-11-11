@@ -1,9 +1,11 @@
 import type { Presenter } from './presenter.js';
+import { textNotices } from './text/notices-text.js';
 
 const json = (value: unknown): string => JSON.stringify(value, null, 2);
 
 /** One JSON document per command on stdout, for scripts and agents. */
 export const jsonPresenter: Presenter = {
+  notices: textNotices,
   taskCreated: json,
   taskList: (tasks) => json(tasks),
   taskDetails: json,
@@ -11,6 +13,7 @@ export const jsonPresenter: Presenter = {
   taskAttached: json,
   estimateSaved: json,
   estimateRevised: json,
+  revisionRepaired: json,
   manualTimeRecorded: json,
   extraRecorded: json,
   parallelModeChanged: json,
