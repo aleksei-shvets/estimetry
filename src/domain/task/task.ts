@@ -1,101 +1,53 @@
-import { Estimate } from '../estimate/estimate.js';
+import type { Estimate } from '../estimate/estimate.js';
 import type { EstimateRevision } from '../estimate/estimate-revision.js';
 import type { LostWindow } from '../estimate/lost-window.js';
 import { exclusionsOf, type PlanExclusions } from '../progress/plan-exclusions.js';
 import { Extra } from '../measurement/extra.js';
-import { ManualTime } from '../measurement/manual-time.js';
+import type { ManualTime } from '../measurement/manual-time.js';
 import type { ParallelModeChange, ParallelPeriod } from '../measurement/parallel-mode.js';
 import type { Author } from '../shared/author.js';
 import { InvalidValue } from '../shared/domain-error.js';
 import type { EventMeta } from '../shared/event-envelope.js';
-import { Timestamp } from '../shared/timestamp.js';
-import { ProjectId } from '../project/project-id.js';
-import {
-  EstimateLocked,
-  InvalidTransition,
-  ParallelModeConflict,
-  TaskClosed,
-  TaskNotClosed,
-  TaskNotStarted,
-  UnknownEstimatePart,
-} from './task-errors.js';
-import {
-  taskEvent,
-  type RetroReason,
-  type TaskAttached,
-  type TaskClosed as TaskClosedEvent,
-  type TaskCreated,
-  type TaskEstimateRevised,
-  type TaskReopened,
-  type TaskRetroRecorded,
-  type TaskEstimated,
-  type TaskEvent,
-  type TaskExtraRecorded,
-  type TaskManualTimeRecorded,
-  type TaskParallelModeDisabled,
-  type TaskParallelModeEnabled,
-  type TaskStarted,
-} from './task-events.js';
+import type { Timestamp } from '../shared/timestamp.js';
+import type { ProjectId } from '../project/project-id.js';
+import { EstimateLocked, InvalidTransition, TaskClosed, TaskNotClosed, TaskNotStarted } from './task-errors.js';
+import { taskEvent, type TaskCreated, type TaskEvent } from './task-events.js';
+import { applyEvent } from './task-apply.js';
+import { TaskEventLog } from './task-event-log.js';
+import { createdData, type NewTask } from './task-creation.js';
+import { retroData } from './task-retro.js';
+import { checkManualTime, checkParallelSwitch, isParallel } from './task-work-records.js';
 import type { TaskId } from './task-id.js';
 import { STARTABLE_STATUSES, type TaskStatus } from './task-status.js';
-import { TaskType } from './task-type.js';
+import type { TaskType } from './task-type.js';
 import { revisionData, snapshotOf, stateFromSnapshot, type TaskSnapshot } from './task-snapshot.js';
-import { initialState, later, type ExtraRecord, type ManualRecord, type TaskClosure, type TaskRetro, type TaskRevision, type TaskState } from './task-state.js';
-import { applyClosed, applyReopened, checkClosingMoment, closedData, endParallelMode, lastReopening, type ClosingInput } from './task-closures.js';
-import { applyRevision, lostWindowFloor, lostWindowsOf, revisedData } from './task-revisions.js';
+import { initialState, type ExtraRecord, type ManualRecord, type TaskClosure, type TaskRetro, type TaskRevision, type TaskState } from './task-state.js';
+import { checkClosingMoment, closedData, lastReopening, type ClosingInput } from './task-closures.js';
+import { lostWindowFloor, lostWindowsOf, revisedData } from './task-revisions.js';
 
 export { TASK_SNAPSHOT_SCHEMA_VERSION, type TaskSnapshot } from './task-snapshot.js';
 export type { ExtraRecord, ManualRecord, TaskClosure, TaskRetro, TaskRevision } from './task-state.js';
 
-const MAX_TITLE_LENGTH = 200;
+/** The event of a task with the given type. */
+type EventOf<T extends TaskEvent['type']> = Extract<TaskEvent, { type: T }>;
 
 /**
  * Aggregate root of the task lifecycle. Every state change goes through
  * `apply`, so a task rebuilt from its journal equals the one restored from a
- * snapshot. New events wait in `pending` until the repository pulls them.
+ * snapshot. New events wait in the event log until the repository pulls them.
  */
 export class Task {
-  private pending: TaskEvent[] = [];
-
   private constructor(
     private state: TaskState,
-    private appliedCount: number,
-    private lastId: string,
+    private readonly log: TaskEventLog,
     /** Version the task had when it was loaded; the repository checks it on save. */
     readonly loadedVersion: number,
   ) {}
 
-  static create(
-    input: { id: TaskId; title: string; type: TaskType; ticket?: string; project: ProjectId; spawnedFrom?: TaskId },
-    meta: EventMeta,
-  ): Task {
-    const title = input.title.trim();
-    if (title === '') {
-      throw new InvalidValue('task title must not be empty');
-    }
-    if (title.length > MAX_TITLE_LENGTH) {
-      throw new InvalidValue(`task title must be at most ${MAX_TITLE_LENGTH} characters`);
-    }
-    const ticket = input.ticket?.trim();
-    if (ticket === '') {
-      throw new InvalidValue('ticket key must not be empty');
-    }
-    const event = taskEvent<TaskCreated>(
-      'task.created',
-      input.id,
-      input.project.value,
-      {
-        title,
-        taskType: input.type.value,
-        ...(ticket === undefined ? {} : { ticket }),
-        ...(input.spawnedFrom === undefined ? {} : { spawnedFrom: input.spawnedFrom.toString() }),
-      },
-      meta,
-    );
-    const task = new Task(initialState(event), 0, '', 0);
-    task.appliedCount = 1;
-    task.lastId = event.id;
-    task.pending.push(event);
+  static create(input: NewTask, meta: EventMeta): Task {
+    const event = taskEvent<TaskCreated>('task.created', input.id, input.project.value, createdData(input), meta);
+    const task = new Task(initialState(event), new TaskEventLog(1, event.id), 0);
+    task.log.hold(event);
     return task;
   }
 
@@ -104,7 +56,7 @@ export class Task {
     if (first?.type !== 'task.created') {
       throw new InvalidValue('task journal must start with task.created');
     }
-    const task = new Task(initialState(first), 1, first.id, events.length);
+    const task = new Task(initialState(first), new TaskEventLog(1, first.id), events.length);
     for (const event of rest) {
       task.apply(event);
     }
@@ -112,7 +64,7 @@ export class Task {
   }
 
   static rehydrate(snapshot: TaskSnapshot): Task {
-    return new Task(stateFromSnapshot(snapshot), snapshot.version, snapshot.lastEventId, snapshot.version);
+    return new Task(stateFromSnapshot(snapshot), new TaskEventLog(snapshot.version, snapshot.lastEventId), snapshot.version);
   }
 
   get id(): TaskId {
@@ -149,7 +101,7 @@ export class Task {
   }
 
   get version(): number {
-    return this.appliedCount;
+    return this.log.count;
   }
 
   get title(): string {
@@ -286,7 +238,7 @@ export class Task {
   }
 
   get isParallel(): boolean {
-    return this.state.parallelMode.at(-1)?.disabledAt === undefined && this.state.parallelMode.length > 0;
+    return isParallel(this.state);
   }
 
   isStartable(): boolean {
@@ -306,15 +258,7 @@ export class Task {
     if (at !== undefined && at.toMillis() > meta.at.toMillis()) {
       throw new InvalidValue(`start time must not be in the future (${at.toISOString()})`);
     }
-    this.record(
-      taskEvent<TaskStarted>(
-        'task.started',
-        this.state.id,
-        project.value,
-        { estimated: this.state.estimated, ...(at === undefined ? {} : { at: at.toISOString() }) },
-        meta,
-      ),
-    );
+    this.emit('task.started', { estimated: this.state.estimated, ...(at === undefined ? {} : { at: at.toISOString() }) }, meta, project);
   }
 
   /**
@@ -327,81 +271,29 @@ export class Task {
     if (!this.isStartable()) {
       throw new EstimateLocked(this.state.id.toString(), this.state.status);
     }
-    this.record(
-      taskEvent<TaskEstimated>(
-        'task.estimated',
-        this.state.id,
-        this.homeProject.value,
-        { estimate: estimate.toData(), ...(type === undefined ? {} : { taskType: type.value }) },
-        meta,
-      ),
-    );
+    this.emit('task.estimated', { estimate: estimate.toData(), ...(type === undefined ? {} : { taskType: type.value }) }, meta);
   }
 
   recordManualTime(manual: ManualTime, meta: EventMeta): void {
-    const startedAt = this.requireInProgress();
-    if (manual.part !== undefined && !(this.estimate?.hasPart(manual.part) ?? false)) {
-      throw new UnknownEstimatePart([manual.part], this.estimate?.partIds ?? []);
-    }
-    if (manual.at !== undefined) {
-      if (manual.at.toMillis() > meta.at.toMillis()) {
-        throw new InvalidValue(`manual time cannot end in the future (${manual.at.toISOString()})`);
-      }
-      // Time before the start is not the task's, so a record must fit after it.
-      const begins = Timestamp.fromMillis(manual.at.toMillis() - manual.duration.millis);
-      if (begins.toMillis() < startedAt.toMillis()) {
-        throw new InvalidValue(
-          `manual time must lie after the task started (${startedAt.toISOString()}), but ${manual.duration.minutes}m ending ${manual.at.toISOString()} starts at ${begins.toISOString()}`,
-        );
-      }
-    }
-    this.record(
-      taskEvent<TaskManualTimeRecorded>(
-        'task.manual-time-recorded',
-        this.state.id,
-        this.homeProject.value,
-        manual.toData(),
-        meta,
-      ),
-    );
+    checkManualTime(this.estimate, manual, this.requireInProgress(), meta.at);
+    this.emit('task.manual-time-recorded', manual.toData(), meta);
   }
 
   recordExtra(extra: Extra, meta: EventMeta): void {
     this.requireInProgress();
-    this.record(
-      taskEvent<TaskExtraRecorded>('task.extra-recorded', this.state.id, this.homeProject.value, extra.toData(), meta),
-    );
+    this.emit('task.extra-recorded', extra.toData(), meta);
   }
 
   enableParallelMode(change: ParallelModeChange, meta: EventMeta): void {
     this.requireInProgress();
-    if (this.isParallel) {
-      throw new ParallelModeConflict(this.state.id.toString(), true);
-    }
-    const known = this.state.estimate?.parts.map((part) => part.id) ?? [];
-    const unknown = change.parts.filter((part) => !known.includes(part));
-    if (unknown.length > 0) {
-      throw new UnknownEstimatePart(unknown, known);
-    }
-    this.record(
-      taskEvent<TaskParallelModeEnabled>(
-        'task.parallel-mode-enabled',
-        this.state.id,
-        this.homeProject.value,
-        change.toData(),
-        meta,
-      ),
-    );
+    checkParallelSwitch(this.state, true, change);
+    this.emit('task.parallel-mode-enabled', change.toData(), meta);
   }
 
   disableParallelMode(meta: EventMeta): void {
     this.requireInProgress();
-    if (!this.isParallel) {
-      throw new ParallelModeConflict(this.state.id.toString(), false);
-    }
-    this.record(
-      taskEvent<TaskParallelModeDisabled>('task.parallel-mode-disabled', this.state.id, this.homeProject.value, {}, meta),
-    );
+    checkParallelSwitch(this.state, false);
+    this.emit('task.parallel-mode-disabled', {}, meta);
   }
 
   /** Connects the task to another project. Returns false if it was already connected. */
@@ -410,7 +302,7 @@ export class Task {
     if (this.belongsTo(project)) {
       return false;
     }
-    this.record(taskEvent<TaskAttached>('task.attached', this.state.id, project.value, {}, meta));
+    this.emit('task.attached', {}, meta, project);
     return true;
   }
 
@@ -419,22 +311,10 @@ export class Task {
     this.requireInProgress();
   }
 
-  /**
-   * Ends the work on the task at `at`. It may be backdated, but not before the
-   * start nor before anything the task already knows of: a parallel period or a
-   * record after the end would contradict it.
-   */
+  /** Ends the work on the task at `at`; the moment is checked by `checkClosingMoment`. */
   close(input: ClosingInput, meta: EventMeta): void {
-    this.checkClosingMoment(input.at, meta);
-    this.recordClosed(input, meta);
-  }
-
-  private checkClosingMoment(at: Timestamp, meta: EventMeta): void {
-    checkClosingMoment(this.state, this.requireInProgress(), at, meta.at);
-  }
-
-  private recordClosed(input: ClosingInput, meta: EventMeta): void {
-    this.record(taskEvent<TaskClosedEvent>('task.closed', this.state.id, this.homeProject.value, closedData(input), meta));
+    checkClosingMoment(this.state, this.requireInProgress(), input.at, meta.at);
+    this.emit('task.closed', closedData(input), meta);
   }
 
   /**
@@ -447,93 +327,52 @@ export class Task {
   ): void {
     // The moment is checked before the extra work is recorded: that record is part of this closing, not before it.
     const first = meta.next();
-    this.checkClosingMoment(input.at, first);
+    checkClosingMoment(this.state, this.requireInProgress(), input.at, first.at);
     const spawned = input.spawned.toString();
     const recorded = this.state.extras.some(({ extra }) => extra.accounting === 'renegotiated' && extra.toData().spawned === spawned);
     if (!recorded) {
       this.recordExtra(Extra.renegotiated({ category: input.category, description: input.description, spawned }), first);
     }
-    this.recordClosed({ at: input.at, outcome: 'renegotiated', spawned: input.spawned }, meta.next());
+    this.emit('task.closed', closedData({ at: input.at, outcome: 'renegotiated', spawned: input.spawned }), meta.next());
   }
 
   reopen(meta: EventMeta): void {
     if (this.state.status !== 'closed') {
       throw new InvalidTransition(this.state.id.toString(), this.state.status, 'reopen');
     }
-    this.record(taskEvent<TaskReopened>('task.reopened', this.state.id, this.homeProject.value, {}, meta));
+    this.emit('task.reopened', {}, meta);
   }
 
-  /**
-   * The retro of a closed task: at least one reason and one lesson. A reason
-   * may start with `<part id>:`; the prefix counts only when it is a part of
-   * the estimate, so a colon in plain text stays text.
-   */
+  /** The retro of a closed task; reasons and the lesson are checked by `retroData`. */
   recordRetro(reasons: readonly string[], lesson: string, meta: EventMeta): void {
     if (this.state.status !== 'closed') {
       throw new TaskNotClosed(this.state.id.toString(), this.state.status);
     }
-    const parsed = reasons.map((reason) => this.retroReason(reason)).filter((reason) => reason.text !== '');
-    if (parsed.length === 0) {
-      throw new InvalidValue('a retro needs at least one reason');
-    }
-    const trimmed = lesson.trim();
-    if (trimmed === '') {
-      throw new InvalidValue('a retro needs one lesson for the future');
-    }
-    this.record(
-      taskEvent<TaskRetroRecorded>(
-        'task.retro-recorded',
-        this.state.id,
-        this.homeProject.value,
-        { reasons: parsed, lesson: trimmed },
-        meta,
-      ),
-    );
+    this.emit('task.retro-recorded', retroData(this.estimate, reasons, lesson), meta);
   }
 
-  /**
-   * A new estimate of a task in progress (estimate-revision spec). The moment
-   * may be backdated, but not before anything that refers to the old plan.
-   */
+  /** A new estimate of a task in progress (estimate-revision spec), checked by `revisedData`. */
   reviseEstimate(revision: EstimateRevision, meta: EventMeta): void {
     const startedAt = this.requireInProgress();
     if (this.isParallel) {
       throw new InvalidValue('parallel mode refers to parts of the current estimate; switch it off first with `emt parallel off`');
     }
     const data = revisedData(this.state, revision, { startedAt, now: meta.at, lastReopening: lastReopening(this.state) });
-    this.record(taskEvent<TaskEstimateRevised>('task.estimate-revised', this.state.id, this.homeProject.value, data, meta));
+    this.emit('task.estimate-revised', data, meta);
   }
 
   pullEvents(): TaskEvent[] {
-    const events = this.pending;
-    this.pending = [];
-    return events;
+    return this.log.pull();
   }
 
   toSnapshot(): TaskSnapshot {
-    return snapshotOf(this.state, { count: this.appliedCount, lastEventId: this.lastId });
+    return snapshotOf(this.state, { count: this.log.count, lastEventId: this.log.lastEventId });
   }
 
   private rejectClosed(): void {
     if (this.state.status === 'closed') {
       throw new TaskClosed(this.state.id.toString());
     }
-  }
-
-  /**
-   * A reason may start with `<part>:` — the id of a part, or the group of a
-   * part alone in its group (people name parts by their change). Any other
-   * prefix is plain text.
-   */
-  private retroReason(reason: string): RetroReason {
-    const text = reason.trim();
-    const colon = text.indexOf(':');
-    const prefix = colon < 0 ? '' : text.slice(0, colon).trim();
-    const parts = this.estimate?.parts ?? [];
-    const byId = parts.find((part) => part.id === prefix);
-    const byGroup = parts.filter((part) => part.group === prefix);
-    const part = byId ?? (byGroup.length === 1 ? byGroup[0] : undefined);
-    return prefix !== '' && part !== undefined ? { text: text.slice(colon + 1).trim(), part: part.id } : { text };
   }
 
   private requireInProgress(): Timestamp {
@@ -545,69 +384,16 @@ export class Task {
     return startedAt;
   }
 
-  private record(event: TaskEvent): void {
+  /** Records an event of the task, in its home project unless another is named: applied now, pulled by the repository later. */
+  private emit<T extends TaskEvent['type']>(type: T, data: EventOf<T>['data'], meta: EventMeta, project = this.homeProject): void {
+    // TypeScript does not narrow `T` to the type of its own event; the pair is checked at the call.
+    const event = taskEvent<EventOf<T>>(type as EventOf<T>['type'], this.state.id, project.value, data, meta);
     this.apply(event);
-    this.pending.push(event);
+    this.log.hold(event);
   }
 
   private apply(event: TaskEvent): void {
-    const ts = Timestamp.parse(event.ts);
-    const state = this.state;
-    state.lastEventAt = later(state.lastEventAt, ts);
-    switch (event.type) {
-      case 'task.created':
-        throw new InvalidValue(`task ${state.id.toString()} is created twice`);
-      case 'task.started':
-        state.status = 'in-progress';
-        state.startedAt = event.data.at === undefined ? ts : Timestamp.parse(event.data.at);
-        break;
-      case 'task.estimated':
-        state.status = 'estimated';
-        state.estimated = true;
-        state.estimate = Estimate.fromData(event.data.estimate);
-        if (event.data.taskType !== undefined) {
-          state.type = TaskType.restore(event.data.taskType);
-        }
-        break;
-      case 'task.manual-time-recorded': {
-        const manual = ManualTime.fromData(event.data);
-        state.manual.push({ manual, recordedAt: ts });
-        if (manual.part !== undefined) {
-          state.lastPartRecordAt = ts;
-        }
-        if (manual.at !== undefined) {
-          state.lastEventAt = later(state.lastEventAt, manual.at);
-        }
-        break;
-      }
-      case 'task.extra-recorded':
-        state.extras.push({ id: event.id, at: ts, extra: Extra.fromData(event.data) });
-        break;
-      case 'task.estimate-revised':
-        applyRevision(state, event);
-        break;
-      case 'task.parallel-mode-enabled':
-        state.parallelMode.push({ enabledAt: event.ts, change: event.data });
-        break;
-      case 'task.parallel-mode-disabled':
-        endParallelMode(state, event.ts, true);
-        break;
-      case 'task.closed':
-        applyClosed(state, event);
-        break;
-      case 'task.reopened':
-        applyReopened(state, ts);
-        break;
-      case 'task.retro-recorded':
-        state.retro = { reasons: event.data.reasons, lesson: event.data.lesson, recordedAt: ts };
-        break;
-      case 'task.attached':
-        if (event.project !== undefined && !state.projects.some((project) => project.value === event.project)) {
-          state.projects.push(ProjectId.parse(event.project));
-        }
-        break;
-    }
-    this.appliedCount += 1;
-    this.lastId = event.id;
+    applyEvent(this.state, event);
+    this.log.noteApplied(event);
   }
 }
