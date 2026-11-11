@@ -121,6 +121,15 @@ export const TASK_IMPORTS_HOOKS = {
   message: 'application/task must not import application/hooks: the dependency goes hooks → task only (see CLAUDE.md, "Architecture").',
 };
 
+/**
+ * The modules of the Task aggregate that hold or change its state: only the
+ * aggregate itself (src/domain/task) imports them, the rest goes through Task.
+ */
+export const AGGREGATE_INTERNALS = {
+  regex: '(^|/)task/task-(state|apply|revisions|closures|work-records|retro|creation|event-log)\\.js$',
+  message: 'The state of the Task aggregate and the functions over it are internal to src/domain/task: use the methods and getters of Task (see CLAUDE.md, "Architecture").',
+};
+
 /** node:path in application: paths depend on the platform and go through ports. */
 export const NODE_PATH = ['node:path', 'path', 'node:path/posix', 'node:path/win32'].map((name) => ({
   name,

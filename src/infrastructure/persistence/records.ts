@@ -2,7 +2,7 @@ import { Estimate, type EstimateData } from '../../domain/estimate/estimate.js';
 import { isPartKind, isPartPerformer } from '../../domain/estimate/part-kind.js';
 import { isExtraCategory, type ExtraData } from '../../domain/measurement/extra.js';
 import { MANUAL_TIME_KINDS, type ManualTimeData } from '../../domain/measurement/manual-time.js';
-import type { ParallelModeChangeData, ParallelPeriod } from '../../domain/measurement/parallel-mode.js';
+import type { ParallelModeChangeData, ParallelPeriodData } from '../../domain/measurement/parallel-mode.js';
 import type { ProjectSnapshot } from '../../domain/project/project.js';
 import type { TaskSnapshot } from '../../domain/task/task.js';
 import { isSpentPolicy } from '../../domain/estimate/estimate-revision.js';
@@ -275,7 +275,7 @@ function isClosure(value: unknown): boolean {
   );
 }
 
-function isParallelPeriod(value: unknown): value is ParallelPeriod {
+function isParallelPeriod(value: unknown): value is ParallelPeriodData {
   return (
     isObject(value) &&
     isTime(value['enabledAt']) &&

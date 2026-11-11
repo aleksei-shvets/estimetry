@@ -1,7 +1,7 @@
 // @ts-check
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
-import { DEBT, applicationImports, guardrails } from './eslint/guardrails.js';
+import { AGGREGATE_INTERNALS, DEBT, applicationImports, guardrails } from './eslint/guardrails.js';
 
 const LAYERS = ['domain', 'application', 'infrastructure', 'integrations', 'interface', 'bootstrap'];
 
@@ -25,7 +25,7 @@ const allExcept = (...layer) => LAYERS.filter((l) => !layer.includes(l));
 const boundary = (files, patterns, paths = []) => ({
   files: [files],
   rules: {
-    'no-restricted-imports': ['error', { patterns, paths }],
+    'no-restricted-imports': ['error', { patterns: [...patterns, AGGREGATE_INTERNALS], paths }],
   },
 });
 
@@ -58,7 +58,7 @@ export const config = (debt) =>
       },
     ]),
     ...applicationImports(debt, {
-      patterns: [layerImports(allExcept('domain', 'application'))],
+      patterns: [layerImports(allExcept('domain', 'application')), AGGREGATE_INTERNALS],
       paths: nodeIo.map((name) => ({
         name,
         message: 'Layer boundary: application performs I/O only through ports (see CLAUDE.md, "Architecture").',
@@ -81,6 +81,8 @@ export const config = (debt) =>
     ),
     boundary('src/integrations/*.ts', [layerImports(['infrastructure', 'interface', 'bootstrap'])]),
     boundary('src/interface/**', [layerImports(['infrastructure', 'integrations', 'bootstrap'])]),
+    // The composition root may import every layer, but not the inside of the aggregate.
+    boundary('src/bootstrap/**', []),
 
     {
       files: ['src/domain/**', 'src/application/**'],

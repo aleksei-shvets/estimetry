@@ -11,63 +11,52 @@ import { later, type TaskState } from './task-state.js';
 import { TaskType } from './task-type.js';
 
 /**
- * Applies an event of the task to its state: the only way the state changes,
- * for new events and for events read from the journal alike.
+ * The state after an event of the task: the only way the state changes, for
+ * new events and for events read from the journal alike. The state given is
+ * left as it was.
  */
-export function applyEvent(state: TaskState, event: TaskEvent): void {
+export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
   const ts = Timestamp.parse(event.ts);
-  state.lastEventAt = later(state.lastEventAt, ts);
+  const s: TaskState = { ...state, lastEventAt: later(state.lastEventAt, ts) };
   switch (event.type) {
     case 'task.created':
       throw new InvalidValue(`task ${state.id.toString()} is created twice`);
     case 'task.started':
-      state.status = 'in-progress';
-      state.startedAt = event.data.at === undefined ? ts : Timestamp.parse(event.data.at);
-      break;
+      return { ...s, status: 'in-progress', startedAt: event.data.at === undefined ? ts : Timestamp.parse(event.data.at) };
     case 'task.estimated':
-      state.status = 'estimated';
-      state.estimated = true;
-      state.estimate = Estimate.fromData(event.data.estimate);
-      if (event.data.taskType !== undefined) {
-        state.type = TaskType.restore(event.data.taskType);
-      }
-      break;
+      return {
+        ...s,
+        status: 'estimated',
+        estimated: true,
+        estimate: Estimate.fromData(event.data.estimate),
+        ...(event.data.taskType === undefined ? {} : { type: TaskType.restore(event.data.taskType) }),
+      };
     case 'task.manual-time-recorded': {
       const manual = ManualTime.fromData(event.data);
-      state.manual.push({ manual, recordedAt: ts });
-      if (manual.part !== undefined) {
-        state.lastPartRecordAt = ts;
-      }
-      if (manual.at !== undefined) {
-        state.lastEventAt = later(state.lastEventAt, manual.at);
-      }
-      break;
+      return {
+        ...s,
+        manual: [...s.manual, { manual, recordedAt: ts }],
+        ...(manual.part === undefined ? {} : { lastPartRecordAt: ts }),
+        ...(manual.at === undefined ? {} : { lastEventAt: later(s.lastEventAt, manual.at) }),
+      };
     }
     case 'task.extra-recorded':
-      state.extras.push({ id: event.id, at: ts, extra: Extra.fromData(event.data) });
-      break;
+      return { ...s, extras: [...s.extras, { id: event.id, at: ts, extra: Extra.fromData(event.data) }] };
     case 'task.estimate-revised':
-      applyRevision(state, event);
-      break;
+      return applyRevision(s, event);
     case 'task.parallel-mode-enabled':
-      state.parallelMode.push({ enabledAt: event.ts, change: event.data });
-      break;
+      return { ...s, parallelMode: [...s.parallelMode, { enabledAt: ts, change: event.data }] };
     case 'task.parallel-mode-disabled':
-      endParallelMode(state, event.ts, true);
-      break;
+      return { ...s, parallelMode: endParallelMode(s.parallelMode, ts, true) };
     case 'task.closed':
-      applyClosed(state, event);
-      break;
+      return applyClosed(s, event);
     case 'task.reopened':
-      applyReopened(state, ts);
-      break;
+      return applyReopened(s, ts);
     case 'task.retro-recorded':
-      state.retro = { reasons: event.data.reasons, lesson: event.data.lesson, recordedAt: ts };
-      break;
+      return { ...s, retro: { reasons: event.data.reasons, lesson: event.data.lesson, recordedAt: ts } };
     case 'task.attached':
-      if (event.project !== undefined && !state.projects.some((project) => project.value === event.project)) {
-        state.projects.push(ProjectId.parse(event.project));
-      }
-      break;
+      return event.project === undefined || s.projects.some((project) => project.value === event.project)
+        ? s
+        : { ...s, projects: [...s.projects, ProjectId.parse(event.project)] };
   }
 }

@@ -1,5 +1,6 @@
 import { InvalidValue } from '../shared/domain-error.js';
-import type { Timestamp } from '../shared/timestamp.js';
+import type { ParallelPeriod } from '../measurement/parallel-mode.js';
+import { Timestamp } from '../shared/timestamp.js';
 import type { TaskClosed, TaskOutcome } from './task-events.js';
 import { closureOf } from './task-snapshot.js';
 import type { TaskState } from './task-state.js';
@@ -37,25 +38,23 @@ export function closedData(input: ClosingInput): TaskClosed['data'] {
   return { at: input.at.toISOString(), outcome: input.outcome, ...(input.spawned === undefined ? {} : { spawned: input.spawned.toString() }) };
 }
 
-/** Ends the last period of parallel mode: a disabling always, the closing of the task only an open one. */
-export function endParallelMode(state: TaskState, at: string, always = false): void {
-  const last = state.parallelMode.at(-1);
-  if (last && (always || last.disabledAt === undefined)) {
-    state.parallelMode[state.parallelMode.length - 1] = { ...last, disabledAt: at };
-  }
+/** Periods of parallel mode with the last one ended at `at`: a disabling always, the closing of the task only an open one. */
+export function endParallelMode(periods: readonly ParallelPeriod[], at: Timestamp, always = false): readonly ParallelPeriod[] {
+  const last = periods.at(-1);
+  return last && (always || last.disabledAt === undefined) ? [...periods.slice(0, -1), { ...last, disabledAt: at }] : periods;
 }
 
-export function applyClosed(state: TaskState, event: TaskClosed): void {
-  endParallelMode(state, event.data.at);
-  state.status = 'closed';
-  state.closures.push(closureOf({ ...event.data, recordedAt: event.ts }));
+export function applyClosed(state: TaskState, event: TaskClosed): TaskState {
+  return {
+    ...state,
+    parallelMode: endParallelMode(state.parallelMode, Timestamp.parse(event.data.at)),
+    status: 'closed',
+    closures: [...state.closures, closureOf({ ...event.data, recordedAt: event.ts })],
+  };
 }
 
 /** The last closing is reopened at `ts`; the task is in progress again. */
-export function applyReopened(state: TaskState, ts: Timestamp): void {
+export function applyReopened(state: TaskState, ts: Timestamp): TaskState {
   const last = state.closures.at(-1);
-  if (last) {
-    state.closures[state.closures.length - 1] = { ...last, reopenedAt: ts };
-  }
-  state.status = 'in-progress';
+  return { ...state, closures: last ? [...state.closures.slice(0, -1), { ...last, reopenedAt: ts }] : state.closures, status: 'in-progress' };
 }

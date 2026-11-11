@@ -118,8 +118,8 @@ describe('Task records', () => {
     expect(() => task.disableParallelMode(meta())).toThrow(ParallelModeConflict);
     expect(task.parallelMode).toEqual([
       {
-        enabledAt: '2026-10-27T10:10:00.000Z',
-        disabledAt: '2026-10-27T10:40:00.000Z',
+        enabledAt: Timestamp.parse('2026-10-27T10:10:00.000Z'),
+        disabledAt: Timestamp.parse('2026-10-27T10:40:00.000Z'),
         change: { agents: 3, parts: ['impl'], budgetShare: 0.6 },
       },
     ]);
