@@ -21,7 +21,7 @@ export class ClosingRecords {
     private readonly bindings: Pick<SessionBindings, 'get'>,
     private readonly meta: EventMetaSource,
     /** The importer of session logs; only the closing calls it. */
-    private readonly logs?: () => ImportSessionLogs,
+    private readonly logs?: () => Pick<ImportSessionLogs, 'execute'>,
   ) {}
 
   /**

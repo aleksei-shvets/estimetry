@@ -36,6 +36,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:coverage
 
   # The one check that branch protection requires: it stays the same when the matrix changes.
   checks:
