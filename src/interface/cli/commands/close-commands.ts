@@ -4,7 +4,6 @@ import { presenterFor, type CliContext } from '../cli-context.js';
 import { ConfirmationRequired, ReportedFailure } from '../exit-codes.js';
 import { parseTaskOption, parseTime } from '../parse-input.js';
 import { Prompts } from '../prompts.js';
-import { closeSummaryText } from '../presenters/text-presenter.js';
 
 interface CloseOptions {
   readonly at?: string;
@@ -53,7 +52,7 @@ export function registerCloseCommands(program: Command, ctx: CliContext): void {
     .action(async (id: string | undefined, options: CloseOptions) => {
       const app = await ctx.app();
       const task = { ...parseTaskOption(id), near: ctx.cwd };
-      const go = await confirmed(ctx, options, 'closing a task', () => closeSummaryText(app.closing.summary(task)), 'Close the task?');
+      const go = await confirmed(ctx, options, 'closing a task', () => presenterFor(options).closeSummary(app.closing.summary(task)), 'Close the task?');
       if (!go) {
         ctx.out.error('Not closed.');
         return;

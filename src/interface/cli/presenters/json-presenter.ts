@@ -23,4 +23,5 @@ export const jsonPresenter: Presenter = {
   rebuildReport: json,
   similarTasks: json,
   calibration: json,
+  closeSummary: json,
 };

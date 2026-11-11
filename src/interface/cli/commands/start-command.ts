@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { TaskId } from '../../../domain/task/task-id.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
 import { parseTime } from '../parse-input.js';
-import { unestimatedWarning } from '../presenters/text-presenter.js';
+import { unestimatedWarning } from '../presenters/text/task-text.js';
 
 export function registerStartCommand(program: Command, ctx: CliContext): void {
   program

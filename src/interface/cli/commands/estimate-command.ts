@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { InvalidValue } from '../../../domain/shared/domain-error.js';
 import { groupCommand } from '../help-command.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
-import { formatMinutes } from '../presenters/text-presenter.js';
+import { formatMinutes } from '../presenters/text/format.js';
 import { parseTaskOption, parseTime } from '../parse-input.js';
 
 export function registerEstimateCommand(program: Command, ctx: CliContext): void {
