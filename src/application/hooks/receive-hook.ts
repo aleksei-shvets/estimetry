@@ -4,6 +4,7 @@ import { fileList } from '../../domain/progress/progress-records.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
 import { SessionId } from '../../domain/measurement/session-id.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
+import { isInProgress } from '../../domain/task/task-status.js';
 import type { HookAdapter, HookAdapters, HookTranslation } from '../contracts/hook-adapter.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
 import type { CheckpointState } from '../ports/checkpoint-state.js';
@@ -178,7 +179,7 @@ export class ReceiveHook {
     const binding = this.deps.bindings.get(translation.session);
     const tasks = servedTasks(binding).flatMap((id) => {
       const summary = this.deps.tasks.summary(id);
-      return summary?.status === 'in-progress' ? [{ id, project: summary.projects[0] ?? binding?.project ?? '' }] : [];
+      return summary !== undefined && isInProgress(summary.status) ? [{ id, project: summary.projects[0] ?? binding?.project ?? '' }] : [];
     });
     if (tasks.length === 0) {
       return;

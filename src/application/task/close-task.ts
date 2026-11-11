@@ -72,7 +72,7 @@ export function closedResult(
   return {
     task: toTaskView(task),
     outcome: closure?.outcome ?? 'completed',
-    closedAt: closure?.at ?? '',
+    closedAt: closure?.at.toISOString() ?? '',
     fact,
     estimateHours: likely ?? null,
     estimateShare: likely === undefined || fact === 0 ? null : fact / 60 / likely,

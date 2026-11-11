@@ -115,9 +115,9 @@ export class TaskClosing {
   /** Every session bound to the task is unbound at the closing moment and stays so until it starts again. */
   private release(task: Task): void {
     const id = task.id.toString();
-    const closedAt = task.closedAt as Timestamp;
+    const closedAt = task.requireClosedAt();
     for (const project of task.projects) {
-      for (const binding of this.bindings.ofProject(project)) {
+      for (const binding of this.bindings.ofProject(project.value)) {
         if (binding.task !== id) {
           continue;
         }

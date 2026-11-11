@@ -17,7 +17,7 @@ export class ResolveActiveTask {
     return explicit
       ? this.tasks.get(explicit)
       : this.only(
-          (task) => task.status === 'in-progress',
+          (task) => task.isInProgress,
           'no task in progress in this project; start one with `emt start`',
           'several tasks are in progress, pass one with --task',
         );
@@ -41,7 +41,7 @@ export class ResolveActiveTask {
     }
     // The usual reason there is nothing to estimate: work has started, and the plan changes by revision now.
     const none = (tasks: readonly Task[]) => {
-      const inProgress = tasks.filter((task) => task.status === 'in-progress').map((task) => task.id.toString());
+      const inProgress = tasks.filter((task) => task.isInProgress).map((task) => task.id.toString());
       return inProgress.length > 0
         ? `no task to estimate in this project: ${inProgress.join(', ')} is in progress; change its plan with \`emt estimate revise\``
         : 'no task to estimate in this project; create one with `emt task new`';

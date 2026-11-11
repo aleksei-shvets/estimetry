@@ -1,7 +1,6 @@
 import { planProgress } from '../../domain/progress/plan-progress.js';
 import type { ProjectPlanSnapshot } from '../../domain/progress/progress-records.js';
 import { taskPlan } from '../../domain/progress/task-plan.js';
-import { ProjectId } from '../../domain/project/project-id.js';
 import type { ProjectRepository } from '../../domain/project/project-repository.js';
 import { CalendarDate } from '../../domain/shared/calendar-date.js';
 import type { Timestamp } from '../../domain/shared/timestamp.js';
@@ -49,13 +48,7 @@ export class PlanSnapshots {
     });
     const stack = [
       ...new Set(
-        task.projects.flatMap((project) => {
-          try {
-            return this.projects.findById(ProjectId.parse(project))?.stack ?? [];
-          } catch {
-            return [];
-          }
-        }),
+        task.projects.flatMap((project) => this.projects.findById(project)?.stack ?? []),
       ),
     ].sort();
     return {
@@ -68,7 +61,7 @@ export class PlanSnapshots {
   }
 
   private read(task: Task, startedAt: Timestamp, where: WorkingCopy): ProjectPlanReading[] {
-    return this.plans.plans(task.projects, {
+    return this.plans.plans(task.projects.map((project) => project.value), {
       ...nearOf(where),
       archivedSince: CalendarDate.of(startedAt).minusDays(1),
     });

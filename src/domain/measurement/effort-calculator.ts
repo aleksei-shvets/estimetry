@@ -894,7 +894,7 @@ function splitManual(
   /** Manual agent time as agent work: each record on its own, timed ones without the lost windows. */
   agentWork: Duration;
 } {
-  const interval = (record: ManualTime) => IntervalSet.of([Interval.endingAt(record.at as Timestamp, record.duration)]).minus(lost);
+  const interval = (record: ManualTime) => IntervalSet.of([record.interval()].filter((v) => v !== undefined)).minus(lost);
   const timed = (kind: 'user' | 'agent'): IntervalSet =>
     IntervalSet.of(
       records

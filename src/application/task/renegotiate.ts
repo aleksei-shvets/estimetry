@@ -77,11 +77,11 @@ export class Renegotiate {
     const title = input.title.trim();
     const existing = this.tasks
       .listAll()
-      .find((task) => task.spawnedFrom === original.id.toString() && task.title === title);
+      .find((task) => task.spawnedFrom?.toString() === original.id.toString() && task.title === title);
     if (existing) {
       return existing;
     }
-    const type = input.type === undefined ? TaskType.restore(original.type) : TaskType.of(input.type, this.taskTypes.allowed());
+    const type = input.type === undefined ? original.type : TaskType.of(input.type, this.taskTypes.allowed());
     const task = Task.create(
       { id: this.tasks.nextId(), title, type, project: original.homeProject, spawnedFrom: original.id },
       this.meta.next(),

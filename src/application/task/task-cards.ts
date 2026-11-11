@@ -40,8 +40,8 @@ export class TaskCards {
     const { activity, records } = content;
     const report = this.measurement.measure(task, content);
     const counted = this.measurement.counted(task, content);
-    const startedAt = task.startedAt as Timestamp;
-    const closedAt = task.closedAt as Timestamp;
+    const startedAt = task.requireStartedAt();
+    const closedAt = task.requireClosedAt();
     const last = task.revisions.at(-1);
     const numerator = (r: EffortReport) => (r.parallel.used && r.sequentialEquivalent !== undefined ? r.sequentialEquivalent : r.fact).minutes;
     return buildCard({
@@ -56,17 +56,17 @@ export class TaskCards {
         completions: completions(records),
         measured: counted.measured,
         manual: task.manualTime,
-        manualRecordedAt: task.manualRecords.map((record) => (record.recordedAt === '' ? undefined : Timestamp.parse(record.recordedAt))),
+        manualRecordedAt: task.manualRecords.map((record) => record.recordedAt),
         lost: IntervalSet.of(task.lostWindows.map((window) => Interval.of(window.from, window.to))),
-        ...(last === undefined ? {} : { revision: { id: last.id, at: Timestamp.parse(last.at), exclusions: task.planExclusions } }),
+        ...(last === undefined ? {} : { revision: { id: last.id, at: last.at, exclusions: task.planExclusions } }),
       }),
       revisionFacts: task.revisions.map((revision) => {
-        const at = Timestamp.parse(revision.at);
+        const at = revision.at;
         const countedAt = Math.round(this.measurement.countedAt(task, at, content).fact.minutes);
         if (revision.spent !== 'exclude' || revision.lostFrom === undefined) {
           return { countedAtMinutes: countedAt, lostMinutes: 0 };
         }
-        const without = this.measurement.without(task, { from: Timestamp.parse(revision.lostFrom), to: at }, content);
+        const without = this.measurement.without(task, { from: revision.lostFrom, to: at }, content);
         return { countedAtMinutes: countedAt, lostMinutes: Math.max(0, Math.round(numerator(report) - numerator(without))) };
       }),
       records,
@@ -77,7 +77,7 @@ export class TaskCards {
 
   /** Writes the card of a closed task, removes the card of any other. */
   refresh(task: Task): Card | undefined {
-    if (task.status !== 'closed') {
+    if (!task.isClosed) {
       this.cards.remove(task.id.toString());
       return undefined;
     }
@@ -150,7 +150,7 @@ export class TaskCards {
     let rebuilt: Card | undefined;
     try {
       const task = this.tasks.find(TaskId.parse(card.task.id));
-      rebuilt = task?.status === 'closed' ? this.build(task) : undefined;
+      rebuilt = task?.isClosed === true ? this.build(task) : undefined;
     } catch (error) {
       this.errors.report(`rebuilding the card of ${card.task.id}`, error);
     }

@@ -1,5 +1,6 @@
 import type { EventEnvelope } from '../shared/event-envelope.js';
 import type { LogBoundaries } from '../measurement/log-boundaries.js';
+import { Timestamp } from '../shared/timestamp.js';
 
 /*
  * Records of a session log in a task's journal (session-log-import spec). Each
@@ -70,10 +71,10 @@ export interface SessionLog {
 /** A closing of the task: records written while it stayed closed do not count. */
 export interface ClosedPeriod {
   /** The closing moment; it may be backdated. */
-  readonly at: string;
+  readonly at: Timestamp;
   /** When the closing was written: records after it and before the reopening are ignored. */
-  readonly recordedAt?: string;
-  readonly reopenedAt?: string;
+  readonly recordedAt?: Timestamp;
+  readonly reopenedAt?: Timestamp;
 }
 
 /**
@@ -82,9 +83,13 @@ export interface ClosedPeriod {
  * the closing and after `emt rebuild` is the same.
  */
 export function sessionLogs(records: readonly LogSession[], closed: readonly ClosedPeriod[] = []): Map<string, SessionLog> {
-  const inForce = records.filter(
-    (record) => !closed.some((period) => record.ts > (period.recordedAt ?? period.at) && (period.reopenedAt === undefined || record.ts < period.reopenedAt)),
-  );
+  const ignored = (record: LogSession) => {
+    const ts = Timestamp.parse(record.ts).toMillis();
+    return closed.some(
+      (period) => ts > (period.recordedAt ?? period.at).toMillis() && (period.reopenedAt === undefined || ts < period.reopenedAt.toMillis()),
+    );
+  };
+  const inForce = records.filter((record) => !ignored(record));
   const imports = new Map<string, LogSession[]>();
   for (const record of inForce) {
     const id = `${record.data.session}\u0000${record.data.importId}`;

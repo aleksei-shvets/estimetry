@@ -52,7 +52,7 @@ export class RecordRetro {
   private lastClosed(): Task {
     const project = this.currentProject.find();
     const closed = (project ? this.tasks.listByProject(project.id) : [])
-      .filter((task) => task.status === 'closed')
+      .filter((task) => task.isClosed)
       .sort((a, b) => (b.closedAt?.toMillis() ?? 0) - (a.closedAt?.toMillis() ?? 0));
     const last = closed[0];
     if (last === undefined) {

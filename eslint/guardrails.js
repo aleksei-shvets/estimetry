@@ -22,16 +22,7 @@ export const TASK_STATUS_VALUES = ['new', 'estimated', 'in-progress', 'closed'];
 
 /** @type {Debt} */
 export const DEBT = {
-  statusLiteral: {
-    'src/application/hooks/receive-hook.ts': 1,
-    'src/application/hooks/session-task.ts': 1,
-    'src/application/task/bind-session.ts': 2,
-    'src/application/task/list-tasks.ts': 1,
-    'src/application/task/record-retro.ts': 1,
-    'src/application/task/resolve-active-task.ts': 2,
-    'src/application/task/show-task.ts': 1,
-    'src/application/task/task-cards.ts': 2,
-  },
+  statusLiteral: {},
   taskImportsHooks: {},
   nodePath: {
     'src/application/hooks/flow-plans.ts': 1,
@@ -39,20 +30,19 @@ export const DEBT = {
     'src/application/project/stack.ts': 1,
   },
   maxLines: {
-    'src/domain/card/card.ts': 422,
+    'src/domain/card/card.ts': 421,
     'src/domain/measurement/effort-calculator.ts': 935,
     'src/domain/progress/progress-records.ts': 440,
-    'src/domain/task/task.ts': 927,
+    'src/domain/task/task.ts': 782,
     'src/interface/cli/presenters/text-presenter.ts': 594,
   },
   maxFunctionLines: {
     'src/application/task/show-status.ts': 93,
     'src/bootstrap/container.ts': 150,
-    'src/domain/card/card.ts': 157,
+    'src/domain/card/card.ts': 156,
     'src/domain/measurement/effort-calculator.ts': 158,
     'src/domain/progress/part-facts.ts': 136,
     'src/domain/progress/progress-records.ts': 99,
-    'src/domain/task/task.ts': 103,
     'src/infrastructure/persistence/records.ts': 102,
     'src/interface/cli/commands/close-commands.ts': 108,
     'src/interface/cli/commands/estimate-command.ts': 82,
@@ -85,14 +75,29 @@ const statusSelectors = ['left', 'right'].flatMap((side) => {
   ];
 });
 
-/** @param {Debt} debt */
-function statusRule(debt) {
+const TIMESTAMP_CAST = {
+  selector: "TSAsExpression[typeAnnotation.typeName.name='Timestamp']",
+  message:
+    'Do not cast to Timestamp: use a narrow getter that checks the moment (requireStartedAt(), requireClosedAt()) or a method of the value object (ManualTime.interval()).',
+};
+
+const NEW_DATE = {
+  selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+  message: 'Domain gets time from the caller (Clock port).',
+};
+
+/**
+ * Restricted syntax: a cast to Timestamp in all of src, `new Date()` in domain, task statuses compared with a string in application.
+ * Flat config replaces the options of a rule, so application and the files of the debt get the full list each.
+ * @param {Debt} debt
+ */
+function syntaxRules(debt) {
+  const status = statusSelectors.map((selector) => ({ selector, message: STATUS_MESSAGE }));
+  const debtFiles = Object.keys(debt.statusLiteral);
   return [
-    {
-      files: ['src/application/**'],
-      ignores: Object.keys(debt.statusLiteral),
-      rules: { 'no-restricted-syntax': ['error', ...statusSelectors.map((selector) => ({ selector, message: STATUS_MESSAGE }))] },
-    },
+    { files: ['src/**'], rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST] } },
+    { files: ['src/domain/**'], rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST, NEW_DATE] } },
+    { files: ['src/application/**'], ignores: debtFiles, rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST, ...status] } },
   ];
 }
 
@@ -160,5 +165,5 @@ export function applicationImports(debt, boundary) {
 
 /** @param {Debt} debt */
 export function guardrails(debt) {
-  return [...statusRule(debt), ...sizeRules(debt), ...paramsRule(debt)];
+  return [...syntaxRules(debt), ...sizeRules(debt), ...paramsRule(debt)];
 }

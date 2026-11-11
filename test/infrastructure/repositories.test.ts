@@ -65,7 +65,7 @@ describe('FileTaskRepository', () => {
     repo.save(first);
     second.attach(ProjectId.parse('web'), meta());
     expect(() => repo.save(second)).toThrow(ConcurrencyConflict);
-    expect(repo.get(TaskId.parse('T-1')).projects).toEqual(['api']);
+    expect(repo.get(TaskId.parse('T-1')).projects.map((project) => project.value)).toEqual(['api']);
   });
 
   it('rebuilds the snapshot when the process died between journal and snapshot writes', () => {
