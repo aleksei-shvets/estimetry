@@ -17,6 +17,7 @@ export const TASK_STATUS_VALUES = ['new', 'estimated', 'in-progress', 'closed'];
  * @property {Record<string, number>} nodePath files of src/application importing node:path, with how many imports
  * @property {Record<string, number>} maxLines files over 400 lines, with their current length as the ceiling
  * @property {Record<string, number>} maxFunctionLines files with a function over 80 lines, with the longest one as the ceiling
+ * @property {Record<string, number>} maxParams files of src/application with a function over 6 parameters, with the most as the ceiling
  */
 
 /** @type {Debt} */
@@ -45,7 +46,6 @@ export const DEBT = {
     'src/interface/cli/presenters/text-presenter.ts': 594,
   },
   maxFunctionLines: {
-    'src/application/estimetry.ts': 92,
     'src/application/task/show-status.ts': 93,
     'src/bootstrap/container.ts': 150,
     'src/domain/card/card.ts': 157,
@@ -57,10 +57,18 @@ export const DEBT = {
     'src/interface/cli/commands/close-commands.ts': 108,
     'src/interface/cli/commands/estimate-command.ts': 82,
   },
+  maxParams: {
+    'src/application/hooks/change-completions.ts': 9,
+    'src/application/hooks/checkpoints.ts': 9,
+    'src/application/task/revise-estimate.ts': 10,
+    'src/application/task/task-cards.ts': 8,
+    'src/application/task/task-closing.ts': 10,
+  },
 };
 
 const MAX_LINES = 400;
 const MAX_FUNCTION_LINES = 80;
+const MAX_PARAMS = 6;
 
 const STATUS_VALUE = `/^(${TASK_STATUS_VALUES.join('|')})$/`;
 const STATUS_MESSAGE =
@@ -98,6 +106,17 @@ function sizeRules(debt) {
     { files: ['src/**'], rules: { 'max-lines': lines(MAX_LINES), 'max-lines-per-function': functionLines(MAX_FUNCTION_LINES) } },
     ...Object.entries(debt.maxLines).map(([file, max]) => ({ files: [file], rules: { 'max-lines': lines(max) } })),
     ...Object.entries(debt.maxFunctionLines).map(([file, max]) => ({ files: [file], rules: { 'max-lines-per-function': functionLines(max) } })),
+  ];
+}
+
+/**
+ * Positional parameters in application: more than six means an input object or dependencies grouped by meaning.
+ * @param {Debt} debt
+ */
+function paramsRule(debt) {
+  return [
+    { files: ['src/application/**'], rules: { 'max-params': ['error', MAX_PARAMS] } },
+    ...Object.entries(debt.maxParams).map(([file, max]) => ({ files: [file], rules: { 'max-params': ['error', max] } })),
   ];
 }
 
@@ -141,5 +160,5 @@ export function applicationImports(debt, boundary) {
 
 /** @param {Debt} debt */
 export function guardrails(debt) {
-  return [...statusRule(debt), ...sizeRules(debt)];
+  return [...statusRule(debt), ...sizeRules(debt), ...paramsRule(debt)];
 }

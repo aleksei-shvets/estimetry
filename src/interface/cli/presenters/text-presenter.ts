@@ -3,7 +3,7 @@ import type { CalibrationView } from '../../../application/task/show-calibration
 import type { SimilarTasksView } from '../../../application/task/find-similar-tasks.js';
 import type { RatioStats } from '../../../domain/calibration/calibration.js';
 import type { InitReport } from '../../../application/project/init-project.js';
-import type { CloseSummary } from '../../../application/task/close-task.js';
+import type { CloseSummary } from '../../../application/task/show-close-summary.js';
 import type { Card, CardUsage } from '../../../domain/card/card.js';
 import type { StatusView } from '../../../application/task/show-status.js';
 import type { TaskView } from '../../../application/task/task-view.js';

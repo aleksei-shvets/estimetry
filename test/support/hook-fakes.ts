@@ -122,17 +122,20 @@ export class FakeProjectPlans implements ProjectPlans {
   constructor(public changes: readonly ChangeProgress[] | undefined = [{ change: 'a', archived: false, done: 1, total: 4 }]) {}
 
   readings: ProjectPlanReading[] = [];
+  /** The working copy of every read, in order: undefined when none was given. */
+  readonly nears: (string | undefined)[] = [];
 
   plan(): readonly ChangeProgress[] | undefined {
     return this.changes;
   }
 
-  plans(projects: readonly string[]): ProjectPlanReading[] {
+  plans(projects: readonly string[], options: { readonly near?: string } = {}): ProjectPlanReading[] {
+    this.nears.push(options.near);
     return projects.map((project) => this.readings.find((reading) => reading.project === project) ?? { project, unavailable: 'not-on-this-machine' });
   }
 
-  archives(projects: readonly string[]): ProjectPlanReading[] {
-    return this.plans(projects).map(({ changes: _changes, ...rest }) => rest);
+  archives(projects: readonly string[], options: { readonly near?: string } = {}): ProjectPlanReading[] {
+    return this.plans(projects, options).map(({ changes: _changes, ...rest }) => rest);
   }
 }
 

@@ -14,7 +14,7 @@ import { CalendarDate } from '../../../src/domain/shared/calendar-date.js';
 import { Timestamp } from '../../../src/domain/shared/timestamp.js';
 import { TaskId } from '../../../src/domain/task/task-id.js';
 import { activity } from '../../support/activity.js';
-import { fakeClosing } from '../../support/closing-fakes.js';
+import { closingPorts, fakeClosing } from '../../support/closing-fakes.js';
 import {
   FakeAuthorProvider,
   FakeWorkspaceLocator,
@@ -54,8 +54,8 @@ function plan(likely: number, groups: string[] = ['auth', 'billing']): Estimate 
 function startedTask(): void {
   estimates.files.set('plan.yaml', plan(5));
   estimates.files.set('plan2.yaml', plan(6));
-  app.createTask({ title: 'Webhook' });
-  app.saveEstimate({ file: 'plan.yaml' });
+  app.tasks.create({ title: 'Webhook' });
+  app.estimates.save({ file: 'plan.yaml' });
   plans.readings = [
     {
       project: 'api',
@@ -68,7 +68,7 @@ function startedTask(): void {
       archived: [{ change: 'auth', archivedOn: CalendarDate.parse('2026-10-27'), directory: '2026-10-27-auth', path: `${ROOT}/openspec/changes/archive/2026-10-27-auth` }],
     },
   ];
-  app.startTask({ at: time('09:00') });
+  app.tasks.start({ at: time('09:00') });
   for (const [start, end] of [['09:00', '09:20'], ['10:10', '10:30']] as const) {
     journal.append(activity('turn.started', start, { origin: 'user' }));
     journal.append(activity('tool.started', start, { toolUseId: `t${start}` }));
@@ -109,15 +109,14 @@ beforeEach(() => {
     estimates,
     projectConfig: new InMemoryProjectConfigFile(files),
     install: fakeInstallDependencies(files),
-    sessions: { bindings: new InMemorySessionBindings(), tasks: new RepositoryTaskStatusReader(tasks) },
+    sessionBindings: new InMemorySessionBindings(), taskStatus: new RepositoryTaskStatusReader(tasks),
     plans,
-    closing,
-    workspaceDir: ROOT,
+    ...closingPorts(closing),
   });
 });
 
-const revise = (input: Partial<Parameters<Estimetry['reviseEstimate']>[0]> = {}) =>
-  app.reviseEstimate({ file: 'plan2.yaml', reason: 'design was wrong', category: 'missed-analysis', spent: 'exclude', lostFrom: time('10:00'), ...input });
+const revise = (input: Partial<Parameters<Estimetry['estimates']['revise']>[0]> = {}) =>
+  app.estimates.revise({ file: 'plan2.yaml', reason: 'design was wrong', category: 'missed-analysis', spent: 'exclude', lostFrom: time('10:00'), ...input });
 
 describe('revising the estimate', () => {
   it('records the event, the plan snapshot after it, and the archive of the time as excluded', () => {
@@ -132,23 +131,23 @@ describe('revising the estimate', () => {
   it('compares the counted fact with the estimate in status, close, session start and parallel mode', () => {
     startedTask();
     revise();
-    const status = app.showStatus({});
+    const status = app.measuring.status({});
     // Agents 09:00–09:20 and 10:10–10:30, the user 10:30–11:00 with the session open: 70 in all.
     // The lost window 10:00–11:00 takes the last agent turn and the user's time out.
     expect(status).toMatchObject({ fact: 70, counted: { fact: 20 }, lost: 50 });
     expect(status.estimateShare).toBeCloseTo(20 / 60 / 12);
-    expect(app.closeSummary({}).fact).toBe(20);
+    expect(app.closing.summary({}).fact).toBe(20);
     const facts = new MeasuredTaskFacts(tasks, new TaskMeasurement(journal, new FixedMeasurementSettings(), clock), new TaskPlanProgress(plans, journal));
     expect(facts.fact('T-1')?.minutes).toBe(20);
-    expect(app.changeParallelMode({ enabled: true }).budgetShare).toBeCloseTo(Math.round((20 / 60 / 12) * 1000) / 1000);
+    expect(app.measuring.parallel({ enabled: true }).budgetShare).toBeCloseTo(Math.round((20 / 60 / 12) * 1000) / 1000);
   });
 
   it('takes the rolled back change out of the plan and of the completed changes, and drops the proposal about it', () => {
     startedTask();
     closing.proposals.put('T-1', { change: 'auth', completedAt: time('10:00').toISOString(), session: 's1' });
-    expect(app.showStatus({}).plan?.done).toBe(50);
+    expect(app.measuring.status({}).plan?.done).toBe(50);
     revise();
-    const status = app.showStatus({});
+    const status = app.measuring.status({});
     expect(status.plan).toMatchObject({ done: 0, archivedBeforeRevision: ['auth'] });
     expect(status.completedChanges).toEqual([]);
     expect(closing.proposals.peek('T-1')).toBeUndefined();
@@ -178,9 +177,9 @@ describe('revising the estimate', () => {
 
   it('lists extra work since the window and manual time without a moment before writing', () => {
     startedTask();
-    app.recordExtra({ category: 'missed-analysis', description: 'rolled back', time: Duration.ofMinutes(60) });
-    app.recordManualTime({ kind: 'user', duration: Duration.ofMinutes(15), description: 'review' });
-    const candidates = app.revisionCandidates({ lostFrom: time('10:00'), spent: 'exclude' });
+    app.measuring.extra({ category: 'missed-analysis', description: 'rolled back', time: Duration.ofMinutes(60) });
+    app.measuring.manual({ kind: 'user', duration: Duration.ofMinutes(15), description: 'review' });
+    const candidates = app.estimates.revisionCandidates({ lostFrom: time('10:00'), spent: 'exclude' });
     expect(candidates.extras.map((e) => e.description)).toEqual(['rolled back']);
     expect(candidates.untimedManual.map((m) => m.minutes)).toEqual([15]);
     const id = candidates.extras[0]?.id as string;
@@ -195,10 +194,10 @@ describe('revising the estimate', () => {
     };
     expect(() => revise()).toThrow('disk full');
     journal.appendRecord = append;
-    expect(app.showStatus({}).revisions[0]?.missingSnapshot).toBe(true);
-    expect(app.repairRevision({}).revision).toBe(tasks.journals.get('T-1')?.at(-1)?.id);
-    expect(app.showStatus({}).revisions[0]?.missingSnapshot).toBe(false);
-    expect(() => app.repairRevision({})).toThrow(/nothing to repair/);
+    expect(app.measuring.status({}).revisions[0]?.missingSnapshot).toBe(true);
+    expect(app.estimates.repairRevision({}).revision).toBe(tasks.journals.get('T-1')?.at(-1)?.id);
+    expect(app.measuring.status({}).revisions[0]?.missingSnapshot).toBe(false);
+    expect(() => app.estimates.repairRevision({})).toThrow(/nothing to repair/);
   });
 
   it('excludes only what was archived inside the lost window, not before it or after a backdated revision', () => {
@@ -223,14 +222,14 @@ describe('revising the estimate', () => {
   it('renegotiates after a revision with the counted fact', () => {
     startedTask();
     revise();
-    expect(app.renegotiate({ title: 'Next' }).closed.fact).toBe(20);
+    expect(app.closing.renegotiate({ title: 'Next' }).closed.fact).toBe(20);
   });
 
   it('closes into a card v3: the counted fact, the work of the window and the counted fact at the revision', () => {
     startedTask();
     revise();
     closing.code.heads.set(ROOT, 'h1');
-    app.closeTask({});
+    app.closing.close({});
     const card = closing.cards.cards.get('T-1');
     expect(card).toMatchObject({
       schemaVersion: 3,
@@ -244,10 +243,10 @@ describe('revising the estimate', () => {
 
   it('in parallel mode the work of the window is measured as the sequential equivalent, like the main ratio', () => {
     startedTask();
-    app.changeParallelMode({ enabled: true, agents: 2 });
-    app.changeParallelMode({ enabled: false });
+    app.measuring.parallel({ enabled: true, agents: 2 });
+    app.measuring.parallel({ enabled: false });
     revise();
-    app.closeTask({});
+    app.closing.close({});
     const card = closing.cards.cards.get('T-1') as Card;
     expect(card.parallel.used).toBe(true);
     expect(card.revisions[0]?.lostMinutes).toBe((card.parallel.sequentialMinutes ?? 0) - (card.fact.counted.sequentialMinutes ?? 0));
@@ -255,9 +254,9 @@ describe('revising the estimate', () => {
 
   it('refuses --covers with include', () => {
     startedTask();
-    app.recordExtra({ category: 'rework', description: 'x', time: Duration.ofMinutes(10) });
+    app.measuring.extra({ category: 'rework', description: 'x', time: Duration.ofMinutes(10) });
     const id = tasks.journals.get('T-1')?.at(-1)?.id as string;
-    expect(() => app.reviseEstimate({ file: 'plan2.yaml', reason: 'x', category: 'rework', spent: 'include', covers: [id] })).toThrow(/only with --spent exclude/);
+    expect(() => app.estimates.revise({ file: 'plan2.yaml', reason: 'x', category: 'rework', spent: 'include', covers: [id] })).toThrow(/only with --spent exclude/);
   });
 });
 
@@ -265,7 +264,7 @@ describe('cards of other schemas', () => {
   const closeT1 = () => {
     startedTask();
     revise();
-    app.closeTask({});
+    app.closing.close({});
   };
 
   it('a card of schema 1 is rebuilt from the journal and written again on recalculation and in task show', () => {
@@ -273,12 +272,12 @@ describe('cards of other schemas', () => {
     const current = closing.cards.cards.get('T-1') as Card;
     closing.cards.cards.delete('T-1');
     closing.cards.others.set('T-1', { schema: 'v1', card: { ...current, schemaVersion: 1 } as unknown as CardV1 });
-    app.rebuild({ task: TaskId.parse('T-2') });
+    app.closing.rebuild({ task: TaskId.parse('T-2') });
     expect(closing.cards.cards.get('T-1')?.schemaVersion).toBe(3);
     expect(closing.calibration.current?.authors['dev@example.com']?.revised.overall.n).toBe(1);
     closing.cards.cards.delete('T-1');
     closing.cards.others.set('T-1', { schema: 'v1', card: { ...current, schemaVersion: 1 } as unknown as CardV1 });
-    expect(app.showTask({ task: T }).card?.schemaVersion).toBe(3);
+    expect(app.tasks.show({ task: T }).card?.schemaVersion).toBe(3);
     expect(closing.cards.cards.has('T-1')).toBe(true);
   });
 
@@ -286,7 +285,7 @@ describe('cards of other schemas', () => {
     closeT1();
     const before = closing.calibration.current;
     closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
-    const report = app.rebuild({ task: T });
+    const report = app.closing.rebuild({ task: T });
     expect(report.calibrationError).toMatch(/T-9 were written by a newer version of estimetry/);
     expect(closing.calibration.current).toBe(before);
     expect((closing.errors as RecordingErrorReporter).reports.map((r) => r.context)).toContain('calibration');
@@ -299,7 +298,7 @@ describe('cards of other schemas', () => {
     closing.cards.others.set('T-1', { schema: 'v1', card: { ...current, schemaVersion: 1 } as unknown as CardV1 });
     closing.cards.others.set('T-5', { schema: 'v1', card: { ...current, schemaVersion: 1, task: { ...current.task, id: 'T-5' }, parallel: undefined } as unknown as CardV1 });
     closing.cards.failWrite = true;
-    app.rebuild({ task: TaskId.parse('T-2') });
+    app.closing.rebuild({ task: TaskId.parse('T-2') });
     expect(closing.calibration.current?.authors['dev@example.com']).toMatchObject({ tasks: 1, revised: { overall: { n: 1 } } });
     const contexts = (closing.errors as RecordingErrorReporter).reports.map((r) => r.context);
     expect(contexts).toEqual(expect.arrayContaining(['writing the card of T-1', 'reading the card of T-5']));
@@ -308,7 +307,7 @@ describe('cards of other schemas', () => {
   it('closing next to a newer card warns to update estimetry, not to rebuild', () => {
     closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
     startedTask();
-    const closed = app.closeTask({});
+    const closed = app.closing.close({});
     expect(closed.warnings).toEqual([expect.stringMatching(/newer version of estimetry.*update estimetry\)$/)]);
   });
 });

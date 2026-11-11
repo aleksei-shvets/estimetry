@@ -9,6 +9,7 @@ import type { ResolveActiveTask } from './resolve-active-task.js';
 import type { TaskMeasurement } from './task-measurement.js';
 import type { EventJournal } from '../ports/event-journal.js';
 import type { CompletedChange, TaskPlanProgress, UntrackedProject } from './task-plan-progress.js';
+import { nearOf, type WorkingCopy } from '../shared/working-copy.js';
 
 /** Effort of a task for `emt status`. Durations are whole minutes; shares are fractions, null when undefined. */
 export interface StatusView {
@@ -112,7 +113,7 @@ export class ShowStatus {
     private readonly journal: Pick<EventJournal, 'readAll'>,
   ) {}
 
-  execute(input: { readonly task?: TaskId }): StatusView {
+  execute(input: { readonly task?: TaskId } & WorkingCopy): StatusView {
     const task = this.activeTask.inProgress(input.task);
     // One read of the journal for the fact and the completions.
     const journal = task.startedAt === undefined ? undefined : this.journal.readAll(task.id);
@@ -131,7 +132,7 @@ export class ShowStatus {
       }
     }
     const startedAt = task.startedAt?.toISOString();
-    const progress = this.plans.of(task, { records: journal?.records ?? [] });
+    const progress = this.plans.of(task, { records: journal?.records ?? [], ...nearOf(input) });
     const plan = progress.plan;
     return {
       task: {

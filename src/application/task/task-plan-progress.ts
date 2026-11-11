@@ -48,8 +48,6 @@ export class TaskPlanProgress {
   constructor(
     private readonly plans: Pick<ProjectPlans, 'plans'>,
     private readonly journal: Pick<EventJournal, 'readRecords'>,
-    /** The directory the command runs in, when there is one. */
-    private readonly near?: string,
   ) {}
 
   of(task: Task, options: PlanProgressOptions = {}): TaskPlanState {
@@ -57,7 +55,7 @@ export class TaskPlanProgress {
     if (startedAt === undefined) {
       return { untracked: [], completed: [] };
     }
-    const near = options.near ?? this.near;
+    const near = options.near;
     const readings = this.plans.plans(task.projects, {
       ...(near === undefined ? {} : { near }),
       // Older archives only name groups `archived before start`: their tasks are not read.

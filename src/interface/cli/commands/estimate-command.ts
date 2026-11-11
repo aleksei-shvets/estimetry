@@ -15,7 +15,7 @@ export function registerEstimateCommand(program: Command, ctx: CliContext): void
     .option('--task <id>', 'task id; defaults to the only new or estimated task of this project')
     .option('--json', 'print JSON')
     .action(async (file: string, options: { task?: string; json?: boolean }) => {
-      const saved = (await ctx.app()).saveEstimate({ file, ...parseTaskOption(options.task) });
+      const saved = (await ctx.app()).estimates.save({ file, ...parseTaskOption(options.task) });
       for (const kind of saved.missingKinds) {
         ctx.out.error(`warning: the estimate has no ${kind} part`);
       }
@@ -51,9 +51,9 @@ export function registerEstimateCommand(program: Command, ctx: CliContext): void
         },
       ) => {
         const app = await ctx.app();
-        const task = parseTaskOption(options.task);
+        const task = { ...parseTaskOption(options.task), near: ctx.cwd };
         if (options.repair) {
-          const repaired = app.repairRevision(task);
+          const repaired = app.estimates.repairRevision(task);
           ctx.out.print(options.json ? JSON.stringify(repaired, null, 2) : `Wrote the plan snapshot of revision ${repaired.revision} of ${repaired.task.id}.`);
           return;
         }
@@ -62,7 +62,7 @@ export function registerEstimateCommand(program: Command, ctx: CliContext): void
         }
         const lostFrom = options.lostFrom === undefined ? undefined : parseTime(options.lostFrom);
         // What --covers may name and what stays counted, before anything is written.
-        const candidates = app.revisionCandidates({ ...task, ...(lostFrom === undefined ? {} : { lostFrom }), ...(options.spent === undefined ? {} : { spent: options.spent }) });
+        const candidates = app.estimates.revisionCandidates({ ...task, ...(lostFrom === undefined ? {} : { lostFrom }), ...(options.spent === undefined ? {} : { spent: options.spent }) });
         for (const extra of candidates.extras) {
           const covered = (options.covers ?? []).includes(extra.id);
           ctx.out.error(
@@ -73,7 +73,7 @@ export function registerEstimateCommand(program: Command, ctx: CliContext): void
         for (const manual of candidates.untimedManual) {
           ctx.out.error(`note: manual time without a moment stays counted: ${formatMinutes(manual.minutes)} "${manual.description}"`);
         }
-        const revised = app.reviseEstimate({
+        const revised = app.estimates.revise({
           ...task,
           file,
           reason: options.reason,

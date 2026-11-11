@@ -165,3 +165,18 @@ function defaults() {
     logs: { readers: new SessionLogReaderRegistry().register(new FakeSessionLogs()), state: new InMemoryLogImportState() },
   };
 }
+
+/** The ports of the closing as `EstimetryDependencies` takes them, side by side. */
+export function closingPorts(closing: ReturnType<typeof fakeClosing>) {
+  return {
+    cards: closing.cards,
+    calibration: closing.calibration,
+    calibrationSettings: closing.settings,
+    proposals: closing.proposals,
+    codeMeasurer: closing.code,
+    gitHead: closing.head,
+    errors: closing.errors,
+    logReaders: closing.logs.readers,
+    logImportState: closing.logs.state,
+  };
+}

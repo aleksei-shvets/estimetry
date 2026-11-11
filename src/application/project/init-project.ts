@@ -13,6 +13,7 @@ import type { ProjectFiles } from '../ports/project-files.js';
 import { isShareMode, SHARE_MODES, type ShareMode, type SharingPreference } from '../ports/sharing-preference.js';
 import type { WorkspaceLocator } from '../ports/workspace-locator.js';
 import type { RegistrationPlan, ResolveCurrentProject } from './resolve-current-project.js';
+import { defaultFlow, defaultTools, unignoredPersonalFiles } from './init-defaults.js';
 import { detectStack } from './stack.js';
 
 /** Everything `init` needs besides the registry; built by the composition root. */
@@ -27,22 +28,6 @@ export interface InstallDependencies {
   readonly excludes: GitExcludes;
   /** Version of estimetry, stamped into generated files. */
   readonly version: string;
-}
-
-/** What `init` would do by default, for the questions and for the non-interactive run. */
-export interface InitChoices {
-  readonly projectRoot: string;
-  readonly tools: readonly { readonly id: string; readonly title: string }[];
-  readonly flows: readonly { readonly id: string; readonly title: string }[];
-  readonly defaults: {
-    readonly tools: readonly string[];
-    readonly flow: string;
-    readonly share: ShareMode;
-    readonly shared: boolean;
-    readonly trackCommits: boolean;
-  };
-  /** Personal files the default tools write that git does not ignore yet: the user may want them excluded. */
-  readonly unignoredPersonalFiles: readonly string[];
 }
 
 export interface InitInput {
@@ -81,32 +66,14 @@ export class InitProject {
     private readonly deps: InstallDependencies,
   ) {}
 
-  choices(): InitChoices {
-    const root = this.workspace.currentRoot();
-    const tools = this.defaultTools(root);
-    return {
-      projectRoot: root,
-      tools: this.deps.tools.all().map(({ id, title }) => ({ id, title })),
-      flows: this.deps.flows.all().map(({ id, title }) => ({ id, title })),
-      defaults: {
-        tools: tools.map((tool) => tool.id),
-        flow: this.defaultFlow(root),
-        share: this.deps.sharing.mode() ?? 'none',
-        shared: tools.some((tool) => tool.state(root, this.deps.files).shared),
-        trackCommits: this.deps.commitHook.installed(root),
-      },
-      unignoredPersonalFiles: this.unignored(root, tools),
-    };
-  }
-
   /**
    * Validates the choices, plans every change, and only then registers the
    * project and writes files: a failed plan leaves the registry and the files as they were.
    */
   execute(input: InitInput): InitReport {
     const root = this.workspace.currentRoot();
-    const tools = input.tools === undefined ? this.defaultTools(root) : this.toolsById(input.tools);
-    const flow = this.flowById(input.flow ?? this.defaultFlow(root));
+    const tools = input.tools === undefined ? defaultTools(this.deps, root) : this.toolsById(input.tools);
+    const flow = this.flowById(input.flow ?? defaultFlow(this.deps, this.projectConfig, root));
     const share = this.shareMode(input.share ?? this.deps.sharing.mode() ?? 'none');
     const shared = input.shared ?? tools.some((tool) => tool.state(root, this.deps.files).shared);
     const trackCommits = input.trackCommits ?? this.deps.commitHook.installed(root);
@@ -180,7 +147,7 @@ export class InitProject {
 
   /** Personal files must stay out of git; with consent they go to the global excludes, as Claude Code does. */
   private excludePersonalFiles(root: string, tools: readonly ToolAdapter[], consent: boolean | undefined): InstallPlan {
-    const unignored = this.unignored(root, tools);
+    const unignored = unignoredPersonalFiles(this.deps, root, tools);
     if (unignored.length === 0) {
       return EMPTY;
     }
@@ -198,27 +165,6 @@ export class InitProject {
     const current = this.deps.files.read(file) ?? '';
     const separator = current === '' || current.endsWith('\n') ? '' : '\n';
     return { changes: [{ path: file, content: `${current}${separator}${patterns.join('\n')}\n` }], skipped: [], warnings: [] };
-  }
-
-  private unignored(root: string, tools: readonly ToolAdapter[]): string[] {
-    return tools
-      .flatMap((tool) => tool.personalFiles())
-      .filter((path) => this.deps.excludes.isIgnored(root, path) === false);
-  }
-
-  private defaultTools(root: string): ToolAdapter[] {
-    const all = this.deps.tools.all();
-    const installed = all.filter((tool) => tool.state(root, this.deps.files).installed);
-    return installed.length > 0 ? installed : [...all];
-  }
-
-  private defaultFlow(root: string): string {
-    const saved = this.projectConfig.read(root).config?.flow;
-    if (saved !== undefined && this.deps.flows.get(saved)) {
-      return saved;
-    }
-    const all = this.deps.flows.all();
-    return (all.find((flow) => flow.detect(root, this.deps.files)) ?? all.at(-1))?.id ?? 'none';
   }
 
   private toolsById(ids: readonly string[]): ToolAdapter[] {

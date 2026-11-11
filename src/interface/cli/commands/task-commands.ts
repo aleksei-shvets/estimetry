@@ -18,7 +18,7 @@ export function registerTaskCommands(program: Command, ctx: CliContext): void {
     .option('--ticket <key>', 'key of the ticket in an external tracker')
     .option('--json', 'print JSON')
     .action(async (title: string, options: JsonOption & { type?: string; ticket?: string }) => {
-      const view = (await ctx.app()).createTask({
+      const view = (await ctx.app()).tasks.create({
         title,
         ...(options.type === undefined ? {} : { type: options.type }),
         ...(options.ticket === undefined ? {} : { ticket: options.ticket }),
@@ -34,7 +34,7 @@ export function registerTaskCommands(program: Command, ctx: CliContext): void {
     .option('--json', 'print JSON')
     .action(async (options: JsonOption & { all?: boolean; closed?: boolean }) => {
       const all = options.all === true;
-      const views = (await ctx.app()).listTasks({ all, closed: options.closed === true });
+      const views = (await ctx.app()).tasks.list({ all, closed: options.closed === true });
       ctx.out.print(presenterFor(options).taskList(views, { all }));
     });
 
@@ -44,7 +44,7 @@ export function registerTaskCommands(program: Command, ctx: CliContext): void {
     .argument('<task>', 'task id, e.g. T-12')
     .option('--json', 'print JSON')
     .action(async (id: string, options: JsonOption) => {
-      const view = (await ctx.app()).showTask({ task: TaskId.parse(id) });
+      const view = (await ctx.app()).tasks.show({ task: TaskId.parse(id) });
       ctx.out.print(presenterFor(options).taskDetails(view));
     });
 }

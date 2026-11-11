@@ -12,7 +12,7 @@ export function registerCalibrateCommand(program: Command, ctx: CliContext): voi
     .option('--revise', 'for a revision of a task in progress: the coefficient of estimates made during work')
     .option('--json', 'print JSON')
     .action(async (options: { type?: string; stack?: string; revise?: boolean; json?: boolean }) => {
-      const view = (await ctx.app()).calibration({
+      const view = (await ctx.app()).estimates.calibration({
         ...(options.type === undefined ? {} : { type: options.type }),
         ...(options.stack === undefined ? {} : { stack: parseLabels(options.stack) }),
         revise: options.revise === true,

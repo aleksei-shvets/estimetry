@@ -13,7 +13,8 @@ export function registerStartCommand(program: Command, ctx: CliContext): void {
     .option('--at <time>', 'backdate the start (ISO 8601 or "YYYY-MM-DD HH:MM"), for work begun earlier')
     .option('--json', 'print JSON')
     .action(async (id: string | undefined, options: { at?: string; json?: boolean }) => {
-      const view = (await ctx.app()).startTask({
+      const view = (await ctx.app()).tasks.start({
+        near: ctx.cwd,
         ...(id === undefined ? {} : { task: TaskId.parse(id) }),
         ...(options.at === undefined ? {} : { at: parseTime(options.at) }),
       });

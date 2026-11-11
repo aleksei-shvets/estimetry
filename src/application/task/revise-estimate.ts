@@ -1,13 +1,10 @@
 import { EstimateRevision, type ExcludedArchives } from '../../domain/estimate/estimate-revision.js';
 import type { ThreePointData } from '../../domain/estimate/three-point-estimate.js';
-import type { PlanRevised } from '../../domain/progress/progress-records.js';
-import { InvalidValue } from '../../domain/shared/domain-error.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
 import type { Task } from '../../domain/task/task.js';
 import type { TaskId } from '../../domain/task/task-id.js';
 import type { TaskRepository } from '../../domain/task/task-repository.js';
 import { TaskType } from '../../domain/task/task-type.js';
-import { CORE_SOURCE, journalEntry } from '../shared/journal-entry.js';
 import type { CloseProposals } from '../ports/close-proposals.js';
 import type { EstimateReader } from '../ports/estimate-reader.js';
 import type { EventJournal } from '../ports/event-journal.js';
@@ -17,11 +14,14 @@ import { CalendarDate } from '../../domain/shared/calendar-date.js';
 import type { TaskTypeCatalog } from '../ports/task-type-catalog.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
 import { retryOnConflict } from '../shared/retry.js';
+import { nearOf, type WorkingCopy } from '../shared/working-copy.js';
+import { revisionCandidatesOf, type RevisionCandidates } from './find-revision-candidates.js';
+import { writePlanRevised } from './plan-revised.js';
 import type { PlanSnapshots } from './plan-snapshots.js';
 import type { ResolveActiveTask } from './resolve-active-task.js';
 import { toTaskView, type TaskView } from './task-view.js';
 
-export interface ReviseEstimateInput {
+export interface ReviseEstimateInput extends WorkingCopy {
   readonly task?: TaskId;
   readonly file: string;
   readonly reason: string;
@@ -30,14 +30,6 @@ export interface ReviseEstimateInput {
   readonly lostFrom?: Timestamp;
   readonly at?: Timestamp;
   readonly covers?: readonly string[];
-}
-
-/** Records the user may want to name in `--covers`, or should know stay counted. */
-export interface RevisionCandidates {
-  /** Extra work recorded since the window of lost work began, any category. */
-  readonly extras: readonly { readonly id: string; readonly at: string; readonly category: string; readonly description: string; readonly minutes: number | null }[];
-  /** Manual time without a moment recorded in the window: it is not taken out. */
-  readonly untimedManual: readonly { readonly description: string; readonly minutes: number }[];
 }
 
 export interface EstimateRevised {
@@ -70,14 +62,7 @@ export class ReviseEstimate {
     private readonly journal: Pick<EventJournal, 'appendRecord' | 'readRecords'>,
     private readonly proposals: Pick<CloseProposals, 'peek' | 'remove'>,
     private readonly meta: EventMetaSource,
-    private readonly near: string | undefined,
   ) {}
-
-  /** What `--covers` may name and what stays counted, for the confirmation before the revision. */
-  candidates(input: { readonly task?: TaskId; readonly lostFrom?: Timestamp; readonly spent?: string }): RevisionCandidates {
-    const task = this.activeTask.inProgress(input.task);
-    return candidatesOf(task, input.spent === 'exclude' ? (input.lostFrom ?? windowStart(task)) : undefined, this.meta.next().at);
-  }
 
   execute(input: ReviseEstimateInput): EstimateRevised {
     const estimate = this.reader.read(input.file);
@@ -89,9 +74,9 @@ export class ReviseEstimate {
       const task = this.activeTask.inProgress(input.task);
       const meta = this.meta.next();
       const revisedAt = input.at ?? meta.at;
-      const from = input.lostFrom ?? windowStart(task);
+      const from = input.lostFrom ?? task.lostWindowFloor;
       // Only a task that already has an estimate is revised; its first estimate reads no archive.
-      excluded = input.spent === 'exclude' && task.estimate !== undefined && from !== undefined ? this.archives(task, from, revisedAt) : [];
+      excluded = input.spent === 'exclude' && task.estimate !== undefined && from !== undefined ? this.archives(task, from, revisedAt, input) : [];
       task.reviseEstimate(
         EstimateRevision.of({
           estimate,
@@ -113,7 +98,7 @@ export class ReviseEstimate {
     });
     const revision = task.revisions.find((item) => item.id === revisionId);
     if (revision !== undefined) {
-      this.writeSnapshot(task, revisionId);
+      writePlanRevised({ journal: this.journal, snapshots: this.snapshots, meta: this.meta }, task, revisionId, input);
       this.dropProposal(task, excluded);
     }
     const lostFrom = revision?.lostFrom ?? null;
@@ -126,22 +111,8 @@ export class ReviseEstimate {
       at,
       excluded: revision?.excluded ?? [],
       covers: revision?.covers ?? [],
-      candidates: candidatesOf(task, lostFrom === null ? undefined : Timestamp.parse(lostFrom), this.meta.next().at),
+      candidates: revisionCandidatesOf(task, lostFrom === null ? undefined : Timestamp.parse(lostFrom), this.meta.next().at),
     };
-  }
-
-  /** Writes the plan snapshot of the last revision that has none, after a failure between the two writes. */
-  repair(input: { readonly task?: TaskId }): { readonly task: TaskView; readonly revision: string } {
-    const task = this.activeTask.inProgress(input.task);
-    const written = new Set(
-      this.journal.readRecords(task.id).flatMap((record) => (record.type === 'plan.revised' ? [record.data.revision] : [])),
-    );
-    const missing = [...task.revisions].reverse().find((revision) => !written.has(revision.id));
-    if (missing === undefined) {
-      throw new InvalidValue(`every revision of ${task.id.toString()} has its plan snapshot; nothing to repair`);
-    }
-    this.writeSnapshot(task, missing.id);
-    return { task: toTaskView(task), revision: missing.id };
   }
 
   /**
@@ -150,10 +121,10 @@ export class ReviseEstimate {
    * date), so work archived before the window or after the revision still counts.
    * Projects not readable here are left out: they count from the day of the revision.
    */
-  private archives(task: Task, from: Timestamp, at: Timestamp): ExcludedArchives[] {
+  private archives(task: Task, from: Timestamp, at: Timestamp, where: WorkingCopy): ExcludedArchives[] {
     const fromDay = CalendarDate.of(from).minusDays(1);
     const atDay = CalendarDate.of(at);
-    return this.plans.archives(task.projects, this.near === undefined ? {} : { near: this.near }).flatMap((reading) => {
+    return this.plans.archives(task.projects, nearOf(where)).flatMap((reading) => {
       if (reading.archived === undefined) {
         return [];
       }
@@ -169,17 +140,6 @@ export class ReviseEstimate {
     });
   }
 
-  private writeSnapshot(task: Task, revision: string): void {
-    const meta = this.meta.next();
-    this.journal.appendRecord(
-      journalEntry<PlanRevised>(
-        'plan.revised',
-        { source: CORE_SOURCE, revision, projects: this.snapshots.started(task, this.near, task.startedAt ?? meta.at) },
-        { id: meta.id, at: meta.at, author: meta.author, project: task.homeProject.value, task: task.id.toString() },
-      ),
-    );
-  }
-
   /** A proposal to close about a change that was rolled back would ask about work thrown away. */
   private dropProposal(task: Task, excluded: readonly ExcludedArchives[]): void {
     const pending = this.proposals.peek(task.id.toString());
@@ -189,33 +149,4 @@ export class ReviseEstimate {
       this.proposals.remove(task.id.toString());
     }
   }
-}
-
-/** Where a window of lost work starts by default: the latest of the start, the previous revision and the last reopening. */
-function windowStart(task: Task): Timestamp | undefined {
-  return task.lostWindowFloor;
-}
-
-function candidatesOf(task: Task, from: Timestamp | undefined, now: Timestamp): RevisionCandidates {
-  if (from === undefined) {
-    return { extras: [], untimedManual: [] };
-  }
-  const inWindow = (at: string) => {
-    const millis = Timestamp.parse(at).toMillis();
-    return millis >= from.toMillis() && millis <= now.toMillis();
-  };
-  return {
-    extras: task.extraRecords
-      .filter((record) => record.at !== '' && inWindow(record.at))
-      .map((record) => ({
-        id: record.id,
-        at: record.at,
-        category: record.extra.category,
-        description: record.extra.description,
-        minutes: record.extra.time === undefined ? null : Math.round(record.extra.time.minutes),
-      })),
-    untimedManual: task.manualRecords
-      .filter((record) => record.manual.at === undefined && inWindow(record.recordedAt))
-      .map((record) => ({ description: record.manual.description, minutes: Math.round(record.manual.duration.minutes) })),
-  };
 }

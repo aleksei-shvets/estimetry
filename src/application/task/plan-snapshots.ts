@@ -8,6 +8,7 @@ import type { Timestamp } from '../../domain/shared/timestamp.js';
 import type { Task } from '../../domain/task/task.js';
 import type { GitHead } from '../ports/git-snapshot.js';
 import type { ProjectPlanReading, ProjectPlans } from '../ports/project-plans.js';
+import { nearOf, type WorkingCopy } from '../shared/working-copy.js';
 
 export interface ClosingPlan {
   readonly projects: readonly ProjectPlanSnapshot[];
@@ -28,13 +29,13 @@ export class PlanSnapshots {
     private readonly projects: Pick<ProjectRepository, 'findById'>,
   ) {}
 
-  started(task: Task, near: string | undefined, startedAt: Timestamp): ProjectPlanSnapshot[] {
-    return this.read(task, near, startedAt).map((reading) => this.snapshot(reading));
+  started(task: Task, startedAt: Timestamp, where: WorkingCopy = {}): ProjectPlanSnapshot[] {
+    return this.read(task, startedAt, where).map((reading) => this.snapshot(reading));
   }
 
-  closing(task: Task, near: string | undefined): ClosingPlan {
+  closing(task: Task, where: WorkingCopy = {}): ClosingPlan {
     const startedAt = task.startedAt;
-    const readings = startedAt === undefined ? [] : this.read(task, near, startedAt);
+    const readings = startedAt === undefined ? [] : this.read(task, startedAt, where);
     const available = readings.filter((reading) => reading.changes !== undefined);
     const plan =
       startedAt === undefined
@@ -66,9 +67,9 @@ export class PlanSnapshots {
     };
   }
 
-  private read(task: Task, near: string | undefined, startedAt: Timestamp): ProjectPlanReading[] {
+  private read(task: Task, startedAt: Timestamp, where: WorkingCopy): ProjectPlanReading[] {
     return this.plans.plans(task.projects, {
-      ...(near === undefined ? {} : { near }),
+      ...nearOf(where),
       archivedSince: CalendarDate.of(startedAt).minusDays(1),
     });
   }
