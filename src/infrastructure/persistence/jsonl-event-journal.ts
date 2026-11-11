@@ -1,7 +1,8 @@
 import { renameSync, statSync } from 'node:fs';
 import type { EventJournal } from '../../application/ports/event-journal.js';
 import { isActivityEventType, parseActivityEvent, type ActivityEvent } from '../../domain/measurement/activity-events.js';
-import { isProgressRecordType, parseProgressRecord, type ProgressRecord } from '../../domain/progress/progress-records.js';
+import { parseProgressRecord } from '../../domain/progress/progress-record-parser.js';
+import { isProgressRecordType, type ProgressRecord } from '../../domain/progress/progress-records.js';
 import { ProjectId } from '../../domain/project/project-id.js';
 import { TaskId } from '../../domain/task/task-id.js';
 import { appendJsonLine, readJsonLines } from '../fs/jsonl.js';

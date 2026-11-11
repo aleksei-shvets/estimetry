@@ -1,9 +1,11 @@
 import type { Estimate } from '../estimate/estimate.js';
+import type { EstimatePart } from '../estimate/estimate-part.js';
 import { Duration } from '../measurement/duration.js';
 import { IntervalSet } from '../measurement/interval-set.js';
 import type { ManualTime } from '../measurement/manual-time.js';
-import { Timestamp } from '../shared/timestamp.js';
+import type { Timestamp } from '../shared/timestamp.js';
 import { isExcluded, isExcludedDirectory, NO_EXCLUSIONS, type PlanExclusions } from './plan-exclusions.js';
+import { CheckboxWalk, type Step, type Update } from './checkbox-walk.js';
 import type { ChangeProgress } from './progress-records.js';
 
 /** The plan of one project at a moment: `plan.started`, a checkpoint, or `plan.closing`. */
@@ -89,111 +91,23 @@ export function partFacts(input: PartFactsInput): PartFacts {
   );
   const boundary = revision === undefined ? undefined : clamp(revision.at, input);
   const exclusions = revision?.exclusions ?? NO_EXCLUSIONS;
-  const points = basePoints(
-    input.points.map((point) => ({ ...point, millis: clamp(point.at, input) })),
-    revision?.id,
-    boundary,
-  )
-    .map((point) => (boundary === undefined || point.millis < boundary ? point : withoutExcluded(point, exclusions)))
-    .sort((a, b) => a.millis - b.millis);
+  const points = planPoints(input, boundary, exclusions);
   const afterBoundary = boundary === undefined ? points : points.filter((point) => point.millis >= boundary);
   if (afterBoundary.length === 0 && revision === undefined) {
     return { mode: 'no-plan-snapshots', parts: nullParts, unattributed: totalMinutes, beforeRevision: 0 };
   }
 
-  const groups = new Set(estimate.parts.flatMap((part) => (part.group === undefined ? [] : [part.group])));
   const grouped = estimate.parts.filter((part) => part.group !== undefined);
-  // Manual time recorded before the revision for a part, or without a moment, was about the previous plan.
-  const early = (item: ManualItem): boolean =>
-    boundary !== undefined &&
-    (item.record.part !== undefined || item.record.at === undefined) &&
-    (item.recordedAt === undefined || item.recordedAt.toMillis() < boundary);
-  // Manual time recorded for a grouped part goes to it; the rest of the fact is sliced by time.
-  const ownManual = (item: ManualItem): boolean =>
-    !early(item) && item.record.part !== undefined && grouped.some((part) => part.id === item.record.part);
-  const direct = (item: ManualItem) => ownManual(item) || early(item);
-  const pooled = timedSets(input.measured, records, lost, (item) => !direct(item));
-  const byGroup = new Map<string, number>();
-  const directMillis = new Map<string, number>();
-  const ownMillis = total.millis - pooled.agent.total.millis - pooled.user.total.millis - untimed(records, (item) => !direct(item)).millis;
-  distributeOwnManual(
-    records.filter(direct).map((item) => ({ key: early(item) ? BEFORE : (item.record.part as string), duration: item.record.duration })),
-    ownMillis,
-    directMillis,
-  );
-
-  const steps = timeline(
-    points,
-    input.completions
-      .map((c) => ({ ...c, millis: clamp(c.at, input) }))
-      .filter((c) => boundary === undefined || c.millis < boundary || c.directory === undefined || !isExcludedDirectory(exclusions, c.project, c.change, c.directory)),
-  );
-  const last = new Map<string, number>();
-  const seenProject = new Set<string>();
-  let pool = 0;
-  let before = 0;
-  let cursor = input.startedAt.toMillis();
-  let crossed = boundary === undefined;
-  const cross = () => {
-    // Everything counted before the revision is the previous plan's; a change taken out starts anew.
-    before += sliceMillis(pooled, cursor, boundary as number);
-    cursor = Math.max(cursor, boundary as number);
-    for (const key of [...last.keys()]) {
-      const [project, change] = key.split('\u0000') as [string, string];
-      if (exclusions.archives.some((a) => a.project === project && a.change === change)) {
-        last.delete(key);
-      }
-    }
-    crossed = true;
-  };
-  for (const step of steps) {
-    if (!crossed && step.millis >= (boundary as number)) {
-      cross();
-    }
-    if (crossed) {
-      pool += sliceMillis(pooled, cursor, step.millis);
-      cursor = Math.max(cursor, step.millis);
-    }
-    const closed = new Map<string, number>();
-    for (const update of step.updates) {
-      const key = `${update.project}\u0000${update.change}`;
-      // The first snapshot of a project is the base: boxes closed before it are not the task's.
-      // A change that appears later in a project already seen starts from zero.
-      const previous = last.get(key) ?? (seenProject.has(update.project) ? 0 : undefined);
-      const done = update.done;
-      if (crossed && previous !== undefined && done > previous && groups.has(update.change)) {
-        closed.set(update.change, (closed.get(update.change) ?? 0) + done - previous);
-      }
-      last.set(key, Math.max(previous ?? 0, done));
-    }
-    for (const update of step.updates) {
-      seenProject.add(update.project);
-    }
-    const count = [...closed.values()].reduce((a, b) => a + b, 0);
-    if (count > 0 && pool > 0) {
-      for (const [group, n] of closed) {
-        byGroup.set(group, (byGroup.get(group) ?? 0) + (pool * n) / count);
-      }
-      pool = 0;
-    }
+  const split = splitManual({ input, records, lost, total, grouped, boundary });
+  const groups = new Set(grouped.map((part) => part.group as string));
+  const walk = new CheckboxWalk(split.pooled, groups, exclusions, boundary, input.startedAt.toMillis());
+  for (const step of timeline(points, completionPoints(input, boundary, exclusions))) {
+    walk.step(step);
   }
-  if (!crossed) {
-    cross();
-  }
-  pool += sliceMillis(pooled, cursor, input.closedAt.toMillis());
-  pool += untimed(records, (item) => !direct(item)).millis;
-
-  // A group's time is shared by its parts in proportion to their most likely hours.
-  const exact = estimate.parts.map((part) => {
-    if (part.group === undefined) {
-      return 0;
-    }
-    const siblings = grouped.filter((other) => other.group === part.group);
-    const weight = siblings.reduce((sum, other) => sum + other.hours.likely, 0);
-    const share = weight === 0 ? 1 / siblings.length : part.hours.likely / weight;
-    return (byGroup.get(part.group) ?? 0) * share + (directMillis.get(part.id) ?? 0);
-  });
-  before += directMillis.get(BEFORE) ?? 0;
+  const walked = walk.finish(input.closedAt.toMillis());
+  const pool = walked.pool + untimed(records, (item) => !split.direct(item)).millis;
+  const exact = partMillis(estimate, grouped, walked.byGroup, split.directMillis);
+  const before = walked.before + (split.directMillis.get(BEFORE) ?? 0);
   if (afterBoundary.length === 0) {
     // No plan after the revision: the time before it is known, the rest belongs to no part.
     const beforeMinutes = Math.min(totalMinutes, Math.round(before / 60_000));
@@ -208,6 +122,71 @@ export function partFacts(input: PartFactsInput): PartFacts {
     unattributed: minutes.at(-2) ?? 0,
     beforeRevision: minutes.at(-1) ?? 0,
   };
+}
+
+/** Snapshots of the plan in time order; after the revision without the changes it took out. */
+function planPoints(input: PartFactsInput, boundary: number | undefined, exclusions: PlanExclusions): Point[] {
+  return basePoints(
+    input.points.map((point) => ({ ...point, millis: clamp(point.at, input) })),
+    input.revision?.id,
+    boundary,
+  )
+    .map((point) => (boundary === undefined || point.millis < boundary ? point : withoutExcluded(point, exclusions)))
+    .sort((a, b) => a.millis - b.millis);
+}
+
+/** Completions in time; after the revision none of a directory it took out. */
+function completionPoints(input: PartFactsInput, boundary: number | undefined, exclusions: PlanExclusions): (CompletionPoint & { readonly millis: number })[] {
+  return input.completions
+    .map((c) => ({ ...c, millis: clamp(c.at, input) }))
+    .filter((c) => boundary === undefined || c.millis < boundary || c.directory === undefined || !isExcludedDirectory(exclusions, c.project, c.change, c.directory));
+}
+
+/**
+ * Manual time that goes straight to a part (recorded for a grouped part) or
+ * to the previous plan (recorded before the revision for a part or without a
+ * moment), and the measured time left to slice by the plan.
+ */
+function splitManual(c: {
+  readonly input: PartFactsInput;
+  readonly records: readonly ManualItem[];
+  readonly lost: IntervalSet;
+  readonly total: Duration;
+  readonly grouped: readonly EstimatePart[];
+  readonly boundary: number | undefined;
+}): { readonly pooled: { agent: IntervalSet; user: IntervalSet }; readonly directMillis: Map<string, number>; readonly direct: (item: ManualItem) => boolean } {
+  const { boundary, grouped, records } = c;
+  // Manual time recorded before the revision for a part, or without a moment, was about the previous plan.
+  const early = (item: ManualItem): boolean =>
+    boundary !== undefined &&
+    (item.record.part !== undefined || item.record.at === undefined) &&
+    (item.recordedAt === undefined || item.recordedAt.toMillis() < boundary);
+  // Manual time recorded for a grouped part goes to it; the rest of the fact is sliced by time.
+  const ownManual = (item: ManualItem): boolean =>
+    !early(item) && item.record.part !== undefined && grouped.some((part) => part.id === item.record.part);
+  const direct = (item: ManualItem) => ownManual(item) || early(item);
+  const pooled = timedSets(c.input.measured, records, c.lost, (item) => !direct(item));
+  const directMillis = new Map<string, number>();
+  const ownMillis = c.total.millis - pooled.agent.total.millis - pooled.user.total.millis - untimed(records, (item) => !direct(item)).millis;
+  distributeOwnManual(
+    records.filter(direct).map((item) => ({ key: early(item) ? BEFORE : (item.record.part as string), duration: item.record.duration })),
+    ownMillis,
+    directMillis,
+  );
+  return { pooled, directMillis, direct };
+}
+
+/** A group's time is shared by its parts in proportion to their most likely hours; manual time for a part comes on top. */
+function partMillis(estimate: Estimate, grouped: readonly EstimatePart[], byGroup: ReadonlyMap<string, number>, directMillis: ReadonlyMap<string, number>): number[] {
+  return estimate.parts.map((part) => {
+    if (part.group === undefined) {
+      return 0;
+    }
+    const siblings = grouped.filter((other) => other.group === part.group);
+    const weight = siblings.reduce((sum, other) => sum + other.hours.likely, 0);
+    const share = weight === 0 ? 1 / siblings.length : part.hours.likely / weight;
+    return (byGroup.get(part.group) ?? 0) * share + (directMillis.get(part.id) ?? 0);
+  });
 }
 
 /** Key of manual time recorded for a part before the revision. */
@@ -251,16 +230,7 @@ function withoutExcluded(point: Point, exclusions: PlanExclusions): Point {
   };
 }
 
-interface Update {
-  readonly project: string;
-  readonly change: string;
-  readonly done: number;
-}
 
-interface Step {
-  readonly millis: number;
-  readonly updates: readonly Update[];
-}
 
 /** Snapshots and completions in time order; a completion closes all boxes of its change as last known. */
 function timeline(
@@ -322,14 +292,6 @@ function distributeOwnManual(records: readonly { readonly key: string; readonly 
   }
 }
 
-function sliceMillis(sets: { agent: IntervalSet; user: IntervalSet }, from: number, to: number): number {
-  if (to <= from) {
-    return 0;
-  }
-  const start = Timestamp.fromMillis(from);
-  const end = Timestamp.fromMillis(to);
-  return sets.agent.within(start, end).total.millis + sets.user.within(start, end).total.millis;
-}
 
 function clamp(at: Timestamp, input: { readonly startedAt: Timestamp; readonly closedAt: Timestamp }): number {
   return Math.min(Math.max(at.toMillis(), input.startedAt.toMillis()), input.closedAt.toMillis());

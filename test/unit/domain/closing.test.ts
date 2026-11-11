@@ -15,7 +15,7 @@ import { ManualTime } from '../../../src/domain/measurement/manual-time.js';
 import { ParallelModeChange } from '../../../src/domain/measurement/parallel-mode.js';
 import { largestRemainder, partFacts, type PlanPoint } from '../../../src/domain/progress/part-facts.js';
 import type { CommitRecorded, ProgressRecord } from '../../../src/domain/progress/progress-records.js';
-import { parseProgressRecord } from '../../../src/domain/progress/progress-records.js';
+import { parseProgressRecord } from '../../../src/domain/progress/progress-record-parser.js';
 import { ProjectId } from '../../../src/domain/project/project-id.js';
 import { Author } from '../../../src/domain/shared/author.js';
 import { InvalidValue } from '../../../src/domain/shared/domain-error.js';

@@ -26,13 +26,10 @@ export const DEBT = {
   taskImportsHooks: {},
   nodePath: {},
   maxLines: {
-    'src/domain/progress/progress-records.ts': 440,
   },
   maxFunctionLines: {
     'src/application/task/show-status.ts': 93,
     'src/bootstrap/container.ts': 125,
-    'src/domain/progress/part-facts.ts': 136,
-    'src/domain/progress/progress-records.ts': 99,
     'src/infrastructure/persistence/records.ts': 102,
     'src/interface/cli/commands/close-commands.ts': 108,
     'src/interface/cli/commands/estimate-command.ts': 82,
