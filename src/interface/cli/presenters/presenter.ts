@@ -15,6 +15,7 @@ import type { RetroRecorded } from '../../../application/task/record-retro.js';
 import type { Renegotiated } from '../../../application/task/renegotiate.js';
 import type { TaskReopened } from '../../../application/task/reopen-task.js';
 import type { TaskDetails } from '../../../application/task/show-task.js';
+import type { CloseSummary } from '../../../application/task/show-close-summary.js';
 
 /** Renders use case results; `--json` picks the JSON presenter instead of branching in commands. */
 export interface Presenter {
@@ -30,6 +31,8 @@ export interface Presenter {
   parallelModeChanged(result: ParallelModeChanged): string;
   status(view: StatusView): string;
   initReport(report: InitReport): string;
+  /** What closing would record, shown before the user agrees. */
+  closeSummary(summary: CloseSummary): string;
   taskClosed(result: TaskClosedResult): string;
   taskReopened(result: TaskReopened): string;
   retroRecorded(result: RetroRecorded): string;

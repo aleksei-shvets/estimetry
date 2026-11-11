@@ -1,11 +1,11 @@
 import { Estimate } from '../estimate/estimate.js';
 import type { EstimateRevision } from '../estimate/estimate-revision.js';
-import { LostWindow } from '../estimate/lost-window.js';
+import type { LostWindow } from '../estimate/lost-window.js';
 import { exclusionsOf, type PlanExclusions } from '../progress/plan-exclusions.js';
 import { Extra } from '../measurement/extra.js';
 import { ManualTime } from '../measurement/manual-time.js';
 import type { ParallelModeChange, ParallelPeriod } from '../measurement/parallel-mode.js';
-import { Author } from '../shared/author.js';
+import type { Author } from '../shared/author.js';
 import { InvalidValue } from '../shared/domain-error.js';
 import type { EventMeta } from '../shared/event-envelope.js';
 import { Timestamp } from '../shared/timestamp.js';
@@ -25,7 +25,6 @@ import {
   type TaskAttached,
   type TaskClosed as TaskClosedEvent,
   type TaskCreated,
-  type TaskOutcome,
   type TaskEstimateRevised,
   type TaskReopened,
   type TaskRetroRecorded,
@@ -37,11 +36,13 @@ import {
   type TaskParallelModeEnabled,
   type TaskStarted,
 } from './task-events.js';
-import { TaskId } from './task-id.js';
+import type { TaskId } from './task-id.js';
 import { STARTABLE_STATUSES, type TaskStatus } from './task-status.js';
 import { TaskType } from './task-type.js';
-import { closureOf, revisionData, revisionOf, snapshotOf, stateFromSnapshot, type TaskSnapshot } from './task-snapshot.js';
-import { later, type ExtraRecord, type ManualRecord, type TaskClosure, type TaskRetro, type TaskRevision, type TaskState } from './task-state.js';
+import { revisionData, snapshotOf, stateFromSnapshot, type TaskSnapshot } from './task-snapshot.js';
+import { initialState, later, type ExtraRecord, type ManualRecord, type TaskClosure, type TaskRetro, type TaskRevision, type TaskState } from './task-state.js';
+import { applyClosed, applyReopened, checkClosingMoment, closedData, endParallelMode, lastReopening, type ClosingInput } from './task-closures.js';
+import { applyRevision, lostWindowFloor, lostWindowsOf, revisedData } from './task-revisions.js';
 
 export { TASK_SNAPSHOT_SCHEMA_VERSION, type TaskSnapshot } from './task-snapshot.js';
 export type { ExtraRecord, ManualRecord, TaskClosure, TaskRetro, TaskRevision } from './task-state.js';
@@ -91,7 +92,7 @@ export class Task {
       },
       meta,
     );
-    const task = new Task(Task.initialState(event), 0, '', 0);
+    const task = new Task(initialState(event), 0, '', 0);
     task.appliedCount = 1;
     task.lastId = event.id;
     task.pending.push(event);
@@ -103,7 +104,7 @@ export class Task {
     if (first?.type !== 'task.created') {
       throw new InvalidValue('task journal must start with task.created');
     }
-    const task = new Task(Task.initialState(first), 1, first.id, events.length);
+    const task = new Task(initialState(first), 1, first.id, events.length);
     for (const event of rest) {
       task.apply(event);
     }
@@ -213,13 +214,12 @@ export class Task {
 
   /** The earliest a window of lost work may start: the latest of the start, the previous revision and the last reopening. */
   get lostWindowFloor(): Timestamp | undefined {
-    const moments = [this.state.startedAt, this.state.revisions.at(-1)?.at, this.lastReopening].filter((v): v is Timestamp => v !== undefined);
-    return moments.length === 0 ? undefined : moments.reduce(later);
+    return lostWindowFloor(this.state, lastReopening(this.state));
   }
 
   /** Windows of work thrown away by revisions with `exclude`. */
   get lostWindows(): readonly LostWindow[] {
-    return this.state.revisions.flatMap((r) => (r.spent === 'exclude' && r.lostFrom !== undefined ? [LostWindow.of(r.lostFrom, r.at)] : []));
+    return lostWindowsOf(this.state);
   }
 
   /**
@@ -287,10 +287,6 @@ export class Task {
 
   get isParallel(): boolean {
     return this.state.parallelMode.at(-1)?.disabledAt === undefined && this.state.parallelMode.length > 0;
-  }
-
-  private get lastReopening(): Timestamp | undefined {
-    return this.state.closures.flatMap((closure) => (closure.reopenedAt === undefined ? [] : [closure.reopenedAt])).at(-1);
   }
 
   isStartable(): boolean {
@@ -428,40 +424,17 @@ export class Task {
    * start nor before anything the task already knows of: a parallel period or a
    * record after the end would contradict it.
    */
-  close(input: { readonly at: Timestamp; readonly outcome: TaskOutcome; readonly spawned?: TaskId }, meta: EventMeta): void {
+  close(input: ClosingInput, meta: EventMeta): void {
     this.checkClosingMoment(input.at, meta);
     this.recordClosed(input, meta);
   }
 
   private checkClosingMoment(at: Timestamp, meta: EventMeta): void {
-    const startedAt = this.requireInProgress();
-    if (at.toMillis() > meta.at.toMillis()) {
-      throw new InvalidValue(`closing time must not be in the future (${at.toISOString()})`);
-    }
-    if (at.toMillis() < startedAt.toMillis()) {
-      throw new InvalidValue(`closing time ${at.toISOString()} is before the start (${startedAt.toISOString()})`);
-    }
-    if (at.toMillis() < this.lastEventAt.toMillis()) {
-      throw new InvalidValue(
-        `closing time ${at.toISOString()} is before the last record of the task (${this.lastEventAt.toISOString()})`,
-      );
-    }
+    checkClosingMoment(this.state, this.requireInProgress(), at, meta.at);
   }
 
-  private recordClosed(input: { readonly at: Timestamp; readonly outcome: TaskOutcome; readonly spawned?: TaskId }, meta: EventMeta): void {
-    this.record(
-      taskEvent<TaskClosedEvent>(
-        'task.closed',
-        this.state.id,
-        this.homeProject.value,
-        {
-          at: input.at.toISOString(),
-          outcome: input.outcome,
-          ...(input.spawned === undefined ? {} : { spawned: input.spawned.toString() }),
-        },
-        meta,
-      ),
-    );
+  private recordClosed(input: ClosingInput, meta: EventMeta): void {
+    this.record(taskEvent<TaskClosedEvent>('task.closed', this.state.id, this.homeProject.value, closedData(input), meta));
   }
 
   /**
@@ -527,74 +500,8 @@ export class Task {
     if (this.isParallel) {
       throw new InvalidValue('parallel mode refers to parts of the current estimate; switch it off first with `emt parallel off`');
     }
-    const firstOne = this.state.estimate === undefined;
-    if (!firstOne && (revision.spent === undefined || revision.category === undefined)) {
-      throw new InvalidValue('a revision needs --spent include or --spent exclude, and --category');
-    }
-    if (firstOne && (revision.spent !== undefined || revision.lostFrom !== undefined || revision.covers.length > 0)) {
-      throw new InvalidValue('the task has no estimate yet, so this is its first one: --spent, --lost-from and --covers do not apply');
-    }
-    if (revision.covers.length > 0 && revision.spent !== 'exclude') {
-      throw new InvalidValue('--covers goes only with --spent exclude: with include nothing is lost, and the covered extra work would leave calibration');
-    }
-    const at = revision.at;
-    if (at.toMillis() > meta.at.toMillis()) {
-      throw new InvalidValue(`the revision moment must not be in the future (${at.toISOString()})`);
-    }
-    const parallelEnd = this.state.parallelMode.at(-1)?.disabledAt;
-    const floors: [string, Timestamp | undefined][] = [
-      ['the start', startedAt],
-      ['the previous revision', this.state.revisions.at(-1)?.at],
-      ['the last reopening', this.lastReopening],
-      ['the end of parallel mode', parallelEnd === undefined ? undefined : Timestamp.parse(parallelEnd)],
-      ['the last manual time of an estimate part', this.state.lastPartRecordAt],
-    ];
-    for (const [what, floor] of floors) {
-      if (floor !== undefined && at.toMillis() < floor.toMillis()) {
-        throw new InvalidValue(`the revision moment ${at.toISOString()} is before ${what} (${floor.toISOString()})`);
-      }
-    }
-    let lostFrom = revision.lostFrom;
-    if (revision.spent === 'exclude') {
-      lostFrom ??= this.lostWindowFloor ?? startedAt;
-      for (const [what, floor] of floors.slice(0, 3)) {
-        if (floor !== undefined && lostFrom.toMillis() < floor.toMillis()) {
-          throw new InvalidValue(`--lost-from ${lostFrom.toISOString()} is before ${what} (${floor.toISOString()})`);
-        }
-      }
-      if (lostFrom.toMillis() >= at.toMillis()) {
-        throw new InvalidValue('the window of lost work is empty: --lost-from must be before the revision moment');
-      }
-    }
-    const known = new Set(this.state.extras.flatMap((record) => (record.id === undefined ? [] : [record.id])));
-    const unknown = revision.covers.filter((id) => !known.has(id));
-    if (unknown.length > 0) {
-      throw new InvalidValue(`--covers names no extra work of this task: ${unknown.join(', ')}`);
-    }
-    const covered = new Set(this.state.revisions.filter((r) => r.spent === 'exclude').flatMap((r) => r.covers));
-    const twice = revision.covers.filter((id) => covered.has(id));
-    if (twice.length > 0) {
-      throw new InvalidValue(`--covers names extra work another revision already covers: ${twice.join(', ')}`);
-    }
-    this.record(
-      taskEvent<TaskEstimateRevised>(
-        'task.estimate-revised',
-        this.state.id,
-        this.homeProject.value,
-        {
-          estimate: revision.estimate.toData(),
-          ...(revision.type === undefined ? {} : { taskType: revision.type }),
-          reason: revision.reason.value,
-          ...(revision.category === undefined || firstOne ? {} : { category: revision.category }),
-          ...(revision.spent === undefined || firstOne ? {} : { spent: revision.spent }),
-          at: at.toISOString(),
-          ...(lostFrom === undefined || firstOne ? {} : { lostFrom: lostFrom.toISOString() }),
-          covers: [...revision.covers],
-          ...(revision.excluded.length === 0 || firstOne ? {} : { excluded: revision.excluded }),
-        },
-        meta,
-      ),
-    );
+    const data = revisedData(this.state, revision, { startedAt, now: meta.at, lastReopening: lastReopening(this.state) });
+    this.record(taskEvent<TaskEstimateRevised>('task.estimate-revised', this.state.id, this.homeProject.value, data, meta));
   }
 
   pullEvents(): TaskEvent[] {
@@ -677,27 +584,20 @@ export class Task {
         state.extras.push({ id: event.id, at: ts, extra: Extra.fromData(event.data) });
         break;
       case 'task.estimate-revised':
-        this.applyRevision(event);
+        applyRevision(state, event);
         break;
       case 'task.parallel-mode-enabled':
         state.parallelMode.push({ enabledAt: event.ts, change: event.data });
         break;
       case 'task.parallel-mode-disabled':
-        this.endParallelMode(event.ts, true);
+        endParallelMode(state, event.ts, true);
         break;
       case 'task.closed':
-        this.endParallelMode(event.data.at);
-        state.status = 'closed';
-        state.closures.push(closureOf({ ...event.data, recordedAt: event.ts }));
+        applyClosed(state, event);
         break;
-      case 'task.reopened': {
-        const last = state.closures.at(-1);
-        if (last) {
-          state.closures[state.closures.length - 1] = { ...last, reopenedAt: ts };
-        }
-        state.status = 'in-progress';
+      case 'task.reopened':
+        applyReopened(state, ts);
         break;
-      }
       case 'task.retro-recorded':
         state.retro = { reasons: event.data.reasons, lesson: event.data.lesson, recordedAt: ts };
         break;
@@ -709,73 +609,5 @@ export class Task {
     }
     this.appliedCount += 1;
     this.lastId = event.id;
-  }
-
-  /** Ends the last period of parallel mode: a disabling always, the closing of the task only an open one. */
-  private endParallelMode(at: string, always = false): void {
-    const last = this.state.parallelMode.at(-1);
-    if (last && (always || last.disabledAt === undefined)) {
-      this.state.parallelMode[this.state.parallelMode.length - 1] = { ...last, disabledAt: at };
-    }
-  }
-
-  private applyRevision(event: TaskEstimateRevised): void {
-    const state = this.state;
-    const before = state.estimate;
-    const after = Estimate.fromData(event.data.estimate);
-    if (before === undefined) {
-      state.estimatedAfterStart = true;
-    } else {
-      state.firstEstimate ??= before;
-      state.revisions.push(
-        revisionOf({
-          id: event.id,
-          at: event.data.at,
-          ...(event.data.lostFrom === undefined ? {} : { lostFrom: event.data.lostFrom }),
-          reason: event.data.reason,
-          ...(event.data.category === undefined ? {} : { category: event.data.category }),
-          ...(event.data.spent === undefined ? {} : { spent: event.data.spent }),
-          baseLikelyBefore: before.baseLikely,
-          baseLikelyAfter: after.baseLikely,
-          typeBefore: state.type.value,
-          typeAfter: event.data.taskType ?? state.type.value,
-          covers: [...event.data.covers],
-          ...(event.data.excluded === undefined ? {} : { excluded: event.data.excluded }),
-        }),
-      );
-    }
-    state.estimate = after;
-    state.estimated = true;
-    if (event.data.taskType !== undefined) {
-      state.type = TaskType.restore(event.data.taskType);
-    }
-  }
-
-  private static initialState(event: TaskCreated): TaskState {
-    const ts = Timestamp.parse(event.ts);
-    return {
-      id: TaskId.parse(event.task),
-      title: event.data.title,
-      type: TaskType.restore(event.data.taskType),
-      ticket: event.data.ticket,
-      status: 'new',
-      estimated: false,
-      projects: event.project === undefined ? [] : [ProjectId.parse(event.project)],
-      author: Author.of(event.author),
-      createdAt: ts,
-      startedAt: undefined,
-      estimate: undefined,
-      manual: [],
-      extras: [],
-      parallelMode: [],
-      spawnedFrom: event.data.spawnedFrom === undefined ? undefined : TaskId.parse(event.data.spawnedFrom),
-      closures: [],
-      retro: undefined,
-      lastEventAt: ts,
-      firstEstimate: undefined,
-      estimatedAfterStart: false,
-      revisions: [],
-      lastPartRecordAt: undefined,
-    };
   }
 }

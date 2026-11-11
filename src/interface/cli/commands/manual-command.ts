@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { presenterFor, type CliContext } from '../cli-context.js';
 import { parseDuration, parseTaskOption, parseTime } from '../parse-input.js';
-import { formatMinutes } from '../presenters/text-presenter.js';
+import { formatMinutes } from '../presenters/text/format.js';
 
 interface ManualOptions {
   readonly at?: string;

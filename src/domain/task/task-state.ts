@@ -3,13 +3,13 @@ import type { ExcludedArchives, SpentPolicy } from '../estimate/estimate-revisio
 import type { Extra, ExtraCategory } from '../measurement/extra.js';
 import type { ManualTime } from '../measurement/manual-time.js';
 import type { ParallelPeriod } from '../measurement/parallel-mode.js';
-import type { ProjectId } from '../project/project-id.js';
-import type { Author } from '../shared/author.js';
-import type { Timestamp } from '../shared/timestamp.js';
-import type { RetroReason, TaskOutcome } from './task-events.js';
-import type { TaskId } from './task-id.js';
+import { ProjectId } from '../project/project-id.js';
+import { Author } from '../shared/author.js';
+import { Timestamp } from '../shared/timestamp.js';
+import type { RetroReason, TaskCreated, TaskOutcome } from './task-events.js';
+import { TaskId } from './task-id.js';
 import type { TaskStatus } from './task-status.js';
-import type { TaskType } from './task-type.js';
+import { TaskType } from './task-type.js';
 
 /** One closing of the task; `reopenedAt` is set when it was opened again. */
 export interface TaskClosure {
@@ -91,4 +91,33 @@ export interface TaskState {
 
 export function later(a: Timestamp, b: Timestamp): Timestamp {
   return b.toMillis() > a.toMillis() ? b : a;
+}
+
+/** The state of a task right after `task.created`. */
+export function initialState(event: TaskCreated): TaskState {
+  const ts = Timestamp.parse(event.ts);
+  return {
+    id: TaskId.parse(event.task),
+    title: event.data.title,
+    type: TaskType.restore(event.data.taskType),
+    ticket: event.data.ticket,
+    status: 'new',
+    estimated: false,
+    projects: event.project === undefined ? [] : [ProjectId.parse(event.project)],
+    author: Author.of(event.author),
+    createdAt: ts,
+    startedAt: undefined,
+    estimate: undefined,
+    manual: [],
+    extras: [],
+    parallelMode: [],
+    spawnedFrom: event.data.spawnedFrom === undefined ? undefined : TaskId.parse(event.data.spawnedFrom),
+    closures: [],
+    retro: undefined,
+    lastEventAt: ts,
+    firstEstimate: undefined,
+    estimatedAfterStart: false,
+    revisions: [],
+    lastPartRecordAt: undefined,
+  };
 }

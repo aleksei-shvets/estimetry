@@ -31,16 +31,13 @@ export const DEBT = {
   },
   maxLines: {
     'src/domain/card/card.ts': 421,
-    'src/domain/measurement/effort-calculator.ts': 935,
     'src/domain/progress/progress-records.ts': 440,
-    'src/domain/task/task.ts': 781,
-    'src/interface/cli/presenters/text-presenter.ts': 594,
+    'src/domain/task/task.ts': 613,
   },
   maxFunctionLines: {
     'src/application/task/show-status.ts': 93,
     'src/bootstrap/container.ts': 125,
     'src/domain/card/card.ts': 155,
-    'src/domain/measurement/effort-calculator.ts': 158,
     'src/domain/progress/part-facts.ts': 136,
     'src/domain/progress/progress-records.ts': 99,
     'src/infrastructure/persistence/records.ts': 102,
