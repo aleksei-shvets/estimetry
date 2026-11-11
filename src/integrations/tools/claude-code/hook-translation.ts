@@ -31,6 +31,7 @@ const KINDS: Readonly<Record<string, HookKind>> = {
 type Json = Record<string, unknown>;
 
 export const claudeCodeHooks: HookAdapter = {
+  kind: 'session',
   id: 'claude-code',
   aliases: ['claude'],
   hookEvents: CLAUDE_CODE_HOOK_EVENTS,

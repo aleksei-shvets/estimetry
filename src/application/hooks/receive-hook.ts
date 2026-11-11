@@ -1,33 +1,26 @@
 import type { ActivityEvent } from '../../domain/measurement/activity-events.js';
-import type { CommitRecorded } from '../../domain/progress/progress-records.js';
-import { fileList } from '../../domain/progress/progress-records.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
-import { SessionId } from '../../domain/measurement/session-id.js';
-import { Timestamp } from '../../domain/shared/timestamp.js';
+import type { SessionId } from '../../domain/measurement/session-id.js';
+import type { Timestamp } from '../../domain/shared/timestamp.js';
 import { isInProgress } from '../../domain/task/task-status.js';
 import type { HookAdapter, HookAdapters, HookTranslation } from '../contracts/hook-adapter.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
-import type { CheckpointState } from '../ports/checkpoint-state.js';
 import type { CloseProposals } from '../ports/close-proposals.js';
 import type { Clock } from '../ports/clock.js';
 import type { EventJournal } from '../ports/event-journal.js';
-import type { GitSnapshots } from '../ports/git-snapshot.js';
 import type { IdGenerator } from '../ports/id-generator.js';
-import type { MeasurementSettings } from '../ports/measurement-settings.js';
 import type { ProjectLocator } from '../ports/project-locator.js';
 import { servedTasks, type SessionBindings } from '../ports/session-bindings.js';
 import type { TaskStatusReader } from '../ports/task-status-reader.js';
 import type { ChangeCompletions } from './change-completions.js';
+import type { CommitRecords } from './commit-records.js';
 import type { Checkpoints } from './checkpoints.js';
 import { cut, MAX_CONTEXT_LENGTH } from './context-limit.js';
 import { closeProposalText, ESTIMATE_REMINDER, EXTRA_REMINDER, sessionStartContext, type TaskFact } from './hook-context.js';
 import { journalEntry } from '../shared/journal-entry.js';
+import type { RecentSessions } from './recent-sessions.js';
 import type { SessionTask } from './session-task.js';
 import type { ImportSessionLogs } from '../task/import-session-logs.js';
-
-/** The git hook `init --track-commits` installs. */
-export const GIT_SOURCE = 'git';
-const GIT_EVENTS: readonly string[] = ['post-commit'];
 
 export interface HookCall {
   readonly source: string | undefined;
@@ -55,9 +48,9 @@ export interface HookDependencies {
   readonly journal: EventJournal;
   readonly tasks: TaskStatusReader;
   readonly bindings: SessionBindings;
-  readonly checkpointState: CheckpointState;
-  readonly git: GitSnapshots;
-  readonly settings: MeasurementSettings;
+  /** Commits named by sources of commits (the git hook). */
+  readonly commits: Pick<CommitRecords, 'record'>;
+  readonly recent: RecentSessions;
   readonly facts: () => Promise<TaskFacts>;
   readonly proposals: CloseProposals;
   /** Percent and unfinished groups of the task's plan for the proposal text; loaded only when there is one. */
@@ -86,21 +79,16 @@ export class ReceiveHook {
     if (source === undefined || event === undefined) {
       throw new InvalidValue('hook needs a source and an event, e.g. `estimetry hook claude-code Stop`');
     }
-    if (source === GIT_SOURCE) {
-      if (!GIT_EVENTS.includes(event)) {
-        throw new InvalidValue(`unknown git hook event "${event}"`);
-      }
-      // The hook passes the sha of its commit; an older hook block passes nothing and `HEAD` is read.
-      const sha = call.payload.trim();
-      this.recordCommit(call.cwd, /^[0-9a-f]{7,64}$/.test(sha) ? sha : undefined);
-      return undefined;
-    }
     const adapter = this.deps.adapters.get(source);
     if (adapter === undefined) {
       throw new InvalidValue(`unknown hook source "${source}"`);
     }
     if (!adapter.hookEvents.includes(event)) {
       throw new InvalidValue(`unknown ${source} hook event "${event}"`);
+    }
+    if (adapter.kind === 'commit') {
+      this.deps.commits.record(adapter, adapter.commitOf(event, call.payload), call.cwd, this.deps.clock.now());
+      return undefined;
     }
     return this.receive(adapter, event, call);
   }
@@ -204,11 +192,8 @@ export class ReceiveHook {
     if (pending === undefined) {
       return undefined;
     }
-    if (pending.session !== session.value) {
-      const seen = this.lastSeen(pending.session);
-      if (seen !== undefined && now.toMillis() - seen <= this.deps.settings.idlePolicy().threshold.millis) {
-        return undefined;
-      }
+    if (pending.session !== session.value && this.deps.recent.isRecent(this.deps.recent.lastSeen(pending.session), now)) {
+      return undefined;
     }
     const taken = this.deps.proposals.take(task);
     if (taken === undefined) {
@@ -243,74 +228,6 @@ export class ReceiveHook {
       } else {
         this.deps.journal.append(entry);
       }
-    }
-  }
-
-  /**
-   * The task of a commit: the only task in progress of the project, else the
-   * task of its session that was active last, within the idle threshold.
-   */
-  private recordCommit(cwd: string, sha: string | undefined): void {
-    const project = this.deps.locator.locate(cwd);
-    if (project === undefined) {
-      return;
-    }
-    const commit = this.deps.git.commit(project.root, sha);
-    if (commit === undefined) {
-      return;
-    }
-    const now = this.deps.clock.now();
-    const task = this.commitTask(project.id, now);
-    const record = journalEntry<CommitRecorded>(
-      'commit.recorded',
-      {
-        source: GIT_SOURCE,
-        sha: commit.sha,
-        parents: commit.parents,
-        ...(commit.patchId === undefined ? {} : { patchId: commit.patchId }),
-        authoredAt: commit.authoredAt,
-        committedAt: commit.committedAt,
-        ...fileList(commit.files),
-      },
-      { id: this.deps.ids.next(), at: now, author: this.deps.authors.current(), project: project.id, ...(task === undefined ? {} : { task }) },
-    );
-    if (task === undefined) {
-      this.deps.journal.appendUnassigned(project.id, record);
-    } else {
-      this.deps.journal.appendRecord(record);
-    }
-  }
-
-  private commitTask(project: string, now: Timestamp): string | undefined {
-    const idle = this.deps.settings.idlePolicy().threshold.millis;
-    // A commit right after closing belongs to the closed task, never to another one.
-    const latest = this.deps.bindings
-      .ofProject(project)
-      .map((binding) => ({ binding, seen: this.lastSeen(binding.session) }))
-      .filter(({ seen }) => seen !== undefined && now.toMillis() - seen <= idle)
-      .sort((a, b) => (b.seen ?? 0) - (a.seen ?? 0))[0];
-    if (latest !== undefined && latest.binding.task === undefined && latest.binding.closedTask !== undefined) {
-      return undefined;
-    }
-    const inProgress = this.deps.tasks.inProgress(project);
-    if (inProgress.length === 1) {
-      return inProgress[0]?.id;
-    }
-    const active = this.deps.bindings
-      .ofProject(project)
-      .filter((binding) => binding.task !== undefined && inProgress.some((task) => task.id === binding.task))
-      .map((binding) => ({ binding, seen: this.lastSeen(binding.session) }))
-      .filter(({ seen }) => seen !== undefined && now.toMillis() - seen <= idle)
-      .sort((a, b) => (b.seen ?? 0) - (a.seen ?? 0));
-    return active[0]?.binding.task;
-  }
-
-  private lastSeen(session: string): number | undefined {
-    try {
-      const seen = this.deps.checkpointState.read(SessionId.parse(session)).lastSeenAt;
-      return seen === undefined ? undefined : Timestamp.parse(seen).toMillis();
-    } catch {
-      return undefined;
     }
   }
 }

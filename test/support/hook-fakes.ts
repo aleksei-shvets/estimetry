@@ -23,6 +23,7 @@ export interface FakePayload {
 
 /** A tool whose payload already names the events, so use cases are tested without a real translation. */
 export class FakeHookAdapter implements HookAdapter {
+  readonly kind = 'session';
   readonly id = 'fake-tool';
   readonly aliases: readonly string[] = ['fake'];
   readonly hookEvents: readonly string[] = ['Start', 'Prompt', 'ToolDone', 'Stop', 'End'];
@@ -152,6 +153,8 @@ export class FakeGit implements GitHead, GitSnapshots {
     files: [{ path: 'src/a.ts', added: 10, deleted: 2 }],
   };
   workingTreeCalls = 0;
+  /** The sha of each commit asked for; undefined for `HEAD`. */
+  readonly commitsAsked: (string | undefined)[] = [];
 
   head(): string | undefined {
     return this.headSha;
@@ -162,7 +165,8 @@ export class FakeGit implements GitHead, GitSnapshots {
     return this.tree;
   }
 
-  commit(): CommitInfo | undefined {
+  commit(_root: string, sha?: string): CommitInfo | undefined {
+    this.commitsAsked.push(sha);
     return this.lastCommit;
   }
 }

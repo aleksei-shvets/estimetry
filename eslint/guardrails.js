@@ -38,7 +38,7 @@ export const DEBT = {
   },
   maxFunctionLines: {
     'src/application/task/show-status.ts': 93,
-    'src/bootstrap/container.ts': 150,
+    'src/bootstrap/container.ts': 125,
     'src/domain/card/card.ts': 155,
     'src/domain/measurement/effort-calculator.ts': 158,
     'src/domain/progress/part-facts.ts': 136,
