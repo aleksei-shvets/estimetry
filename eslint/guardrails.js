@@ -27,7 +27,6 @@ export const DEBT = {
   nodePath: {},
   maxLines: {
     'src/domain/progress/progress-records.ts': 440,
-    'src/domain/task/task.ts': 613,
   },
   maxFunctionLines: {
     'src/application/task/show-status.ts': 93,
