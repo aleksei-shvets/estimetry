@@ -1,18 +1,20 @@
-import { codeLines, type CodeLines } from '../code/code-volume.js';
+import type { CodeLines } from '../code/code-volume.js';
 import type { LineRange } from '../estimate/code-volume.js';
 import type { PartKind, PartPerformer } from '../estimate/part-kind.js';
-import type { Estimate } from '../estimate/estimate.js';
-import { EXTRA_CATEGORIES, type Extra, type ExtraAccounting, type ExtraCategory } from '../measurement/extra.js';
+import type { ExtraAccounting, ExtraCategory } from '../measurement/extra.js';
 import type { EffortReport } from '../measurement/effort-report.js';
 import type { PartFacts, PartsFactMode } from '../progress/part-facts.js';
 import type { CodeMeasured, PlanClosing, ProgressRecord } from '../progress/progress-records.js';
 import { InvalidValue } from '../shared/domain-error.js';
-import { Timestamp } from '../shared/timestamp.js';
 import type { TaskOutcome } from '../task/task-events.js';
 import type { Task } from '../task/task.js';
+import { cardCode, cardEstimate, cardFact, cardParallel, cardParts, cardRetro, cardRevisions, cardText, closedMinutes, minutes } from './card-sections.js';
+import { tallyCovered, tallyExtras } from './extra-tallies.js';
 import type { RevisionFact } from './revision-facts.js';
 import type { TokenCounts } from '../progress/session-log.js';
 import { usageSummary, type TaskUsage } from '../usage/task-usage.js';
+
+export { noExtraTallies } from './extra-tallies.js';
 
 /**
  * 2: the current estimate, revisions and the counted fact beside the first estimate (estimate-revision-cards).
@@ -211,58 +213,12 @@ export function buildCard(input: CardInput): Card {
   }
   const closedAt = closure.at;
   const closing = last<PlanClosing>(input.records, 'plan.closing');
-  const measured = last<CodeMeasured>(input.records, 'code.measured');
   const first = task.originalEstimate;
   const current = task.estimate;
   const revised = task.revisions.length > 0;
-  const closedMinutes = task.closures.reduce((sum, c) => sum + (c.reopenedAt === undefined ? 0 : c.reopenedAt.toMillis() - c.at.toMillis()) / 60_000, 0);
-  const completed = new Set(closing?.data.completedGroups ?? []);
-  const firstParallel = task.parallelMode[0]?.change;
-  const retro = task.retro;
-  const lastReopen = task.closures.flatMap((c) => (c.reopenedAt === undefined ? [] : [c.reopenedAt])).at(-1);
-  const partIndex = (id: string | undefined) => {
-    const index = id === undefined ? -1 : (current?.parts.findIndex((part) => part.id === id) ?? -1);
-    return index < 0 ? {} : { part: index };
-  };
   const covered = new Set(task.revisions.filter((revision) => revision.spent === 'exclude').flatMap((revision) => revision.covers));
   const isCovered = (id: string | undefined) => id !== undefined && covered.has(id);
-  const minutes = (millis: number) => Math.round(millis / 60_000);
-  const cardParts = (estimate: Estimate | undefined, facts: PartFacts | undefined): CardPart[] => {
-    const sizes = new Map<string, number>();
-    for (const part of estimate?.parts ?? []) {
-      if (part.group !== undefined) {
-        sizes.set(part.group, (sizes.get(part.group) ?? 0) + 1);
-      }
-    }
-    return (estimate?.parts ?? []).map((part, i) => {
-      const fact = facts?.parts[i];
-      return {
-        kind: part.kind,
-        ...(part.who === undefined ? {} : { who: part.who }),
-        likelyHours: part.hours.likely,
-        factMinutes: fact?.minutes ?? null,
-        ...(fact === undefined ? { reason: 'revised' } : fact.reason === undefined ? {} : { reason: fact.reason }),
-        groupDone: part.group === undefined || closing === undefined ? null : completed.has(part.group),
-        soleInGroup: part.group !== undefined && sizes.get(part.group) === 1,
-      };
-    });
-  };
-  const factOf = (r: EffortReport): CardFact => ({
-    totalMinutes: minutes(r.fact.millis),
-    agentMinutes: minutes(r.agentTime.millis),
-    userMinutes: minutes(r.userTime.millis),
-    manualMinutes: minutes(r.manualTime.millis),
-    uncertaintyMinutes: minutes(r.uncertainty.millis),
-    uncertaintyShare: r.uncertaintyShare ?? null,
-    lowMinutes: minutes(r.factLow.millis),
-    highMinutes: minutes(r.factHigh.millis),
-    agentWorkMinutes: minutes(r.agentWork.millis),
-  });
-  const hooksMeasured = (r: EffortReport) => r.measured.agent.total.millis + r.measured.user.total.millis;
-  // All activity of hooks inside windows of lost work leaves the counted fact manual only.
-  const countedMinimal = !input.hasActivity || (hooksMeasured(report) > 0 && hooksMeasured(counted) === 0);
-  const parts = cardParts(current, input.partFacts);
-
+  const parts = cardParts(current, input.partFacts, closing);
   return {
     schemaVersion: CARD_SCHEMA_VERSION,
     author: task.author.id,
@@ -277,41 +233,18 @@ export function buildCard(input: CardInput): Card {
     startedAt: startedAt.toISOString(),
     closedAt: closure.at.toISOString(),
     calendarMinutes: minutes(closedAt.toMillis() - startedAt.toMillis()),
-    closedMinutes: Math.round(closedMinutes),
+    closedMinutes: Math.round(closedMinutes(task)),
     estimate: cardEstimate(first, task.firstType.value),
     currentEstimate: cardEstimate(current, task.type.value),
-    revisions: task.revisions.map((revision, i) => ({
-      at: revision.at.toISOString(),
-      ...(revision.lostFrom === undefined ? {} : { lostFrom: revision.lostFrom.toISOString() }),
-      ...(revision.category === undefined ? {} : { category: revision.category }),
-      ...(revision.spent === undefined ? {} : { spent: revision.spent }),
-      typeBefore: (revision.typeBefore ?? task.firstType).value,
-      typeAfter: (revision.typeAfter ?? task.type).value,
-      baseLikelyBeforeHours: revision.baseLikelyBefore ?? null,
-      baseLikelyAfterHours: revision.baseLikelyAfter,
-      ...(input.revisionFacts?.[i] ?? { countedAtMinutes: 0, lostMinutes: 0 }),
-    })),
-    fact: {
-      ...factOf(report),
-      counted: {
-        ...factOf(counted),
-        sequentialMinutes: counted.sequentialEquivalent === undefined ? null : minutes(counted.sequentialEquivalent.millis),
-        minimal: countedMinimal,
-      },
-    },
+    revisions: cardRevisions(task, input.revisionFacts),
+    fact: cardFact(report, counted, input.hasActivity),
     accuracy: input.hasActivity ? 'partial' : 'minimal',
     usage: input.usage === undefined ? null : usageSummary(input.usage),
     ...(revised ? { revised: true } : {}),
     ...(task.estimatedAfterStart ? { estimatedAfterStart: true } : {}),
     backgroundAgents: report.backgroundAgents && !report.parallel.used,
-    parallel: {
-      used: report.parallel.used,
-      maxAgents: report.parallel.maxAgents ?? null,
-      sequentialMinutes: report.sequentialEquivalent === undefined ? null : minutes(report.sequentialEquivalent.millis),
-      budgetShare: firstParallel?.budgetShare ?? null,
-      planShare: firstParallel?.planShare ?? null,
-    },
-    parts: revised ? cardParts(first, undefined) : parts,
+    parallel: cardParallel(report, task.parallelMode[0]?.change),
+    parts: revised ? cardParts(first, undefined, closing) : parts,
     currentParts: parts,
     partsFact: input.partFacts.mode,
     unattributedMinutes: input.partFacts.unattributed,
@@ -319,61 +252,10 @@ export function buildCard(input: CardInput): Card {
     plan: { done: closing?.data.done ?? null, unfinishedGroups: closing?.data.unfinishedGroups.length ?? 0 },
     extras: tallyExtras(task.extraRecords.filter((record) => !isCovered(record.id)).map((record) => record.extra)),
     coveredByRevision: tallyCovered(task.extraRecords.filter((record) => isCovered(record.id)).map((record) => record.extra)),
-    code:
-      measured === undefined
-        ? null
-        : {
-            measuredAt: measured.data.measuredAt,
-            measuredLater: Timestamp.parse(measured.data.measuredAt).toMillis() - closedAt.toMillis() > 60_000,
-            projects: measured.data.projects.map((project) => ({
-              source: project.source,
-              ...(project.reason === undefined ? {} : { reason: project.reason }),
-              ...(project.unverified ? { unverified: true } : {}),
-              ...(project.unreachable === undefined ? {} : { unreachable: project.unreachable }),
-              ...(project.uncovered === undefined ? {} : { uncovered: project.uncovered }),
-              truncated: project.truncated,
-            })),
-            lines: codeLines(measured.data.projects),
-          },
-    retro:
-      retro === undefined
-        ? 'pending'
-        : {
-            status: lastReopen !== undefined && retro.recordedAt.toMillis() < lastReopen.toMillis() ? 'stale' : 'current',
-            reasons: retro.reasons.map((reason) => partIndex(reason.part)),
-          },
-    text: {
-      title: task.title,
-      ...(task.ticket === undefined ? {} : { ticket: task.ticket }),
-      projects: task.projects.map((project) => project.value),
-      parts: partNames(first),
-      currentParts: partNames(current),
-      revisions: task.revisions.map((revision) => ({ reason: revision.reason })),
-      unfinishedGroups: [...(closing?.data.unfinishedGroups ?? [])],
-      extras: task.extras.map((extra) => ({ category: extra.category, description: extra.description })),
-      manual: task.manualTime.map((record) => record.description),
-      ...(retro === undefined ? {} : { retro: { reasons: retro.reasons, lesson: retro.lesson } }),
-    },
+    code: cardCode(last<CodeMeasured>(input.records, 'code.measured'), closedAt),
+    retro: cardRetro(task),
+    text: cardText(task, closing),
   };
-}
-
-function cardEstimate(estimate: Estimate | undefined, type: string): CardEstimate | null {
-  return estimate === undefined
-    ? null
-    : {
-        optimisticHours: estimate.total.optimistic,
-        likelyHours: estimate.total.likely,
-        pessimisticHours: estimate.total.pessimistic,
-        baseLikelyHours: estimate.baseLikely,
-        calibrated: estimate.calibrated,
-        ...(estimate.coefficient === undefined ? {} : { coefficient: estimate.coefficient }),
-        ...(estimate.codeVolume === undefined ? {} : { codeVolume: estimate.codeVolume.toData() }),
-        type,
-      };
-}
-
-function partNames(estimate: Estimate | undefined): { name: string; group?: string }[] {
-  return (estimate?.parts ?? []).map((part) => ({ name: part.name, ...(part.group === undefined ? {} : { group: part.group }) }));
 }
 
 /**
@@ -382,40 +264,4 @@ function partNames(estimate: Estimate | undefined): { name: string; group?: stri
  */
 function last<T extends ProgressRecord>(records: readonly ProgressRecord[], type: T['type']): T | undefined {
   return records.filter((record): record is T => record.type === type).at(-1);
-}
-
-function tallyExtras(extras: readonly Extra[]): Card['extras'] {
-  const absorbed = noExtraTallies();
-  const renegotiated = noExtraTallies();
-  const result = Object.fromEntries(
-    EXTRA_CATEGORIES.map((category) => [category, { absorbed: absorbed[category], renegotiated: renegotiated[category] }]),
-  ) as Record<ExtraCategory, Record<ExtraAccounting, ExtraTally>>;
-  for (const extra of extras) {
-    const tally = result[extra.category][extra.accounting];
-    const time = extra.time;
-    result[extra.category][extra.accounting] = {
-      count: tally.count + 1,
-      timed: tally.timed + (time === undefined ? 0 : 1),
-      minutes: tally.minutes + (time === undefined ? 0 : Math.round(time.minutes)),
-    };
-  }
-  return result;
-}
-
-/** A tally of no extra work for every category. */
-export function noExtraTallies(): Record<ExtraCategory, ExtraTally> {
-  return Object.fromEntries(EXTRA_CATEGORIES.map((category) => [category, { count: 0, timed: 0, minutes: 0 }])) as Record<ExtraCategory, ExtraTally>;
-}
-
-function tallyCovered(extras: readonly Extra[]): Card['coveredByRevision'] {
-  const result = noExtraTallies();
-  for (const extra of extras) {
-    const tally = result[extra.category];
-    result[extra.category] = {
-      count: tally.count + 1,
-      timed: tally.timed + (extra.time === undefined ? 0 : 1),
-      minutes: tally.minutes + (extra.time === undefined ? 0 : Math.round(extra.time.minutes)),
-    };
-  }
-  return result;
 }

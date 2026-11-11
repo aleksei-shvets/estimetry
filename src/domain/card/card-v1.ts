@@ -1,4 +1,5 @@
-import { noExtraTallies, type Card, type CardEstimate, type CardPart } from './card.js';
+import type { Card, CardEstimate, CardPart } from './card.js';
+import { noExtraTallies } from './extra-tallies.js';
 import { upgradeCardV2, type CardFactV2, type CardV2 } from './card-v2.js';
 
 /** A card of schema 1, as `estimate-revision` and earlier wrote it. */
