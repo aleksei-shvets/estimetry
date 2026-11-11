@@ -61,52 +61,23 @@ export function createContainer(environment: Environment, options: ContainerOpti
   };
 }
 
-/**
- * Only what a hook needs. The author comes from config.yaml alone: detecting it
- * would run git, and init has written the profile already.
- */
-async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, startedAt: number, claudeConfig: string) {
-  const [
-    { ReceiveHook },
-    { SessionTask },
-    { Checkpoints },
-    { FlowProjectPlans },
-    { ChangeCompletions },
-    { CheckpointSnapshot },
-    { ProgressLog },
-    { ChangeArchives },
-    { EventMetaSource },
-    { HookAdapterRegistry },
-    { claudeCodeHooks },
-    { FlowRegistry },
-    { openSpecFlow },
-    { noneFlow },
-    { FsProjectLocator },
-    { NodeProjectFiles },
-    { YamlSessionStore, YamlCheckpointState },
-    { YamlProgressState },
-    { FileCloseProposals },
-    { FileProjectRepository },
-    { FileTaskStatusReader },
-    { JsonlEventJournal },
-    { YamlConfigStore },
-    { YamlProjectConfigFile },
-    { FsGitHead },
-    { GitSnapshotsCli },
-    { RandomIdGenerator },
-    { Timestamp },
-  ] = await Promise.all([
+/** Modules of the hook receiver, loaded together: a hook loads nothing of the other commands. */
+function hookModules() {
+  return Promise.all([
     import('../application/hooks/receive-hook.js'),
     import('../application/hooks/session-task.js'),
     import('../application/hooks/checkpoints.js'),
     import('../application/hooks/flow-plans.js'),
     import('../application/hooks/change-completions.js'),
+    import('../application/hooks/commit-records.js'),
+    import('../application/hooks/recent-sessions.js'),
     import('../application/hooks/checkpoint-snapshot.js'),
     import('../application/hooks/progress-log.js'),
     import('../application/shared/change-archives.js'),
     import('../application/shared/event-meta-source.js'),
     import('../integrations/tools/hook-adapters.js'),
     import('../integrations/tools/claude-code/hook-translation.js'),
+    import('../integrations/tools/git/git-hooks.js'),
     import('../integrations/flows/registry.js'),
     import('../integrations/flows/openspec/openspec-flow.js'),
     import('../integrations/flows/none/none-flow.js'),
@@ -125,6 +96,46 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     import('../infrastructure/system/random-id-generator.js'),
     import('../domain/shared/timestamp.js'),
   ]);
+}
+
+/**
+ * Only what a hook needs. The author comes from config.yaml alone: detecting it
+ * would run git, and init has written the profile already.
+ */
+async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, startedAt: number, claudeConfig: string) {
+  const [
+    { ReceiveHook },
+    { SessionTask },
+    { Checkpoints },
+    { FlowProjectPlans },
+    { ChangeCompletions },
+    { CommitRecords, CommitTask },
+    { RecentSessions },
+    { CheckpointSnapshot },
+    { ProgressLog },
+    { ChangeArchives },
+    { EventMetaSource },
+    { HookAdapterRegistry },
+    { claudeCodeHooks },
+    { gitHooks },
+    { FlowRegistry },
+    { openSpecFlow },
+    { noneFlow },
+    { FsProjectLocator },
+    { NodeProjectFiles },
+    { YamlSessionStore, YamlCheckpointState },
+    { YamlProgressState },
+    { FileCloseProposals },
+    { FileProjectRepository },
+    { FileTaskStatusReader },
+    { JsonlEventJournal },
+    { YamlConfigStore },
+    { YamlProjectConfigFile },
+    { FsGitHead },
+    { GitSnapshotsCli },
+    { RandomIdGenerator },
+    { Timestamp },
+  ] = await hookModules();
   const config = new YamlConfigStore(layout, () => {
     throw new Error(`no author profile in ${layout.configFile}; run estimetry init`);
   });
@@ -142,9 +153,11 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
   const proposals = new FileCloseProposals(layout);
   const clock = { now: () => started };
   const meta = new EventMetaSource(clock, ids, config);
+  const locator = new FsProjectLocator(layout);
+  const recent = new RecentSessions(checkpointState, config);
   return new ReceiveHook({
-    adapters: new HookAdapterRegistry().register(claudeCodeHooks),
-    locator: new FsProjectLocator(layout),
+    adapters: new HookAdapterRegistry().register(claudeCodeHooks).register(gitHooks),
+    locator,
     sessionTask: new SessionTask(bindings, tasks, journal, ids, config),
     checkpoints: new Checkpoints(checkpointState, journal, new CheckpointSnapshot(plans, new FsGitHead(), git), config, errors, meta),
     completions: new ChangeCompletions(new ChangeArchives(plans, files), new ProgressLog(new YamlProgressState(layout), journal), tasks, meta, errors, proposals),
@@ -173,9 +186,8 @@ async function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, s
     journal,
     tasks,
     bindings,
-    checkpointState,
-    git,
-    settings: config,
+    commits: new CommitRecords(locator, git, new CommitTask(bindings, tasks, recent), journal, meta),
+    recent,
     // Only the session start needs the fact, and only it loads the task repository and the calculator.
     facts: async () => {
       const [{ MeasuredTaskFacts }, { TaskMeasurement }, { TaskPlanProgress }, { SnapshotTaskReader }, { SystemClock }] =

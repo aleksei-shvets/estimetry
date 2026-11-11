@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryCloseProposals } from '../../support/closing-fakes.js';
-import type { ActivityDraft, HookKind } from '../../../src/application/contracts/hook-adapter.js';
+import type { ActivityDraft, CommitHookAdapter, HookKind, HookSource } from '../../../src/application/contracts/hook-adapter.js';
+import { gitHooks } from '../../../src/integrations/tools/git/git-hooks.js';
+import { CommitRecords, CommitTask } from '../../../src/application/hooks/commit-records.js';
+import { RecentSessions } from '../../../src/application/hooks/recent-sessions.js';
 import { BindSession } from '../../../src/application/task/bind-session.js';
 import { Checkpoints } from '../../../src/application/hooks/checkpoints.js';
 import { ReceiveHook, SESSION_END_IMPORT_BUDGET_MS } from '../../../src/application/hooks/receive-hook.js';
@@ -41,6 +44,8 @@ let settings: FixedMeasurementSettings;
 let errors: RecordingErrorReporter;
 let git: FakeGit;
 let receive: ReceiveHook;
+/** Another source of commits: the receiver takes it with no change of its own. */
+const hgHooks: CommitHookAdapter = { kind: 'commit', id: 'hg', aliases: [], hookEvents: ['commit'], commitOf: () => ({}) };
 let bind: BindSession;
 let n = 0;
 
@@ -83,8 +88,9 @@ beforeEach(() => {
   const ids = new SequentialIdGenerator();
   const authors = new FakeAuthorProvider();
   const status = new RepositoryTaskStatusReader(tasks);
+  const recent = new RecentSessions(state, settings);
   receive = new ReceiveHook({
-    adapters: new ListRegistry([new FakeHookAdapter()]),
+    adapters: new ListRegistry<HookSource>([new FakeHookAdapter(), gitHooks, hgHooks]),
     locator: new FakeProjectLocator(),
     sessionTask: new SessionTask(bindings, status, journal, ids, authors),
     checkpoints: new Checkpoints(state, journal, new CheckpointSnapshot(new FakeProjectPlans(), git, git), settings, errors, new EventMetaSource({ now: () => { throw new Error('the clock is not read here'); } }, ids, authors)),
@@ -94,9 +100,8 @@ beforeEach(() => {
     journal,
     tasks: status,
     bindings,
-    checkpointState: state,
-    git,
-    settings,
+    commits: new CommitRecords(new FakeProjectLocator(), git, new CommitTask(bindings, status, recent), journal, new EventMetaSource(clock, ids, authors)),
+    recent,
     facts: async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5, planDone: 51 }) }),
     clock,
     ids,
@@ -292,6 +297,25 @@ describe('the receiver itself', () => {
 
 describe('commits', () => {
   const commit = () => receive.execute({ source: 'git', event: 'post-commit', payload: '', cwd: API });
+
+  it('an unknown event of git is refused as any source refuses one', async () => {
+    startedTask('T-1', 'Payments');
+    await expect(receive.execute({ source: 'git', event: 'pre-commit', payload: '', cwd: API })).rejects.toThrow('unknown git hook event "pre-commit"');
+    expect(journal.readRecords(TaskId.parse('T-1'))).toEqual([]);
+  });
+
+  it('another source of commits records with its own id', async () => {
+    startedTask('T-1', 'Payments');
+    await receive.execute({ source: 'hg', event: 'commit', payload: '', cwd: API });
+    expect(journal.readRecords(TaskId.parse('T-1'))[0]).toMatchObject({ type: 'commit.recorded', data: { source: 'hg', sha: 'c0ffee' } });
+  });
+
+  it('the sha the hook passes is the commit read', async () => {
+    startedTask('T-1', 'Payments');
+    await receive.execute({ source: 'git', event: 'post-commit', payload: 'c0ffee1\n', cwd: API });
+    await commit();
+    expect(git.commitsAsked).toEqual(['c0ffee1', undefined]);
+  });
 
   it('goes to the only task in progress', async () => {
     startedTask('T-1', 'Payments');

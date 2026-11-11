@@ -26,6 +26,7 @@ export interface HookTranslation {
  * loads only this.
  */
 export interface HookAdapter {
+  readonly kind: 'session';
   readonly id: string;
   readonly aliases: readonly string[];
   readonly hookEvents: readonly string[];
@@ -35,6 +36,27 @@ export interface HookAdapter {
   renderContext(event: string, text: string): string;
 }
 
+/** The commit a hook call names: its sha, or `HEAD` when the call names none. */
+export interface CommitNotice {
+  readonly sha?: string;
+}
+
+/**
+ * A source of commits (the git `post-commit` hook): it names the commit of a
+ * call, the core reads the commit and records it for the task.
+ */
+export interface CommitHookAdapter {
+  readonly kind: 'commit';
+  readonly id: string;
+  readonly aliases: readonly string[];
+  readonly hookEvents: readonly string[];
+  /** Never throws: a payload that names no commit means `HEAD`. */
+  commitOf(event: string, payload: string): CommitNotice;
+}
+
+/** Whatever `estimetry hook <source>` may name; the receiver tells them apart by `kind`, never by name. */
+export type HookSource = HookAdapter | CommitHookAdapter;
+
 export interface HookAdapters {
-  get(idOrAlias: string): HookAdapter | undefined;
+  get(idOrAlias: string): HookSource | undefined;
 }
