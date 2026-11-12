@@ -100,6 +100,15 @@ export class StorageLayout {
     return join(this.root, 'calibration.lock');
   }
 
+  /** The version of estimetry each working copy was set up by. */
+  get installsFile(): string {
+    return join(this.root, 'installs.yaml');
+  }
+
+  get installsLock(): string {
+    return join(this.root, 'installs.lock');
+  }
+
   /** The pending proposal to close a task; the task id is checked before it gets here. */
   closeProposal(taskId: string): string {
     return join(this.root, 'progress', `${taskId}.proposal.yaml`);

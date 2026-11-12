@@ -1,6 +1,8 @@
 import type { CalibrationView } from '../../../application/task/show-calibration.js';
 import type { SimilarTasksView } from '../../../application/task/find-similar-tasks.js';
 import type { InitReport } from '../../../application/project/init-project.js';
+import type { UpgradePlanView } from '../../../application/project/show-upgrade-plan.js';
+import type { UpgradeReport } from '../../../application/project/upgrade-projects.js';
 import type { AttachTaskResult } from '../../../application/task/attach-task.js';
 import type { ParallelModeChanged } from '../../../application/task/change-parallel-mode.js';
 import type { ExtraRecorded } from '../../../application/task/record-extra.js';
@@ -43,6 +45,9 @@ export interface Presenter {
   parallelModeChanged(result: ParallelModeChanged): string;
   status(view: StatusView): string;
   initReport(report: InitReport): string;
+  /** What upgrading every working copy would change, shown before the user agrees. */
+  upgradePlan(view: UpgradePlanView): string;
+  upgradeReport(report: UpgradeReport): string;
   /** What closing would record, shown before the user agrees. */
   closeSummary(summary: CloseSummary): string;
   taskClosed(result: TaskClosedResult): string;

@@ -2,11 +2,20 @@ import type { ToolAdapter } from '../contracts/tool-adapter.js';
 import type { ProjectConfigFile } from '../ports/project-config-file.js';
 import type { InstallDependencies } from './install-dependencies.js';
 
+/** The tools installed in the copy now. */
+export function installedTools(deps: Pick<InstallDependencies, 'registries' | 'files'>, root: string): ToolAdapter[] {
+  return deps.registries.tools.all().filter((tool) => tool.state(root, deps.files).installed);
+}
+
 /** The tools already installed in the project, else every tool. */
 export function defaultTools(deps: Pick<InstallDependencies, 'registries' | 'files'>, root: string): ToolAdapter[] {
-  const all = deps.registries.tools.all();
-  const installed = all.filter((tool) => tool.state(root, deps.files).installed);
-  return installed.length > 0 ? installed : [...all];
+  const installed = installedTools(deps, root);
+  return installed.length > 0 ? installed : [...deps.registries.tools.all()];
+}
+
+/** Whether these tools have a shared install in the copy: then it stays shared. */
+export function isSharedInstall(deps: Pick<InstallDependencies, 'files'>, root: string, tools: readonly ToolAdapter[]): boolean {
+  return tools.some((tool) => tool.state(root, deps.files).shared);
 }
 
 /** The flow saved in the project config, else the first one detected, else the last one (`none`). */

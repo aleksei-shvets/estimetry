@@ -1,3 +1,4 @@
+import { InMemoryInstallVersions } from '../../support/in-memory-files.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
 import type { CardV1 } from '../../../src/domain/card/card-v1.js';
@@ -49,6 +50,7 @@ beforeEach(() => {
     install: fakeInstallDependencies(files),
     sessionBindings: new InMemorySessionBindings(), taskStatus: new RepositoryTaskStatusReader(tasks),
     plans: new FakeProjectPlans(),
+    installVersions: new InMemoryInstallVersions(),
     ...closingPorts(closing),
   });
 });

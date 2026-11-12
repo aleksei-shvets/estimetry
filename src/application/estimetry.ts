@@ -18,6 +18,11 @@ import type { WorkspaceLocator } from './ports/workspace-locator.js';
 import { InitProject, type InitInput, type InitReport } from './project/init-project.js';
 import type { InstallDependencies } from './project/install-dependencies.js';
 import { ShowInitChoices, type InitChoices } from './project/show-init-choices.js';
+import { InstallCopy } from './project/install-copy.js';
+import { UpgradePlanner } from './project/upgrade-plan.js';
+import { ShowUpgradePlan, type UpgradePlanView } from './project/show-upgrade-plan.js';
+import { UpgradeProjects, type UpgradeReport } from './project/upgrade-projects.js';
+import type { InstallVersions } from './ports/install-versions.js';
 import { ResolveCurrentProject } from './project/resolve-current-project.js';
 import { EventMetaSource } from './shared/event-meta-source.js';
 import { BindSession } from './task/bind-session.js';
@@ -84,6 +89,7 @@ export interface EstimetryDependencies {
   readonly estimates: EstimateReader;
   readonly projectConfig: ProjectConfigFile;
   readonly install: InstallDependencies;
+  readonly installVersions: InstallVersions;
   /** Bindings of AI tool sessions, for `emt attach --session` and the closing. */
   readonly sessionBindings: SessionBindings;
   /** Task statuses from snapshots, for `emt attach --session`. */
@@ -117,6 +123,9 @@ export interface Estimetry {
   readonly project: {
     choices(): InitChoices;
     init(input: InitInput): InitReport;
+    /** What `emt upgrade` would change in every registered working copy; writes nothing. */
+    upgradePlan(): UpgradePlanView;
+    upgrade(): UpgradeReport;
   };
   readonly tasks: {
     create(input: CreateTaskInput): TaskView;
@@ -218,10 +227,16 @@ function coreServices(deps: EstimetryDependencies): CoreServices {
 
 function projectGroup(deps: EstimetryDependencies, core: CoreServices): Estimetry['project'] {
   const showInitChoices = new ShowInitChoices(deps.workspace, deps.projectConfig, deps.install);
-  const initProject = new InitProject(deps.workspace, core.currentProject, deps.projects, deps.projectConfig, deps.install);
+  const install = new InstallCopy(deps.install, deps.projectConfig, deps.installVersions);
+  const initProject = new InitProject(deps.workspace, core.currentProject, deps.projects, deps.projectConfig, deps.install, install);
+  const planner = new UpgradePlanner(deps.projects, deps.projectConfig, deps.install, install, deps.installVersions);
+  const showUpgradePlan = new ShowUpgradePlan(planner);
+  const upgradeProjects = new UpgradeProjects(planner, install);
   return {
     choices: () => showInitChoices.execute(),
     init: (input) => initProject.execute(input),
+    upgradePlan: () => showUpgradePlan.execute(),
+    upgrade: () => upgradeProjects.execute(),
   };
 }
 

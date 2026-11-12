@@ -6,6 +6,7 @@ import { registerCalibrateCommand } from './commands/calibrate-command.js';
 import { registerCloseCommands } from './commands/close-commands.js';
 import { registerEstimateCommand } from './commands/estimate-command.js';
 import { registerExtraCommand } from './commands/extra-command.js';
+import { registerUpgradeCommand } from './commands/upgrade-command.js';
 import { registerInitCommand } from './commands/init-command.js';
 import { registerManualCommand } from './commands/manual-command.js';
 import { registerParallelCommand } from './commands/parallel-command.js';
@@ -43,6 +44,7 @@ export function createProgram(options: CliOptions, output: { readonly helpWidth?
     });
 
   registerInitCommand(program, options);
+  registerUpgradeCommand(program, options);
   registerTaskCommands(program, options);
   registerStartCommand(program, options);
   registerAttachCommand(program, options);

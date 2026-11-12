@@ -50,6 +50,19 @@ export function withoutHooks(text: string, displayPath: string): SettingsText {
   return render(next, text);
 }
 
+/** A settings file that is there but does not parse. */
+export function isBrokenJson(text: string | undefined): boolean {
+  if (text === undefined) {
+    return false;
+  }
+  try {
+    JSON.parse(text);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 export function hasOurHooks(text: string | undefined): boolean {
   try {
     const settings = text === undefined ? undefined : (JSON.parse(text) as unknown);

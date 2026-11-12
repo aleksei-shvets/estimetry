@@ -16,6 +16,8 @@ export interface InstallContext {
 export interface ToolState {
   readonly installed: boolean;
   readonly shared: boolean;
+  /** A settings file of the tool that cannot be read: whether the tool is installed is unknown. */
+  readonly unreadable?: string;
 }
 
 /** One AI tool: what `init` installs for it and which hook events it sends. */

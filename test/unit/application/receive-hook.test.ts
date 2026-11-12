@@ -1,3 +1,5 @@
+import { UpgradeNotice } from '../../../src/application/hooks/upgrade-notice.js';
+import { InMemoryInstallVersions } from '../../support/in-memory-files.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryCloseProposals } from '../../support/closing-fakes.js';
 import type { ActivityDraft, CommitHookAdapter, HookKind, HookSource } from '../../../src/application/contracts/hook-adapter.js';
@@ -78,6 +80,7 @@ function call(event: string, kind: HookKind, events: readonly ActivityDraft[] = 
 let checked: string[] = [];
 let imports: SessionImportRequest[] = [];
 let proposals: InMemoryCloseProposals;
+let installs: InMemoryInstallVersions;
 
 const types = (task: string) => journal.readActivity(TaskId.parse(task)).map((e) => e.type);
 
@@ -85,6 +88,9 @@ beforeEach(() => {
   checked = [];
   imports = [];
   proposals = new InMemoryCloseProposals();
+  installs = new InMemoryInstallVersions();
+  installs.record('/work/api', '0.2.0');
+  const upgrade = new UpgradeNotice(installs, () => '0.2.0');
   tasks = new InMemoryTaskRepository();
   journal = new InMemoryEventJournal();
   bindings = new InMemorySessionBindings();
@@ -110,7 +116,7 @@ beforeEach(() => {
     new FakeProjectLocator(),
     new SessionTask(bindings, status, new SessionWindow(journal, new EventMetaSource(clock, ids, authors))),
     new ActivityRecorder(journal, bindings, checkpoints, { check: (task) => void checked.push(task.id.toString()) }, new EventMetaSource(clock, ids, authors)),
-    new SessionStartContext(async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5, planDone: 51 }) }), checkpoints, proposal),
+    new SessionStartContext(async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5, planDone: 51 }) }), checkpoints, proposal, upgrade),
     new PromptContext(checkpoints, proposal),
     new SessionEndImport(bindings, status, async () => ({
       execute: (request: SessionImportRequest) => {
@@ -321,6 +327,35 @@ describe('checkpoints and context', () => {
   it('says that nothing is counted when no task is in progress', async () => {
     const out = await call('Start', 'session-start');
     expect(JSON.parse(out ?? '{}').text).toMatch(/no task is in progress .* \/emt-start/);
+  });
+
+  it('after the reminder of estimate mode, asks to suggest `emt upgrade` when the copy was set up by an older version', async () => {
+    startedTask('T-1', 'estimetry v1');
+    installs.record('/work/api', '0.1.0');
+    const lines = (JSON.parse((await call('Start', 'session-start')) ?? '{}').text as string).split('\n');
+    expect(lines[1]).toBe(
+      'estimetry: estimetry 0.2.0 is installed, but this project was set up by 0.1.0. Suggest that the user runs `emt upgrade`; do not run it yourself.',
+    );
+    expect(lines[2]).toMatch(/^estimetry: task T-1/);
+  });
+
+  it('says an older version when the install has no recorded version, and nothing when it is current', async () => {
+    installs.saved.clear();
+    expect(await call('Start', 'session-start')).toContain('was set up by an older version');
+    installs.record('/work/api', '0.2.0');
+    expect(await call('Start', 'session-start')).not.toContain('emt upgrade');
+  });
+
+  it('keeps the upgrade line when the list of tasks is cut to the limit', async () => {
+    installs.record('/work/api', '0.1.0');
+    for (let i = 1; i <= 40; i++) {
+      startedTask(`T-${i}`, `A task with a rather long title number ${i}`);
+    }
+    const text = JSON.parse((await call('Start', 'session-start')) ?? '{}').text as string;
+    expect(text.length).toBeLessThanOrEqual(1000);
+    expect(text).toContain('`emt upgrade`');
+    expect(text).toContain('more (emt task list)');
+    expect(text).toMatch(/emt attach <task> --session s1$/);
   });
 });
 

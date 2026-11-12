@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import type { Estimetry } from '../application/estimetry.js';
@@ -33,11 +32,9 @@ export interface ContainerOptions {
   readonly startedAt?: number;
 }
 
-/** Version from package.json, for `--version` and the stamp in generated files. */
-export function packageVersion(): string {
-  const manifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
-  return manifest.version;
-}
+import { packageVersion } from './package-version.js';
+
+export { packageVersion };
 
 /** Claude Code keeps personal skills in `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
 function claudeConfigDir(environment: Environment): string {
@@ -138,14 +135,7 @@ async function buildApp(layout: StorageLayout, environment: Environment, errors:
     { YamlSessionStore },
     { FileTaskStatusReader },
     { FlowProjectPlans },
-    { YamlCardStore },
-    { JsonCalibrationStore },
-    { FileCloseProposals },
-    { GitCodeMeasurer },
-    { FsGitHead },
-    { SessionLogReaderRegistry },
-    { ClaudeCodeLogs },
-    { YamlLogImportState },
+    { YamlInstallVersions },
   ] = await Promise.all([
     import('../application/estimetry.js'),
     import('../infrastructure/git/git-cli.js'),
@@ -160,14 +150,7 @@ async function buildApp(layout: StorageLayout, environment: Environment, errors:
     import('../infrastructure/persistence/yaml-session-store.js'),
     import('../infrastructure/persistence/file-task-status-reader.js'),
     import('../application/hooks/flow-plans.js'),
-    import('../infrastructure/persistence/yaml-card-store.js'),
-    import('../infrastructure/persistence/json-calibration-store.js'),
-    import('../infrastructure/persistence/file-close-proposals.js'),
-    import('../infrastructure/git/git-code-measurer.js'),
-    import('../infrastructure/git/fs-git-head.js'),
-    import('../integrations/tools/session-log-readers.js'),
-    import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
-    import('../infrastructure/persistence/yaml-log-import-state.js'),
+    import('../infrastructure/persistence/yaml-install-versions.js'),
   ]);
   const git = new GitCli(cwd);
   const config = new YamlConfigStore(layout, () => git.userEmail() ?? userInfo().username);
@@ -187,17 +170,44 @@ async function buildApp(layout: StorageLayout, environment: Environment, errors:
     estimates: new YamlEstimateReader(cwd),
     projectConfig,
     install,
+    installVersions: new YamlInstallVersions(layout),
     plans: new FlowProjectPlans(projectConfig, install.registries.flows, install.files, projects),
     sessionBindings: new YamlSessionStore(layout),
     taskStatus: new FileTaskStatusReader(layout),
+    calibrationSettings: config,
+    errors,
+    ...(await closingPorts(layout, environment)),
+  });
+}
+
+/** What closing a task needs besides the task: cards, calibration, proposals, the code volume, `HEAD` and the session logs. */
+async function closingPorts(layout: StorageLayout, environment: Environment) {
+  const [
+    { YamlCardStore },
+    { JsonCalibrationStore },
+    { FileCloseProposals },
+    { GitCodeMeasurer },
+    { FsGitHead },
+    { SessionLogReaderRegistry },
+    { ClaudeCodeLogs },
+    { YamlLogImportState },
+  ] = await Promise.all([
+    import('../infrastructure/persistence/yaml-card-store.js'),
+    import('../infrastructure/persistence/json-calibration-store.js'),
+    import('../infrastructure/persistence/file-close-proposals.js'),
+    import('../infrastructure/git/git-code-measurer.js'),
+    import('../infrastructure/git/fs-git-head.js'),
+    import('../integrations/tools/session-log-readers.js'),
+    import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
+    import('../infrastructure/persistence/yaml-log-import-state.js'),
+  ]);
+  return {
     cards: new YamlCardStore(layout),
     calibration: new JsonCalibrationStore(layout, () => new Date().toISOString()),
-    calibrationSettings: config,
     proposals: new FileCloseProposals(layout),
     codeMeasurer: new GitCodeMeasurer(),
     gitHead: new FsGitHead(),
-    errors,
     logReaders: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(claudeConfigDir(environment))),
     logImportState: new YamlLogImportState(layout),
-  });
+  };
 }
