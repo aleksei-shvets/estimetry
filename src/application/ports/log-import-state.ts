@@ -1,3 +1,5 @@
+import type { SessionId } from '../../domain/measurement/session-id.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 /** Size and modification time of a file: a changed fingerprint means new data. */
 export interface FileFingerprint {
   readonly size: number;
@@ -22,7 +24,7 @@ export interface LogImportEntry {
  */
 export interface LogImportState {
   /** Runs `work` under the lock of the session's imports: two imports never interleave their records. */
-  locked<T>(session: string, work: () => T): T;
-  read(session: string): Readonly<Record<string, LogImportEntry>>;
-  write(session: string, task: string, entry: LogImportEntry): void;
+  locked<T>(session: SessionId, work: () => T): T;
+  read(session: SessionId): Readonly<Record<string, LogImportEntry>>;
+  write(session: SessionId, task: TaskId, entry: LogImportEntry): void;
 }

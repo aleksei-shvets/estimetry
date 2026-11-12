@@ -1,7 +1,8 @@
 import type { SessionId } from '../../domain/measurement/session-id.js';
 import type { ActivityEvent, SessionBound } from '../../domain/measurement/activity-events.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
-import { TaskId } from '../../domain/task/task-id.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 import { isInProgress } from '../../domain/task/task-status.js';
 import type { HookKind } from '../contracts/hook-adapter.js';
 import type { AuthorProvider } from '../ports/author-provider.js';
@@ -50,7 +51,7 @@ export class SessionTask {
     if (current?.task === undefined && current?.closedTask !== undefined && kind !== 'session-start') {
       return { project, candidates: [] };
     }
-    const fresh = current?.checkedAt !== undefined && now.toMillis() - Timestamp.parse(current.checkedAt).toMillis() < RECHECK_MS;
+    const fresh = current?.checkedAt !== undefined && now.toMillis() - current.checkedAt.toMillis() < RECHECK_MS;
     if (current?.task === undefined && fresh && kind !== 'session-start' && kind !== 'prompt') {
       return { project, candidates: [] };
     }
@@ -66,9 +67,9 @@ export class SessionTask {
       const [only, ...others] = candidates;
       if (only && others.length === 0) {
         // The first window starts with the task, so work done before a backdated start counts too.
-        const since = latest?.everBound || only.startedAt === undefined ? now.toISOString() : only.startedAt;
+        const since = latest?.everBound || only.startedAt === undefined ? now : only.startedAt;
         const binding: SessionBinding = {
-          session: session.value,
+          session,
           project: project.id,
           root: project.root,
           task: only.id,
@@ -79,16 +80,16 @@ export class SessionTask {
         return binding;
       }
       return {
-        session: session.value,
+        session,
         project: project.id,
         root: project.root,
-        checkedAt: now.toISOString(),
+        checkedAt: now,
         ...(latest?.everBound ? { everBound: true } : {}),
       };
     });
 
     if (bindsNow) {
-      this.openWindow(session, bindsNow.binding, bindsNow.task, now);
+      this.openWindow(session, project.id, bindsNow.binding, bindsNow.task, now);
       return { project, task: bindsNow.task, candidates: [] };
     }
     const task = result?.task === undefined ? undefined : this.inProgress(result.task);
@@ -96,26 +97,26 @@ export class SessionTask {
   }
 
   /** `session.bound` at the start of the window, then the session's events made without a task since then. */
-  private openWindow(session: SessionId, binding: SessionBinding, task: TaskSummary, now: Timestamp): void {
-    const since = Timestamp.parse(binding.since ?? now.toISOString());
+  private openWindow(session: SessionId, project: ProjectId, binding: SessionBinding, task: TaskSummary, now: Timestamp): void {
+    const since = binding.since ?? now;
     this.journal.append(
       journalEntry<SessionBound>('session.bound', { source: CORE_SOURCE, session: session.value }, {
         id: this.ids.next(),
         at: since,
         author: this.authors.current(),
-        project: binding.project,
+        project,
         task: task.id,
       }),
     );
-    const known = new Set(this.journal.readActivity(TaskId.parse(task.id)).map((event) => event.id));
-    for (const event of this.journal.readUnassigned(binding.project)) {
+    const known = new Set(this.journal.readActivity(task.id).map((event) => event.id));
+    for (const event of this.journal.readUnassigned(project)) {
       if (event.data.session === session.value && Timestamp.parse(event.ts).toMillis() >= since.toMillis() && !known.has(event.id)) {
-        this.journal.append({ ...event, task: task.id } as ActivityEvent);
+        this.journal.append({ ...event, task: task.id.toString() } as ActivityEvent);
       }
     }
   }
 
-  private inProgress(task: string): TaskSummary | undefined {
+  private inProgress(task: TaskId): TaskSummary | undefined {
     const summary = this.tasks.summary(task);
     return summary !== undefined && isInProgress(summary.status) ? summary : undefined;
   }

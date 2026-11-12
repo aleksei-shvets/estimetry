@@ -32,6 +32,7 @@ import {
   InMemoryCheckpointState,
   InMemorySessionBindings,
   RepositoryTaskStatusReader,
+  plainImport,
 } from '../../support/hook-fakes.js';
 import { ListRegistry } from '../../support/in-memory-files.js';
 import { InMemoryEventJournal, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
@@ -107,7 +108,7 @@ beforeEach(() => {
   const sessions = new ReceiveSessionHook(
     new FakeProjectLocator(),
     new SessionTask(bindings, status, journal, ids, authors),
-    new ActivityRecorder(journal, bindings, checkpoints, { check: (task) => void checked.push(task.id) }, new EventMetaSource(clock, ids, authors)),
+    new ActivityRecorder(journal, bindings, checkpoints, { check: (task) => void checked.push(task.id.toString()) }, new EventMetaSource(clock, ids, authors)),
     new SessionStartContext(async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5, planDone: 51 }) }), checkpoints, proposal),
     new PromptContext(checkpoints, proposal),
     new SessionEndImport(bindings, status, async () => ({
@@ -145,7 +146,7 @@ describe('which task a session serves', () => {
 
   it('writes events of a session without a task to the project, and copies them when a backdated task starts', async () => {
     await call('ToolDone', 'tool-done', [tool('t1')]);
-    expect(journal.readUnassigned('api')).toHaveLength(1);
+    expect(journal.readUnassigned(ProjectId.parse('api'))).toHaveLength(1);
     startedTask('T-1', 'Late start', day('09:30'));
     clock.set(day('10:05'));
     await call('Prompt', 'prompt', [{ type: 'turn.started', data: { origin: 'user' } }]);
@@ -173,7 +174,7 @@ describe('which task a session serves', () => {
         'estimetry: several tasks are in progress in this project: T-1 "Payments", T-2 "Webhooks". ' +
         'Ask the user which one this session serves, then run: emt attach <task> --session s1',
     );
-    expect(journal.readUnassigned('api').map((e) => e.type)).toEqual(['session.started']);
+    expect(journal.readUnassigned(ProjectId.parse('api')).map((e) => e.type)).toEqual(['session.started']);
   });
 
   it('a switch with attach closes the window in the old task and opens one in the new task', async () => {
@@ -181,7 +182,7 @@ describe('which task a session serves', () => {
     await call('ToolDone', 'tool-done', [tool('t1')]);
     startedTask('T-2', 'Webhooks');
     clock.set(day('10:20'));
-    bind.bind('s1', 'T-2', { id: 'api', root: API }, clock.now());
+    bind.bind(SessionId.parse('s1'), TaskId.parse('T-2'), { id: ProjectId.parse('api'), root: API }, clock.now());
     await call('ToolDone', 'tool-done', [tool('t2')]);
     expect(types('T-1')).toEqual(['session.bound', 'tool.used', 'session.unbound']);
     expect(types('T-2')).toEqual(['session.bound', 'tool.used']);
@@ -191,8 +192,8 @@ describe('which task a session serves', () => {
   it('attach refuses a task that is not in progress and leaves the binding', async () => {
     startedTask('T-1', 'Payments');
     await call('ToolDone', 'tool-done');
-    expect(() => bind.bind('s1', 'T-9', { id: 'api', root: API }, clock.now())).toThrow(/T-9 is not in progress/);
-    expect(bindings.get(SessionId.parse('s1'))?.task).toBe('T-1');
+    expect(() => bind.bind(SessionId.parse('s1'), TaskId.parse('T-9'), { id: ProjectId.parse('api'), root: API }, clock.now())).toThrow(/T-9 is not in progress/);
+    expect(bindings.plain('s1')?.task).toBe('T-1');
   });
 
   it('a bound session keeps writing to its task after the agent changed directory', async () => {
@@ -204,9 +205,9 @@ describe('which task a session serves', () => {
 
   it('a session bound to a task no longer in progress is resolved again', async () => {
     startedTask('T-1', 'Payments');
-    bindings.update(SessionId.parse('s1'), () => ({ session: 's1', project: 'api', root: API, task: 'T-9', since: day('08:00'), everBound: true }));
+    bindings.update(SessionId.parse('s1'), () => ({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: API, task: TaskId.parse('T-9'), since: Timestamp.parse(day('08:00')), everBound: true }));
     await call('ToolDone', 'tool-done', [tool('t1')]);
-    expect(bindings.get(SessionId.parse('s1'))?.task).toBe('T-1');
+    expect(bindings.plain('s1')?.task).toBe('T-1');
     // The session served a task before, so the new window starts now, not at the start of T-1.
     expect(journal.readActivity(TaskId.parse('T-1'))[0]).toMatchObject({ type: 'session.bound', ts: day('10:00') });
   });
@@ -336,10 +337,10 @@ describe('commits', () => {
     startedTask('T-1', 'Payments');
     startedTask('T-2', 'Webhooks');
     await commit();
-    expect(journal.readUnassigned('api')).toHaveLength(0); // records are kept apart from activity
+    expect(journal.readUnassigned(ProjectId.parse('api'))).toHaveLength(0); // records are kept apart from activity
     expect(journal.unassigned.get('api')?.map((e) => e.type)).toEqual(['commit.recorded']);
 
-    bind.bind('s7', 'T-2', { id: 'api', root: API }, clock.now());
+    bind.bind(SessionId.parse('s7'), TaskId.parse('T-2'), { id: ProjectId.parse('api'), root: API }, clock.now());
     await call('ToolDone', 'tool-done', [], { session: 's7' });
     clock.set(day('10:05'));
     await commit();
@@ -350,13 +351,13 @@ describe('commits', () => {
 describe('after closing and proposals', () => {
   const commit = () => receive.execute({ source: 'git', event: 'post-commit', payload: '', cwd: API });
   const closedSession = (session: string) =>
-    bindings.update(SessionId.parse(session), () => ({ session, project: 'api', root: API, everBound: true, closedTask: 'T-1' }));
+    bindings.update(SessionId.parse(session), () => ({ session: SessionId.parse(session), project: ProjectId.parse('api'), root: API, everBound: true, closedTask: TaskId.parse('T-1') }));
 
   it('a session unbound by closing stays without a task until it starts again, and its commit goes to no task', async () => {
     startedTask('T-3', 'Other');
     closedSession('s1');
     await call('Prompt', 'prompt', [], { session: 's1' });
-    expect(bindings.get(SessionId.parse('s1'))?.task).toBeUndefined();
+    expect(bindings.plain('s1')?.task).toBeUndefined();
     expect(journal.readActivity(TaskId.parse('T-3'))).toEqual([]);
 
     clock.set(day('10:01'));
@@ -365,12 +366,12 @@ describe('after closing and proposals', () => {
     expect(journal.unassigned.get('api')?.map((e) => e.type)).toContain('commit.recorded');
 
     await call('Start', 'session-start', [], { session: 's1' });
-    expect(bindings.get(SessionId.parse('s1'))?.task).toBe('T-3');
+    expect(bindings.plain('s1')?.task).toBe('T-3');
   });
 
   it('delivers a pending proposal once, before the reminder, to the session that noticed the completion', async () => {
     startedTask('T-1', 'estimetry v1');
-    proposals.put('T-1', { change: 'plan-progress', completedAt: day('09:40'), session: 's1' });
+    proposals.put(TaskId.parse('T-1'), { change: 'plan-progress', completedAt: Timestamp.parse(day('09:40')), session: SessionId.parse('s1') });
     const first = await call('Prompt', 'prompt', [], { session: 's1' });
     expect(first).toContain('change plan-progress of task T-1 was completed at 2026-10-27 09:40 UTC; the plan is 51% done, unfinished: release.');
     expect(first).toContain('(/emt-close)');
@@ -383,7 +384,7 @@ describe('after closing and proposals', () => {
     await call('ToolDone', 'tool-done');
     clock.set(day('10:21'));
     await call('Stop', 'turn-end'); // a checkpoint, so the reminder waits for the next prompt
-    proposals.put('T-1', { change: 'a', completedAt: day('10:20'), session: 's1' });
+    proposals.put(TaskId.parse('T-1'), { change: 'a', completedAt: Timestamp.parse(day('10:20')), session: SessionId.parse('s1') });
     const text = JSON.parse((await call('Prompt', 'prompt')) ?? '{}').text as string;
     expect(text.indexOf('change a of task T-1')).toBeLessThan(text.indexOf('/emt-extra'));
     expect(text.indexOf('change a of task T-1')).toBeGreaterThanOrEqual(0);
@@ -393,7 +394,7 @@ describe('after closing and proposals', () => {
   it('another session gets the proposal only after the first one has been idle past the threshold', async () => {
     startedTask('T-1', 'estimetry v1');
     await call('ToolDone', 'tool-done', [tool('t1')], { session: 's1' });
-    proposals.put('T-1', { change: 'a', completedAt: day('09:40'), session: 's1' });
+    proposals.put(TaskId.parse('T-1'), { change: 'a', completedAt: Timestamp.parse(day('09:40')), session: SessionId.parse('s1') });
     expect(await call('Prompt', 'prompt', [], { session: 's2' })).toBeUndefined();
     clock.set(day('11:00'));
     expect(await call('Prompt', 'prompt', [], { session: 's2' })).toContain('change a of task T-1');
@@ -405,11 +406,11 @@ describe('the log of a session', () => {
   it('keeps the path of the log, and imports it into the tasks in progress of the session at its end, within the budget', async () => {
     startedTask('T-1', 'estimetry v1');
     await call('Start', 'session-start', [{ type: 'session.started', data: {} }], { transcript: '/logs/s1.jsonl' });
-    expect(bindings.get(SessionId.parse('s1'))).toMatchObject({ task: 'T-1', tasks: ['T-1'], transcript: '/logs/s1.jsonl' });
+    expect(bindings.plain('s1')).toMatchObject({ task: 'T-1', tasks: ['T-1'], transcript: '/logs/s1.jsonl' });
     await call('ToolDone', 'tool-done', [tool('t1')]);
     expect(imports).toEqual([]);
     await call('End', 'session-end', [{ type: 'session.ended', data: {} }]);
-    expect(imports).toEqual([
+    expect(imports.map(plainImport)).toEqual([
       { session: 's1', source: 'fake-tool', path: '/logs/s1.jsonl', tasks: [{ id: 'T-1', project: 'api' }], budgetMs: SESSION_END_IMPORT_BUDGET_MS },
     ]);
   });

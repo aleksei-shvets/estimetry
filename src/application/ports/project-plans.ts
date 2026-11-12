@@ -1,3 +1,4 @@
+import type { ProjectId } from '../../domain/project/project-id.js';
 import type { ChangeProgress } from '../../domain/progress/progress-records.js';
 import type { CalendarDate } from '../../domain/shared/calendar-date.js';
 
@@ -15,7 +16,7 @@ export interface ArchivedChange {
 export type PlanUnavailable = 'flow-none' | 'unknown-flow' | 'no-config' | 'not-on-this-machine';
 
 export interface ProjectPlanReading {
-  readonly project: string;
+  readonly project: ProjectId;
   readonly root?: string;
   /** The flow named in the project's config, also when it is unknown. */
   readonly flow?: string;
@@ -37,7 +38,7 @@ export interface ProjectPlans {
   /** The plan of one working copy, for checkpoints; undefined when it cannot be read. */
   plan(projectRoot: string): readonly ChangeProgress[] | undefined;
   /** Plans of the projects of a task, with their archives; archives before `archivedSince` are not read. */
-  plans(projects: readonly string[], options?: PlanReadOptions & { readonly archivedSince?: CalendarDate }): ProjectPlanReading[];
+  plans(projects: readonly ProjectId[], options?: PlanReadOptions & { readonly archivedSince?: CalendarDate }): ProjectPlanReading[];
   /** Only the archives: the hot path of a hook, one directory listing per project. */
-  archives(projects: readonly string[], options?: PlanReadOptions): ProjectPlanReading[];
+  archives(projects: readonly ProjectId[], options?: PlanReadOptions): ProjectPlanReading[];
 }

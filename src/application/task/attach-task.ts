@@ -7,6 +7,7 @@ import type { ResolveCurrentProject } from '../project/resolve-current-project.j
 import type { EventMetaSource } from '../shared/event-meta-source.js';
 import { retryOnConflict } from '../shared/retry.js';
 import { toTaskView, type TaskView } from './task-view.js';
+import type { SessionId } from '../../domain/measurement/session-id.js';
 
 export interface AttachTaskResult {
   readonly task: TaskView;
@@ -18,7 +19,7 @@ export interface AttachTaskResult {
 export interface AttachTaskInput {
   readonly task: TaskId;
   /** Also bind this session of the AI tool to the task (session-binding spec). */
-  readonly session?: string;
+  readonly session?: SessionId;
 }
 
 export class AttachTask {
@@ -44,12 +45,7 @@ export class AttachTask {
       return { task: toTaskView(task), project: project.id.value, attached };
     });
     if (input.session !== undefined) {
-      this.sessions.bind(
-        input.session,
-        input.task.toString(),
-        { id: project.id.value, root: this.workspace.currentRoot() },
-        this.clock.now(),
-      );
+      this.sessions.bind(input.session, input.task, { id: project.id, root: this.workspace.currentRoot() }, this.clock.now());
     }
     return result;
   }

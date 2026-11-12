@@ -1,5 +1,5 @@
 import type { SessionBound, SessionUnbound } from '../../domain/measurement/activity-events.js';
-import { SessionId } from '../../domain/measurement/session-id.js';
+import type { SessionId } from '../../domain/measurement/session-id.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
 import type { Timestamp } from '../../domain/shared/timestamp.js';
 import { isInProgress } from '../../domain/task/task-status.js';
@@ -10,6 +10,8 @@ import type { LocatedProject } from '../ports/project-locator.js';
 import type { SessionBindings } from '../ports/session-bindings.js';
 import type { TaskStatusReader } from '../ports/task-status-reader.js';
 import { CORE_SOURCE, journalEntry } from '../shared/journal-entry.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 
 
 /**
@@ -26,30 +28,29 @@ export class BindSession {
     private readonly authors: AuthorProvider,
   ) {}
 
-  bind(sessionText: string, task: string, project: LocatedProject, now: Timestamp): void {
-    const session = SessionId.parse(sessionText);
+  bind(session: SessionId, task: TaskId, project: LocatedProject, now: Timestamp): void {
     if (!this.inProgress(task)) {
       throw new InvalidValue(`${task} is not in progress; start it with \`emt start ${task}\` first`);
     }
-    let previous: { task: string; project: string } | undefined;
+    let previous: { task: TaskId; project: ProjectId } | undefined;
     this.bindings.update(session, (current) => {
-      if (current?.task === task) {
+      if (current?.task?.equals(task) === true) {
         return undefined; // already bound: nothing to switch
       }
       if (current?.task !== undefined && this.inProgress(current.task)) {
         previous = { task: current.task, project: current.project };
       }
-      return { session: session.value, project: project.id, root: project.root, task, since: now.toISOString(), everBound: true };
+      return { session, project: project.id, root: project.root, task, since: now, everBound: true };
     });
     if (previous !== undefined) {
       this.mark<SessionUnbound>('session.unbound', session, previous.task, previous.project, now);
     }
-    if (this.bindings.get(session)?.since === now.toISOString()) {
+    if (this.bindings.get(session)?.since?.toMillis() === now.toMillis()) {
       this.mark<SessionBound>('session.bound', session, task, project.id, now);
     }
   }
 
-  private inProgress(task: string): boolean {
+  private inProgress(task: TaskId): boolean {
     const summary = this.tasks.summary(task);
     return summary !== undefined && isInProgress(summary.status);
   }
@@ -57,8 +58,8 @@ export class BindSession {
   private mark<T extends SessionBound | SessionUnbound>(
     type: T['type'],
     session: SessionId,
-    task: string,
-    project: string,
+    task: TaskId,
+    project: ProjectId,
     at: Timestamp,
   ): void {
     this.journal.append(

@@ -1,5 +1,4 @@
 import type { SessionUnbound } from '../../domain/measurement/activity-events.js';
-import { SessionId } from '../../domain/measurement/session-id.js';
 import type { Task } from '../../domain/task/task.js';
 import type { CloseProposals } from '../ports/close-proposals.js';
 import type { EventJournal } from '../ports/event-journal.js';
@@ -34,7 +33,7 @@ export class ClosingFollowUp {
       }
     };
     step('releasing the sessions of the task', () => this.release(task));
-    step('removing the pending close proposal', () => this.proposals.remove(task.id.toString()));
+    step('removing the pending close proposal', () => this.proposals.remove(task.id));
     step('writing the card', () => this.cards.refresh(task));
     step('updating calibration.json', () => this.cards.recalculate());
     return warnings;
@@ -42,17 +41,17 @@ export class ClosingFollowUp {
 
   /** Every session bound to the task is unbound at the closing moment and stays so until it starts again. */
   private release(task: Task): void {
-    const id = task.id.toString();
+    const id = task.id;
     const closedAt = task.requireClosedAt();
     for (const project of task.projects) {
-      for (const binding of this.bindings.ofProject(project.value)) {
-        if (binding.task !== id) {
+      for (const binding of this.bindings.ofProject(project)) {
+        if (binding.task?.equals(id) !== true) {
           continue;
         }
-        const session = SessionId.parse(binding.session);
+        const session = binding.session;
         let released = false;
         this.bindings.update(session, (current) => {
-          if (current?.task !== id) {
+          if (current?.task?.equals(id) !== true) {
             return undefined;
           }
           released = true;

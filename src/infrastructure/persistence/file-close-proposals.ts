@@ -3,8 +3,10 @@ import { renameSync, rmSync } from 'node:fs';
 import type { CloseProposal, CloseProposals } from '../../application/ports/close-proposals.js';
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
-
-const TASK_ID = /^T-\d+$/;
+import { SessionId } from '../../domain/measurement/session-id.js';
+import { ProjectId } from '../../domain/project/project-id.js';
+import { Timestamp } from '../../domain/shared/timestamp.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 
 /**
  * `progress/<task>.proposal.yaml`. Taking renames the file to a name of its
@@ -14,24 +16,22 @@ const TASK_ID = /^T-\d+$/;
 export class FileCloseProposals implements CloseProposals {
   constructor(private readonly layout: StorageLayout) {}
 
-  put(task: string, proposal: CloseProposal): void {
-    if (TASK_ID.test(task)) {
-      writeYamlAtomic(this.layout.closeProposal(task), { schemaVersion: 1, ...proposal });
-    }
+  put(task: TaskId, proposal: CloseProposal): void {
+    writeYamlAtomic(this.layout.closeProposal(task.toString()), {
+      schemaVersion: 1,
+      change: proposal.change,
+      ...(proposal.project === undefined ? {} : { project: proposal.project.value }),
+      completedAt: proposal.completedAt.toISOString(),
+      session: proposal.session.value,
+    });
   }
 
-  peek(task: string): CloseProposal | undefined {
-    if (!TASK_ID.test(task)) {
-      return undefined;
-    }
-    return this.parse(this.layout.closeProposal(task));
+  peek(task: TaskId): CloseProposal | undefined {
+    return this.parse(this.layout.closeProposal(task.toString()));
   }
 
-  take(task: string): CloseProposal | undefined {
-    if (!TASK_ID.test(task)) {
-      return undefined;
-    }
-    const file = this.layout.closeProposal(task);
+  take(task: TaskId): CloseProposal | undefined {
+    const file = this.layout.closeProposal(task.toString());
     const taken = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.taken`;
     try {
       renameSync(file, taken);
@@ -45,10 +45,8 @@ export class FileCloseProposals implements CloseProposals {
     }
   }
 
-  remove(task: string): void {
-    if (TASK_ID.test(task)) {
-      rmSync(this.layout.closeProposal(task), { force: true });
-    }
+  remove(task: TaskId): void {
+    rmSync(this.layout.closeProposal(task.toString()), { force: true });
   }
 
   private parse(file: string): CloseProposal | undefined {
@@ -62,13 +60,18 @@ export class FileCloseProposals implements CloseProposals {
       return undefined;
     }
     const v = value as Record<string, unknown>;
-    return typeof v['change'] === 'string' && typeof v['completedAt'] === 'string' && typeof v['session'] === 'string'
-      ? {
-          change: v['change'],
-          ...(typeof v['project'] === 'string' ? { project: v['project'] } : {}),
-          completedAt: v['completedAt'],
-          session: v['session'],
-        }
-      : undefined;
+    if (typeof v['change'] !== 'string' || typeof v['completedAt'] !== 'string' || typeof v['session'] !== 'string') {
+      return undefined;
+    }
+    try {
+      return {
+        change: v['change'],
+        ...(typeof v['project'] === 'string' ? { project: ProjectId.parse(v['project']) } : {}),
+        completedAt: Timestamp.parse(v['completedAt']),
+        session: SessionId.parse(v['session']),
+      };
+    } catch {
+      return undefined; // a proposal that does not parse is no proposal
+    }
   }
 }

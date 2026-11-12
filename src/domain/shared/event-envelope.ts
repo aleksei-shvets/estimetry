@@ -16,6 +16,9 @@ export interface EventEnvelope<TType extends string = string, TData = unknown> {
   readonly data: TData;
 }
 
+/** A record of the journal of sessions without a task: the envelope has no `task`. */
+export type WithoutTask<T> = T extends unknown ? Omit<T, 'task'> : never;
+
 /** Who and when, supplied by the application layer for every new event. */
 export interface EventMeta {
   readonly id: string;

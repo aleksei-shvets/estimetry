@@ -11,6 +11,7 @@ import type { WorkspaceLocator } from '../ports/workspace-locator.js';
 import type { RegistrationPlan, ResolveCurrentProject } from './resolve-current-project.js';
 import { defaultFlow, defaultTools, unignoredPersonalFiles } from './init-defaults.js';
 import { detectStack } from './stack.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
 
 
 export interface InitInput {
@@ -189,8 +190,8 @@ export class InitProject {
 
 const EMPTY: InstallPlan = { changes: [], skipped: [], warnings: [] };
 
-function plannedId(plan: RegistrationPlan): string {
-  return plan.kind === 'new' ? plan.id.value : plan.project.id.value;
+function plannedId(plan: RegistrationPlan): ProjectId {
+  return plan.kind === 'new' ? plan.id : plan.project.id;
 }
 
 /** Relative inside the project, absolute outside it. */

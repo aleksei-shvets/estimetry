@@ -40,7 +40,7 @@ export class PlanSnapshots {
       startedAt === undefined
         ? undefined
         : taskPlan(
-            available.map((reading) => ({ project: reading.project, changes: reading.changes ?? [] })),
+            available.map((reading) => ({ project: reading.project.value, changes: reading.changes ?? [] })),
             startedAt,
             task.planExclusions,
           );
@@ -65,7 +65,7 @@ export class PlanSnapshots {
   }
 
   private read(task: Task, startedAt: Timestamp, where: WorkingCopy): ProjectPlanReading[] {
-    return this.plans.plans(task.projects.map((project) => project.value), {
+    return this.plans.plans(task.projects, {
       ...nearOf(where),
       archivedSince: CalendarDate.of(startedAt).minusDays(1),
     });
@@ -74,7 +74,7 @@ export class PlanSnapshots {
   private snapshot(reading: ProjectPlanReading): ProjectPlanSnapshot {
     const head = reading.root === undefined ? undefined : this.git.head(reading.root);
     return {
-      project: reading.project,
+      project: reading.project.value,
       ...(reading.changes === undefined ? {} : { changes: reading.changes }),
       ...(head === undefined ? {} : { head }),
       ...(reading.unavailable === undefined ? {} : { unavailable: reading.unavailable }),

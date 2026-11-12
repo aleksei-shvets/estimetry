@@ -1,4 +1,4 @@
-import { TaskId } from '../../domain/task/task-id.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 import type { Task } from '../../domain/task/task.js';
 import type { TaskMeasurement } from '../task/task-measurement.js';
 import type { TaskPlanProgress } from '../task/task-plan-progress.js';
@@ -14,8 +14,8 @@ export class MeasuredTaskFacts implements TaskFacts {
     private readonly plan: TaskPlanProgress,
   ) {}
 
-  fact(task: string, near?: string): TaskFact | undefined {
-    const found = this.tasks.find(TaskId.parse(task));
+  fact(task: TaskId, near?: string): TaskFact | undefined {
+    const found = this.tasks.find(task);
     if (!found) {
       return undefined;
     }

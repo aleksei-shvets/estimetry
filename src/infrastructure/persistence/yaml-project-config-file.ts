@@ -3,6 +3,7 @@ import { stringify } from 'yaml';
 import type { FileChange } from '../../application/ports/file-change.js';
 import type { ProjectConfig, ProjectConfigFile } from '../../application/ports/project-config-file.js';
 import { readYaml } from '../fs/atomic-yaml.js';
+import { ProjectId } from '../../domain/project/project-id.js';
 
 export const PROJECT_CONFIG_SCHEMA_VERSION = 1;
 export const PROJECT_CONFIG_PATH = join('.estimetry', 'config.yaml');
@@ -20,7 +21,7 @@ export class YamlProjectConfigFile implements ProjectConfigFile {
     const { project, flow } = document;
     return {
       config: {
-        ...(typeof project === 'string' ? { project } : {}),
+        ...projectOf(project),
         ...(typeof flow === 'string' ? { flow } : {}),
       },
     };
@@ -32,7 +33,7 @@ export class YamlProjectConfigFile implements ProjectConfigFile {
     return {
       path: join(projectRoot, PROJECT_CONFIG_PATH),
       // Keys this version does not know stay; the ones it owns are refreshed.
-      content: stringify({ ...known, schemaVersion: PROJECT_CONFIG_SCHEMA_VERSION, ...config }),
+      content: stringify({ ...known, schemaVersion: PROJECT_CONFIG_SCHEMA_VERSION, project: config.project.value, flow: config.flow }),
     };
   }
 
@@ -46,5 +47,16 @@ export class YamlProjectConfigFile implements ProjectConfigFile {
     } catch {
       return 'broken';
     }
+  }
+}
+
+function projectOf(value: unknown): { project?: ProjectId } {
+  if (typeof value !== 'string') {
+    return {};
+  }
+  try {
+    return { project: ProjectId.parse(value) };
+  } catch {
+    return {}; // a broken id is ignored, as a missing one
   }
 }

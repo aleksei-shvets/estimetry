@@ -2,6 +2,7 @@ import type { ArchivedChange } from '../ports/project-plans.js';
 import type { ProjectFiles } from '../ports/project-files.js';
 import type { ProjectPlanReading, ProjectPlans } from '../ports/project-plans.js';
 import { nearOf, type WorkingCopy } from './working-copy.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
 
 /**
  * Archives of the flow with the time each directory changed: the moment a
@@ -14,7 +15,7 @@ export class ChangeArchives {
     private readonly files: Pick<ProjectFiles, 'changedAt'>,
   ) {}
 
-  read(projects: readonly string[], where: WorkingCopy = {}): ProjectPlanReading[] {
+  read(projects: readonly ProjectId[], where: WorkingCopy = {}): ProjectPlanReading[] {
     return this.plans.archives(projects, nearOf(where));
   }
 

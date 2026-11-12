@@ -10,6 +10,7 @@ import { ConcurrencyConflict, TaskNotFound } from '../../src/domain/task/task-er
 import type { TaskEvent } from '../../src/domain/task/task-events.js';
 import { TaskId } from '../../src/domain/task/task-id.js';
 import type { TaskRepository } from '../../src/domain/task/task-repository.js';
+import type { WithoutTask } from '../../src/domain/shared/event-envelope.js';
 
 /** Keeps journals in memory with the same version semantics as the file repository. */
 export class InMemoryTaskRepository implements TaskRepository {
@@ -137,14 +138,14 @@ export class InMemoryEventJournal implements EventJournal {
     return { activity: this.readActivity(task), records: this.readRecords(task) };
   }
 
-  appendUnassigned(project: string, entry: ActivityEvent | ProgressRecord): void {
+  appendUnassigned(project: ProjectId, entry: WithoutTask<ActivityEvent> | WithoutTask<ProgressRecord>): void {
     const valid = isProgressRecordType(entry.type)
       ? parseProgressRecord(entry, { withoutTask: true })
       : parseActivityEvent(entry, { withoutTask: true });
-    this.unassigned.set(project, [...(this.unassigned.get(project) ?? []), valid]);
+    this.unassigned.set(project.value, [...(this.unassigned.get(project.value) ?? []), valid]);
   }
 
-  readUnassigned(project: string): ActivityEvent[] {
-    return (this.unassigned.get(project) ?? []).filter((entry): entry is ActivityEvent => !isProgressRecordType(entry.type));
+  readUnassigned(project: ProjectId): ActivityEvent[] {
+    return (this.unassigned.get(project.value) ?? []).filter((entry): entry is ActivityEvent => !isProgressRecordType(entry.type));
   }
 }

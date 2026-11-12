@@ -76,11 +76,11 @@ export class ClosingRecords {
       }
       const path = this.bindings.get(id)?.transcript;
       const [result] = importer.execute({
-        session,
+        session: id,
         source,
         at: recordedAt,
         ...(path === undefined ? {} : { path }),
-        tasks: [{ id: task.id.toString(), project: task.homeProject.value }],
+        tasks: [{ id: task.id, project: task.homeProject }],
       });
       if (result !== undefined && (result.outcome === 'failed' || result.outcome === 'unrecognized')) {
         warnings.push(`the log of session ${session} was not imported (${result.outcome}); the fact goes without it`);
@@ -91,5 +91,5 @@ export class ClosingRecords {
 }
 
 function ofTask(task: Task, meta: EventMeta) {
-  return { ...meta, project: task.homeProject.value, task: task.id.toString() };
+  return { ...meta, project: task.homeProject, task: task.id };
 }

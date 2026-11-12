@@ -5,11 +5,12 @@ import { cut, MAX_CONTEXT_LENGTH } from './context-limit.js';
 import { ESTIMATE_REMINDER, EXTRA_REMINDER, sessionStartContext, type TaskFact } from './hook-context.js';
 import type { PendingProposal } from './pending-proposal.js';
 import type { SessionTaskResult } from './session-task.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 
 /** Fact of a task for the status line; loaded only for the session start, where it is needed. */
 export interface TaskFacts {
   /** `near` is the working copy of the session. */
-  fact(task: string, near?: string): TaskFact | undefined;
+  fact(task: TaskId, near?: string): TaskFact | undefined;
 }
 
 /** The context a session start gives the agent: the reminder of estimate mode, a proposal to close, the status line. */

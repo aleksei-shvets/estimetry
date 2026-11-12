@@ -1,9 +1,9 @@
 import type { ProgressSeen, ProgressState } from '../../application/ports/progress-state.js';
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 
 export const PROGRESS_SCHEMA_VERSION = 1;
-const TASK_ID = /^T-\d+$/;
 
 /**
  * `progress/<task>.yaml`: a cache, so no lock. Two hooks writing at once lose
@@ -12,13 +12,10 @@ const TASK_ID = /^T-\d+$/;
 export class YamlProgressState implements ProgressState {
   constructor(private readonly layout: StorageLayout) {}
 
-  read(task: string): ProgressSeen | undefined {
-    if (!TASK_ID.test(task)) {
-      return undefined;
-    }
+  read(task: TaskId): ProgressSeen | undefined {
     let value: unknown;
     try {
-      value = readYaml(this.layout.taskProgress(task));
+      value = readYaml(this.layout.taskProgress(task.toString()));
     } catch {
       return undefined; // a broken cache is rebuilt from the journal
     }
@@ -39,9 +36,7 @@ export class YamlProgressState implements ProgressState {
     return { directories };
   }
 
-  write(task: string, seen: ProgressSeen): void {
-    if (TASK_ID.test(task)) {
-      writeYamlAtomic(this.layout.taskProgress(task), { schemaVersion: PROGRESS_SCHEMA_VERSION, directories: seen.directories });
-    }
+  write(task: TaskId, seen: ProgressSeen): void {
+    writeYamlAtomic(this.layout.taskProgress(task.toString()), { schemaVersion: PROGRESS_SCHEMA_VERSION, directories: seen.directories });
   }
 }

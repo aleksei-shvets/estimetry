@@ -15,6 +15,7 @@ import { YamlCheckpointState, YamlSessionStore } from '../../src/infrastructure/
 import { FileCloseProposals } from '../../src/infrastructure/persistence/file-close-proposals.js';
 import { SessionId } from '../../src/domain/measurement/session-id.js';
 import { cliSandbox } from '../support/cli.js';
+import { TaskId } from '../../src/domain/task/task-id.js';
 
 const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] as number;
 
@@ -56,7 +57,7 @@ describe('hook budgets on a large store', () => {
     }
     appendFileSync(layout.taskJournal('T-1'), `${lines.join('\n')}\n`);
     // A bound session with a fresh checkpoint: the hot path of a hook during work.
-    new YamlSessionStore(layout).update(SessionId.parse('live'), () => ({ session: 'live', project: 'api', root: repo, task: 'T-1', since: '2026-10-27T08:00:00.000Z', everBound: true }));
+    new YamlSessionStore(layout).update(SessionId.parse('live'), () => ({ session: SessionId.parse('live'), project: ProjectId.parse('api'), root: repo, task: TaskId.parse('T-1'), since: Timestamp.parse('2026-10-27T08:00:00.000Z'), everBound: true }));
     new YamlCheckpointState(layout).write(SessionId.parse('live'), { lastAt: new Date().toISOString() });
 
     // A project on OpenSpec with 50 archived changes: every bound call lists the archive.
@@ -82,7 +83,7 @@ describe('hook budgets on a large store', () => {
     const proposals = new FileCloseProposals(layout);
     const proposing = median(
       Array.from({ length: 5 }, () => {
-        proposals.put('T-1', { change: 'change-1', completedAt: new Date().toISOString(), session: 'live' });
+        proposals.put(TaskId.parse('T-1'), { change: 'change-1', completedAt: Timestamp.parse(new Date().toISOString()), session: SessionId.parse('live') });
         return run('UserPromptSubmit', { prompt: 'go' });
       }),
     ) - node;
@@ -91,7 +92,7 @@ describe('hook budgets on a large store', () => {
     const sessions = new YamlSessionStore(layout);
     const end = median(
       Array.from({ length: 5 }, () => {
-        sessions.update(SessionId.parse('ending'), () => ({ session: 'ending', project: 'api', root: repo, task: 'T-1', tasks: ['T-1'], since: '2026-10-27T08:00:00.000Z', everBound: true }));
+        sessions.update(SessionId.parse('ending'), () => ({ session: SessionId.parse('ending'), project: ProjectId.parse('api'), root: repo, task: TaskId.parse('T-1'), tasks: [TaskId.parse('T-1')], since: Timestamp.parse('2026-10-27T08:00:00.000Z'), everBound: true }));
         return run('SessionEnd', { session_id: 'ending', reason: 'exit' });
       }),
     ) - node;

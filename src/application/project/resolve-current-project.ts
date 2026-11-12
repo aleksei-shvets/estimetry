@@ -109,15 +109,8 @@ export class ResolveCurrentProject {
   }
 
   private configuredId(root: string): ProjectId | undefined {
-    const value = this.projectConfig.read(root).config?.project;
-    if (value === undefined) {
-      return undefined;
-    }
-    try {
-      return ProjectId.parse(value);
-    } catch {
-      return undefined; // A broken config is ignored: the id comes from the directory name.
-    }
+    // A broken id in the config is no id: it comes from the directory name then.
+    return this.projectConfig.read(root).config?.project;
   }
 
   private firstFree(base: ProjectId): ProjectId {

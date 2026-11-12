@@ -1,3 +1,4 @@
+import { SessionId } from '../../../domain/measurement/session-id.js';
 import type { Command } from 'commander';
 import { TaskId } from '../../../domain/task/task-id.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
@@ -13,7 +14,7 @@ export function registerAttachCommand(program: Command, ctx: CliContext): void {
     .action(async (id: string, options: { session?: string; json?: boolean }) => {
       const result = (await ctx.app()).tasks.attach({
         task: TaskId.parse(id),
-        ...(options.session === undefined ? {} : { session: options.session }),
+        ...(options.session === undefined ? {} : { session: SessionId.parse(options.session) }),
       });
       ctx.out.print(presenterFor(options).taskAttached(result));
     });

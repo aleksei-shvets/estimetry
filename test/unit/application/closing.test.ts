@@ -24,6 +24,7 @@ import {
 import { FakeProjectPlans, InMemorySessionBindings, RepositoryTaskStatusReader } from '../../support/hook-fakes.js';
 import { fakeInstallDependencies, InMemoryProjectConfigFile, InMemoryProjectFiles } from '../../support/in-memory-files.js';
 import { InMemoryEventJournal, InMemoryProjectRepository, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
+import { ProjectId } from '../../../src/domain/project/project-id.js';
 
 let tasks: InMemoryTaskRepository;
 let journal: InMemoryEventJournal;
@@ -161,13 +162,13 @@ describe('close', () => {
 
   it('unbinds the sessions of the task at the closing moment, and the pending proposal goes', () => {
     startedTask();
-    bindings.update(SessionId.parse('s1'), () => ({ session: 's1', project: 'api', root: ROOT, task: 'T-1', since: time('09:00').toISOString(), everBound: true }));
-    closing.proposals.put('T-1', { change: 'a', completedAt: time('09:40').toISOString(), session: 's1' });
+    bindings.update(SessionId.parse('s1'), () => ({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: ROOT, task: TaskId.parse('T-1'), since: time('09:00'), everBound: true }));
+    closing.proposals.put(TaskId.parse('T-1'), { change: 'a', completedAt: time('09:40'), session: SessionId.parse('s1') });
     app.closing.close({});
-    expect(bindings.get(SessionId.parse('s1'))).toMatchObject({ closedTask: 'T-1', everBound: true });
-    expect(bindings.get(SessionId.parse('s1'))?.task).toBeUndefined();
+    expect(bindings.plain('s1')).toMatchObject({ closedTask: 'T-1', everBound: true });
+    expect(bindings.plain('s1')?.task).toBeUndefined();
     expect(journal.readActivity(T('T-1')).at(-1)).toMatchObject({ type: 'session.unbound', ts: time('10:00').toISOString() });
-    expect(closing.proposals.peek('T-1')).toBeUndefined();
+    expect(closing.proposals.peek(TaskId.parse('T-1'))).toBeUndefined();
   });
 
   it('measures code by recorded commits still reachable from HEAD, plus what is not committed', () => {

@@ -5,10 +5,12 @@ import type { HookTranslation } from '../contracts/hook-adapter.js';
 import type { EventJournal } from '../ports/event-journal.js';
 import type { SessionBindings } from '../ports/session-bindings.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
-import { journalEntry } from '../shared/journal-entry.js';
+import { journalEntry, projectEntry } from '../shared/journal-entry.js';
 import type { ChangeCompletions } from './change-completions.js';
 import type { Checkpoints } from './checkpoints.js';
 import type { SessionTaskResult } from './session-task.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 
 /**
  * What every call of a session's hook leaves behind, whatever its kind: the
@@ -37,7 +39,7 @@ export class ActivityRecorder {
       resolved.task === undefined ? undefined : { id: resolved.task.id, project: resolved.project },
     );
     if (resolved.task !== undefined) {
-      this.completions.check(resolved.task, now, resolved.project.root, session.value);
+      this.completions.check(resolved.task, now, resolved.project.root, session);
     }
   }
 
@@ -48,18 +50,14 @@ export class ActivityRecorder {
     );
   }
 
-  private write(source: string, translation: HookTranslation, now: Timestamp, project: string, task: string | undefined): void {
+  private write(source: string, translation: HookTranslation, now: Timestamp, project: ProjectId, task: TaskId | undefined): void {
     for (const draft of translation.events) {
       const data = { ...draft.data, source, session: translation.session.value };
-      const entry = journalEntry<ActivityEvent>(draft.type, data, {
-        ...this.meta.at(now),
-        project,
-        ...(task === undefined ? {} : { task }),
-      });
+      const meta = { ...this.meta.at(now), project };
       if (task === undefined) {
-        this.journal.appendUnassigned(project, entry);
+        this.journal.appendUnassigned(project, projectEntry<ActivityEvent>(draft.type, data, meta));
       } else {
-        this.journal.append(entry);
+        this.journal.append(journalEntry<ActivityEvent>(draft.type, data, { ...meta, task }));
       }
     }
   }

@@ -1,5 +1,5 @@
 import type { ChangeProgress } from '../../domain/progress/progress-records.js';
-import { ProjectId } from '../../domain/project/project-id.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
 import type { ProjectRepository } from '../../domain/project/project-repository.js';
 import type { CalendarDate } from '../../domain/shared/calendar-date.js';
 import type { Flow } from '../contracts/flow.js';
@@ -21,26 +21,20 @@ export class FlowProjectPlans implements ProjectPlans {
     return this.flowOf(projectRoot)?.plan(projectRoot, this.files);
   }
 
-  plans(projects: readonly string[], options: PlanReadOptions & { readonly archivedSince?: CalendarDate } = {}): ProjectPlanReading[] {
+  plans(projects: readonly ProjectId[], options: PlanReadOptions & { readonly archivedSince?: CalendarDate } = {}): ProjectPlanReading[] {
     return projects.map((project) => this.read(project, options, true));
   }
 
-  archives(projects: readonly string[], options: PlanReadOptions = {}): ProjectPlanReading[] {
+  archives(projects: readonly ProjectId[], options: PlanReadOptions = {}): ProjectPlanReading[] {
     return projects.map((project) => this.read(project, options, false));
   }
 
   private read(
-    project: string,
+    project: ProjectId,
     options: PlanReadOptions & { readonly archivedSince?: CalendarDate },
     withChanges: boolean,
   ): ProjectPlanReading {
-    let id: ProjectId;
-    try {
-      id = ProjectId.parse(project);
-    } catch {
-      return { project, unavailable: 'not-on-this-machine' };
-    }
-    const root = this.rootOf(this.projects.findById(id)?.paths ?? [], options.near);
+    const root = this.rootOf(this.projects.findById(project)?.paths ?? [], options.near);
     if (root === undefined) {
       return { project, unavailable: 'not-on-this-machine' };
     }

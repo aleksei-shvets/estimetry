@@ -1,9 +1,10 @@
+import type { WithoutTask } from '../../domain/shared/event-envelope.js';
 import { renameSync, statSync } from 'node:fs';
 import type { EventJournal } from '../../application/ports/event-journal.js';
 import { isActivityEventType, parseActivityEvent, type ActivityEvent } from '../../domain/measurement/activity-events.js';
 import { parseProgressRecord } from '../../domain/progress/progress-record-parser.js';
 import { isProgressRecordType, type ProgressRecord } from '../../domain/progress/progress-records.js';
-import { ProjectId } from '../../domain/project/project-id.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
 import { TaskId } from '../../domain/task/task-id.js';
 import { appendJsonLine, readJsonLines } from '../fs/jsonl.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
@@ -59,17 +60,17 @@ export class JsonlEventJournal implements EventJournal {
     return { activity, records };
   }
 
-  appendUnassigned(project: string, entry: ActivityEvent | ProgressRecord): void {
+  appendUnassigned(project: ProjectId, entry: WithoutTask<ActivityEvent> | WithoutTask<ProgressRecord>): void {
     const valid = isProgressRecordType(entry.type)
       ? parseProgressRecord(entry, { withoutTask: true })
       : parseActivityEvent(entry, { withoutTask: true });
-    const file = this.layout.unassignedJournal(ProjectId.parse(project).value);
+    const file = this.layout.unassignedJournal(project.value);
     this.rotate(file);
     appendJsonLine(file, valid);
   }
 
-  readUnassigned(project: string): ActivityEvent[] {
-    return this.read(this.layout.unassignedJournal(ProjectId.parse(project).value), isActivityEventType, (record) =>
+  readUnassigned(project: ProjectId): ActivityEvent[] {
+    return this.read(this.layout.unassignedJournal(project.value), isActivityEventType, (record) =>
       parseActivityEvent(record, { withoutTask: true }),
     );
   }

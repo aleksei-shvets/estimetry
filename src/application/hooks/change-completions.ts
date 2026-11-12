@@ -2,6 +2,8 @@ import type { ChangeCompleted, PlanBaseline, ProgressRecord } from '../../domain
 import { CalendarDate } from '../../domain/shared/calendar-date.js';
 import { isExcluded } from '../../domain/progress/plan-exclusions.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
+import type { SessionId } from '../../domain/measurement/session-id.js';
+import { ProjectId } from '../../domain/project/project-id.js';
 import type { ArchivedChange } from '../ports/project-plans.js';
 import type { CloseProposals } from '../ports/close-proposals.js';
 import type { ErrorReporter } from '../ports/error-reporter.js';
@@ -34,7 +36,7 @@ export class ChangeCompletions {
    * Never throws: a failed check is repeated on the next call. `near` is the
    * working copy of the session, `session` the one an exact completion is proposed to first.
    */
-  check(task: TaskSummary, now: Timestamp, near?: string, session?: string): void {
+  check(task: TaskSummary, now: Timestamp, near?: string, session?: SessionId): void {
     try {
       this.run(task, now, near, session);
     } catch (error) {
@@ -42,7 +44,7 @@ export class ChangeCompletions {
     }
   }
 
-  private run(task: TaskSummary, now: Timestamp, near: string | undefined, session: string | undefined): void {
+  private run(task: TaskSummary, now: Timestamp, near: string | undefined, session: SessionId | undefined): void {
     if (task.startedAt === undefined) {
       return;
     }
@@ -53,20 +55,21 @@ export class ChangeCompletions {
       return;
     }
     const { seen, cached } = this.progress.seen(task.id);
-    const startedAt = Timestamp.parse(task.startedAt);
+    const startedAt = task.startedAt;
     const records: ProgressRecord[] = [];
     const directories: Record<string, readonly string[]> = { ...seen.directories };
     let changed = !cached;
     for (const reading of readings) {
-      const firstRun = seen.directories[reading.project] === undefined;
-      const unseen = (reading.archived ?? []).filter((dir) => !seenIn(seen, reading.project, dir.directory));
+      const project = reading.project.value;
+      const firstRun = seen.directories[project] === undefined;
+      const unseen = (reading.archived ?? []).filter((dir) => !seenIn(seen, project, dir.directory));
       if (!firstRun && unseen.length === 0) {
         continue;
       }
       const checked = this.checkProject(task, reading, unseen, firstRun, startedAt, now);
       records.push(...checked.records);
       if (firstRun || checked.settled.length > 0) {
-        directories[reading.project] = [...(seen.directories[reading.project] ?? []), ...checked.settled];
+        directories[project] = [...(seen.directories[project] ?? []), ...checked.settled];
         changed = true;
       }
     }
@@ -76,7 +79,8 @@ export class ChangeCompletions {
       .filter((record): record is ChangeCompleted => record.type === 'change.completed' && !record.data.approximate)
       .at(-1);
     if (exact !== undefined && session !== undefined && this.proposals !== undefined) {
-      this.proposals.put(task.id, { change: exact.data.change, project: exact.data.project, completedAt: exact.data.completedAt, session });
+      const completedAt = Timestamp.parse(exact.data.completedAt);
+      this.proposals.put(task.id, { change: exact.data.change, project: ProjectId.parse(exact.data.project), completedAt, session });
     }
   }
 
@@ -102,7 +106,7 @@ export class ChangeCompletions {
       // Rolled back by a revision: settled, never a completion.
       if (
         task.exclusions !== undefined &&
-        isExcluded(task.exclusions, reading.project, dir.change, dir.archivedOn.value, this.archives.changedAt(dir))
+        isExcluded(task.exclusions, reading.project.value, dir.change, dir.archivedOn.value, this.archives.changedAt(dir))
       ) {
         settled.push(dir.directory);
         continue;
@@ -128,7 +132,7 @@ export class ChangeCompletions {
           'change.completed',
           {
             source: SOURCE,
-            project: reading.project,
+            project: reading.project.value,
             change: dir.change,
             directory: dir.directory,
             flow: reading.flow ?? 'unknown',
@@ -144,7 +148,7 @@ export class ChangeCompletions {
       records.unshift(
         journalEntry<PlanBaseline>(
           'plan.baseline',
-          { source: SOURCE, project: reading.project, directories: baseline },
+          { source: SOURCE, project: reading.project.value, directories: baseline },
           this.recordMeta(task, reading.project, now),
         ),
       );
@@ -152,17 +156,17 @@ export class ChangeCompletions {
     return { records, settled };
   }
   /** The changes of the task's groups; a task without groups owns a change only as the one task in progress there. */
-  private belongs(task: TaskSummary, project: string): (change: string) => boolean {
+  private belongs(task: TaskSummary, project: ProjectId): (change: string) => boolean {
     const groups = task.groups ?? [];
     if (groups.length > 0) {
       return (change) => groups.includes(change);
     }
     const inProgress = this.tasks.inProgress(project);
-    const alone = inProgress.length === 1 && inProgress[0]?.id === task.id;
+    const alone = inProgress.length === 1 && inProgress[0]?.id.equals(task.id) === true;
     return () => alone;
   }
 
-  private recordMeta(task: TaskSummary, project: string, now: Timestamp) {
+  private recordMeta(task: TaskSummary, project: ProjectId, now: Timestamp) {
     return { ...this.meta.at(now), project, task: task.id };
   }
 }

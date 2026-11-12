@@ -7,8 +7,10 @@ import type { ProjectLocator } from '../ports/project-locator.js';
 import type { SessionBindings } from '../ports/session-bindings.js';
 import type { TaskStatusReader } from '../ports/task-status-reader.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
-import { journalEntry } from '../shared/journal-entry.js';
+import { journalEntry, projectEntry } from '../shared/journal-entry.js';
 import type { RecentSessions } from './recent-sessions.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 
 /**
  * The task of a commit (commit-tracking spec): the only task in progress of
@@ -22,7 +24,7 @@ export class CommitTask {
     private readonly recent: RecentSessions,
   ) {}
 
-  of(project: string, now: Timestamp): string | undefined {
+  of(project: ProjectId, now: Timestamp): TaskId | undefined {
     // A commit right after closing belongs to the closed task, never to another one.
     const latest = this.bindings
       .ofProject(project)
@@ -38,7 +40,7 @@ export class CommitTask {
     }
     const active = this.bindings
       .ofProject(project)
-      .filter((binding) => binding.task !== undefined && inProgress.some((task) => task.id === binding.task))
+      .filter((binding) => binding.task !== undefined && inProgress.some((task) => binding.task?.equals(task.id) === true))
       .map((binding) => ({ binding, seen: this.recent.lastSeen(binding.session) }))
       .filter(({ seen }) => this.recent.isRecent(seen, now))
       .sort((a, b) => (b.seen ?? 0) - (a.seen ?? 0));
@@ -67,23 +69,20 @@ export class CommitRecords {
       return;
     }
     const task = this.task.of(project.id, now);
-    const record = journalEntry<CommitRecorded>(
-      'commit.recorded',
-      {
-        source: source.id,
-        sha: commit.sha,
-        parents: commit.parents,
-        ...(commit.patchId === undefined ? {} : { patchId: commit.patchId }),
-        authoredAt: commit.authoredAt,
-        committedAt: commit.committedAt,
-        ...fileList(commit.files),
-      },
-      { ...this.meta.at(now), project: project.id, ...(task === undefined ? {} : { task }) },
-    );
+    const data: CommitRecorded['data'] = {
+      source: source.id,
+      sha: commit.sha,
+      parents: commit.parents,
+      ...(commit.patchId === undefined ? {} : { patchId: commit.patchId }),
+      authoredAt: commit.authoredAt,
+      committedAt: commit.committedAt,
+      ...fileList(commit.files),
+    };
+    const meta = { ...this.meta.at(now), project: project.id };
     if (task === undefined) {
-      this.journal.appendUnassigned(project.id, record);
+      this.journal.appendUnassigned(project.id, projectEntry<CommitRecorded>('commit.recorded', data, meta));
     } else {
-      this.journal.appendRecord(record);
+      this.journal.appendRecord(journalEntry<CommitRecorded>('commit.recorded', data, { ...meta, task }));
     }
   }
 }

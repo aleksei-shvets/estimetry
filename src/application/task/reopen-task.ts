@@ -29,7 +29,7 @@ export class ReopenTask {
       return task;
     });
     const warnings = derived([
-      ['removing the pending close proposal', () => this.proposals.remove(task.id.toString())],
+      ['removing the pending close proposal', () => this.proposals.remove(task.id)],
       ['removing the card', () => this.cards.refresh(task)],
       ['updating calibration.json', () => this.cards.recalculate()],
     ]);

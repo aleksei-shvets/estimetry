@@ -24,6 +24,7 @@ import { InMemoryCloseProposals } from '../../support/closing-fakes.js';
 import { ChangeArchives } from '../../../src/application/shared/change-archives.js';
 import { EventMetaSource } from '../../../src/application/shared/event-meta-source.js';
 import { ProgressLog } from '../../../src/application/hooks/progress-log.js';
+import { SessionId } from '../../../src/domain/measurement/session-id.js';
 
 const START = '2026-10-26T18:57:00.000Z';
 const START_MS = Date.parse(START);
@@ -32,11 +33,11 @@ const author = Author.of('dev@example.com');
 
 class InMemoryProgressState implements ProgressState {
   readonly saved = new Map<string, ProgressSeen>();
-  read(task: string): ProgressSeen | undefined {
-    return this.saved.get(task);
+  read(task: TaskId): ProgressSeen | undefined {
+    return this.saved.get(task.toString());
   }
-  write(task: string, seen: ProgressSeen): void {
-    this.saved.set(task, seen);
+  write(task: TaskId, seen: ProgressSeen): void {
+    this.saved.set(task.toString(), seen);
   }
 }
 
@@ -86,7 +87,14 @@ function unarchive(root: string, name: string, date: string): void {
 }
 
 function summary(id: string, groups: string[] = [], taskProjects = ['api']): TaskSummary {
-  return { id, title: id, status: 'in-progress', startedAt: START, projects: taskProjects, ...(groups.length === 0 ? {} : { groups }) };
+  return {
+    id: TaskId.parse(id),
+    title: id,
+    status: 'in-progress',
+    startedAt: Timestamp.parse(START),
+    projects: taskProjects.map((project) => ProjectId.parse(project)),
+    ...(groups.length === 0 ? {} : { groups }),
+  };
 }
 
 const records = (task: string): ProgressRecord[] => journal.readRecords(TaskId.parse(task));
@@ -204,7 +212,7 @@ describe('change completions', () => {
     state.saved.clear();
     completions.check(task, NOW);
     expect(records('T-1').map((r) => r.type)).toEqual(['plan.baseline', 'change.completed']);
-    expect(state.read('T-1')).toEqual({ directories: { api: ['2026-11-01-a'] } });
+    expect(state.read(TaskId.parse('T-1'))).toEqual({ directories: { api: ['2026-11-01-a'] } });
   });
 
   it('does nothing for projects with the flow none, without a config or not on this machine', () => {
@@ -233,7 +241,7 @@ describe('change completions', () => {
     completions.check(alone, NOW);
     archive('/work/api', 'shared', '2026-11-01');
     completions.check(alone, NOW);
-    expect(state.read('T-1')).toEqual({ directories: { api: [] } });
+    expect(state.read(TaskId.parse('T-1'))).toEqual({ directories: { api: [] } });
     inProgress = [alone];
     completions.check(alone, NOW);
     expect(completed('T-1').map((c) => c.change)).toEqual(['shared']);
@@ -258,12 +266,12 @@ describe('change completions', () => {
   it('leaves a proposal to close the task for an exact completion, with the session that noticed it', () => {
     const task = summary('T-1', ['a', 'b']);
     archive('/work/api', 'old', '2026-10-28');
-    completions.check(task, NOW, undefined, 's1');
-    expect(proposals.peek('T-1')).toBeUndefined(); // first run: approximate completions only
+    completions.check(task, NOW, undefined, SessionId.parse('s1'));
+    expect(proposals.peek(TaskId.parse('T-1'))).toBeUndefined(); // first run: approximate completions only
     archive('/work/api', 'a', '2026-11-01');
     archive('/work/api', 'b', '2026-11-02', START_MS + 9_000_000);
-    completions.check(task, NOW, undefined, 's2');
-    expect(proposals.peek('T-1')).toEqual({ change: 'b', project: 'api', completedAt: new Date(START_MS + 9_000_000).toISOString(), session: 's2' });
+    completions.check(task, NOW, undefined, SessionId.parse('s2'));
+    expect(proposals.plain('T-1')).toEqual({ change: 'b', project: 'api', completedAt: new Date(START_MS + 9_000_000).toISOString(), session: 's2' });
   });
 
   it('reports a failure instead of throwing', () => {

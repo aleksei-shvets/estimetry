@@ -26,14 +26,15 @@ export class SessionEndImport {
     const binding = this.bindings.get(session);
     const tasks = servedTasks(binding).flatMap((id) => {
       const summary = this.tasks.summary(id);
-      return summary !== undefined && isInProgress(summary.status) ? [{ id, project: summary.projects[0] ?? binding?.project ?? '' }] : [];
+      const project = summary?.projects[0] ?? binding?.project;
+      return summary !== undefined && isInProgress(summary.status) && project !== undefined ? [{ id, project }] : [];
     });
     if (tasks.length === 0) {
       return;
     }
     const path = transcript ?? binding?.transcript;
     (await this.logs()).execute({
-      session: session.value,
+      session,
       source,
       ...(path === undefined ? {} : { path }),
       tasks,

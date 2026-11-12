@@ -1,5 +1,7 @@
 import type { LogAgent, LogSession, LogTurn } from '../../domain/progress/session-log.js';
-import { SessionId } from '../../domain/measurement/session-id.js';
+import type { SessionId } from '../../domain/measurement/session-id.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 import type { Timestamp } from '../../domain/shared/timestamp.js';
 import { SessionLogFailure, type SessionLogReaders } from '../contracts/session-logs.js';
 import type { FileFingerprint, SessionLogFingerprint } from '../ports/log-import-state.js';
@@ -15,19 +17,25 @@ export const MAX_RECORD_BYTES = 64 * 1024;
 export type LogImportOutcome = 'imported' | 'no-new-data' | 'not-found' | 'no-data' | 'unrecognized' | 'over-budget' | 'failed';
 
 export interface SessionImport {
-  readonly session: string;
-  readonly task: string;
+  readonly session: SessionId;
+  readonly task: TaskId;
   readonly outcome: LogImportOutcome;
 }
 
+/** A task the log goes into, with its home project for the envelope. */
+export interface ImportTask {
+  readonly id: TaskId;
+  readonly project: ProjectId;
+}
+
 export interface SessionImportRequest {
-  readonly session: string;
+  readonly session: SessionId;
   /** Tool id of the session's activity events; it picks the log reader. */
   readonly source: string;
   /** The path the tool reported in its hooks, if known. */
   readonly path?: string;
   /** Tasks in progress the session served, each with its home project for the envelope. */
-  readonly tasks: readonly { readonly id: string; readonly project: string }[];
+  readonly tasks: readonly ImportTask[];
   readonly budgetMs?: number;
   /** The moment the records carry; the clock's now when absent. The closing stamps them with its own time. */
   readonly at?: Timestamp;
@@ -59,25 +67,20 @@ export class ImportSessionLogs {
       return results('not-found');
     }
     try {
-      SessionId.parse(request.session); // the id goes into file names: a journal could hold anything
-    } catch {
-      return results('failed');
-    }
-    try {
       return this.deps.state.locked(request.session, () => {
         const known = this.deps.state.read(request.session);
         const fingerprint = reader.fingerprint(request.session, request.path);
         if (fingerprint === undefined) {
           return results('not-found');
         }
-        const due = request.tasks.filter((task) => !same(known[task.id]?.fingerprint, fingerprint));
+        const due = request.tasks.filter((task) => !same(known[task.id.toString()]?.fingerprint, fingerprint));
         const fresh = request.tasks
           .filter((task) => !due.includes(task))
           .map((task) => ({ session: request.session, task: task.id, outcome: 'no-new-data' as const }));
         if (due.length === 0) {
           return fresh;
         }
-        const from = Math.min(...due.map((task) => known[task.id]?.next ?? 0));
+        const from = Math.min(...due.map((task) => known[task.id.toString()]?.next ?? 0));
         const read = reader.read({
           session: request.session,
           ...(request.path === undefined ? {} : { path: request.path }),
@@ -86,7 +89,7 @@ export class ImportSessionLogs {
         });
         if (read.status === 'over-budget' || read.status === 'unrecognized') {
           this.deps.errors.report(
-            `importing the log of session ${request.session}`,
+            `importing the log of session ${request.session.value}`,
             new SessionLogFailure(read.status === 'over-budget' ? 'log-import-budget' : 'log-format-unrecognized'),
           );
         }
@@ -99,7 +102,7 @@ export class ImportSessionLogs {
           return [...fresh, ...results(read.status, due)];
         }
         for (const task of due) {
-          const entry = known[task.id];
+          const entry = known[task.id.toString()];
           // A file that shrank is read from the start: then every task starts there too.
           const offset = read.from < from ? read.from : (entry?.next ?? 0);
           const turns: LogTurn[] = read.turns.filter((turn) => turn.key >= offset).map((turn) => ({ ...turn, tokens: [...turn.tokens] }));
@@ -120,7 +123,7 @@ export class ImportSessionLogs {
     } catch (error) {
       // Only a code and the session reach the error log: never a line or a path of the log.
       this.deps.errors.report(
-        `importing the log of session ${request.session}`,
+        `importing the log of session ${request.session.value}`,
         error instanceof SessionLogFailure ? error : new SessionLogFailure('log-import-failed'),
       );
       return results('failed');
@@ -133,8 +136,8 @@ export class ImportSessionLogs {
    * the reading joins again (`sessionLogs`).
    */
   private write(
-    task: { readonly id: string; readonly project: string },
-    session: string,
+    task: ImportTask,
+    session: SessionId,
     source: string,
     at: Timestamp,
     content: { from: number; turns: LogTurn[]; agents: LogAgent[]; cost: LogSession['data']['cost']; skipped: number },
@@ -165,7 +168,7 @@ export class ImportSessionLogs {
     parts.forEach((part, i) => {
       const data: LogSession['data'] = {
         source,
-        session,
+        session: session.value,
         importId,
         from: content.from,
         part: i + 1,

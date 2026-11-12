@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { SessionBinding } from '../../src/application/ports/session-bindings.js';
+import { plainOf } from '../support/hook-fakes.js';
 import { describe, expect, it } from 'vitest';
 import { SessionId } from '../../src/domain/measurement/session-id.js';
 import { Project } from '../../src/domain/project/project.js';
@@ -42,13 +44,13 @@ describe('YamlSessionStore and YamlCheckpointState', () => {
     const store = new YamlSessionStore(layout);
     const state = new YamlCheckpointState(layout);
     expect(store.get(s1)).toBeUndefined();
-    store.update(s1, () => ({ session: 's1', project: 'api', root: '/work/api', task: 'T-1', since: '2026-10-27T09:00:00.000Z', everBound: true }));
+    store.update(s1, () => ({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/work/api', task: TaskId.parse('T-1'), since: Timestamp.parse('2026-10-27T09:00:00.000Z'), everBound: true }));
     state.write(s1, { lastAt: '2026-10-27T10:00:00.000Z', reminderPending: true, lastSeenAt: '2026-10-27T10:00:00.000Z' });
-    expect(store.get(s1)).toMatchObject({ task: 'T-1', everBound: true });
+    expect(plainOf(store.get(s1) as SessionBinding)).toMatchObject({ task: 'T-1', everBound: true });
     expect(state.read(s1)).toEqual({ lastAt: '2026-10-27T10:00:00.000Z', reminderPending: true, lastSeenAt: '2026-10-27T10:00:00.000Z' });
-    expect(store.ofProject('api').map((b) => b.session)).toEqual(['s1']);
-    expect(store.ofProject('web')).toEqual([]);
-    expect(store.update(s1, () => undefined)?.task).toBe('T-1');
+    expect(store.ofProject(ProjectId.parse('api')).map((b) => b.session.value)).toEqual(['s1']);
+    expect(store.ofProject(ProjectId.parse('web'))).toEqual([]);
+    expect(store.update(s1, () => undefined)?.task?.toString()).toBe('T-1');
     writeFileSync(layout.sessionBinding('s1'), 'session: [');
     expect(store.get(s1)).toBeUndefined();
   });
@@ -56,23 +58,24 @@ describe('YamlSessionStore and YamlCheckpointState', () => {
   it('a binding changed in another process is not undone by checkpoint writes from parallel hooks', async () => {
     const home = join(tempDir(), 'home');
     const layout = new StorageLayout(home);
-    new YamlSessionStore(layout).update(s1, () => ({ session: 's1', project: 'api', root: '/w', task: 'T-1' }));
+    new YamlSessionStore(layout).update(s1, () => ({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/w', task: TaskId.parse('T-1') }));
     const dist = (p: string) => JSON.stringify(pathToFileURL(join(ROOT, 'dist', p)).href);
     const script = `
       const { YamlSessionStore, YamlCheckpointState } = await import(${dist('infrastructure/persistence/yaml-session-store.js')});
       const { StorageLayout } = await import(${dist('infrastructure/fs/storage-layout.js')});
       const { SessionId } = await import(${dist('domain/measurement/session-id.js')});
+      const { TaskId } = await import(${dist('domain/task/task-id.js')});
       const layout = new StorageLayout(${JSON.stringify(home)});
       const id = SessionId.parse('s1');
       if (process.argv[1] === '0') {
-        new YamlSessionStore(layout).update(id, (b) => ({ ...b, task: 'T-2' }));
+        new YamlSessionStore(layout).update(id, (b) => ({ ...b, task: TaskId.parse('T-2') }));
       } else {
         for (let i = 0; i < 20; i++) new YamlCheckpointState(layout).write(id, { lastSeenAt: new Date().toISOString() });
       }
     `;
     const codes = await Promise.all(Array.from({ length: 6 }, (_, n) => spawnNode(['--input-type=module', '-e', script, String(n)])));
     expect(codes).toEqual(Array(6).fill(0));
-    expect(new YamlSessionStore(layout).get(s1)?.task).toBe('T-2');
+    expect(new YamlSessionStore(layout).get(s1)?.task?.toString()).toBe('T-2');
   });
 });
 
@@ -82,9 +85,9 @@ describe('JsonlEventJournal for hooks', () => {
     const journal = new JsonlEventJournal(layout, 300);
     const event = { schemaVersion: 1, id: 'e1', ts: '2026-10-27T10:00:00.000Z', type: 'tool.used', author: 'a', project: 'api', data: { source: 'x', session: 's1' } };
     for (let i = 0; i < 5; i++) {
-      journal.appendUnassigned('api', { ...event, id: `e${i}` } as never);
+      journal.appendUnassigned(ProjectId.parse('api'), { ...event, id: `e${i}` } as never);
     }
-    expect(journal.readUnassigned('api').length).toBeLessThan(5);
+    expect(journal.readUnassigned(ProjectId.parse('api')).length).toBeLessThan(5);
     expect(readFileSync(layout.unassignedJournal('api').replace('.jsonl', '.1.jsonl'), 'utf8')).toContain('"e0"');
   });
 
@@ -116,9 +119,9 @@ describe('FileTaskStatusReader', () => {
     const t2 = Task.create({ id: tasks.nextId(), title: 'Two', type: TaskType.of('feature', DEFAULT_TASK_TYPES), project: api }, meta(3));
     tasks.save(t2);
     const reader = new FileTaskStatusReader(layout);
-    expect(reader.summary('T-1')).toMatchObject({ title: 'One', status: 'in-progress', projects: ['api'] });
-    expect(reader.inProgress('api').map((t) => t.id)).toEqual(['T-1']);
-    expect(reader.summary('../x')).toBeUndefined();
+    expect(reader.summary(TaskId.parse('T-1'))).toMatchObject({ title: 'One', status: 'in-progress', projects: [api], id: TaskId.parse('T-1') });
+    expect(reader.inProgress(api).map((t) => t.id.toString())).toEqual(['T-1']);
+    expect(reader.summary(TaskId.parse('T-9'))).toBeUndefined();
   });
 });
 
@@ -141,9 +144,9 @@ describe('FsProjectLocator', () => {
     const link = join(tempDir(), 'link');
     symlinkSync(main, link);
     const locator = registry({ app: main, nested: join(main, 'src') });
-    expect(locator.locate(join(main, 'src', 'deep'))).toEqual({ id: 'nested', root: join(main, 'src') });
-    expect(locator.locate(link)).toEqual({ id: 'app', root: main });
-    expect(locator.locate(worktree)).toEqual({ id: 'app', root: main });
+    expect(locator.locate(join(main, 'src', 'deep'))).toEqual({ id: ProjectId.parse('nested'), root: join(main, 'src') });
+    expect(locator.locate(link)).toEqual({ id: ProjectId.parse('app'), root: main });
+    expect(locator.locate(worktree)).toEqual({ id: ProjectId.parse('app'), root: main });
     expect(locator.locate(tempDir())).toBeUndefined();
     expect(locator.locate('/does/not/exist')).toBeUndefined();
   });
@@ -227,13 +230,13 @@ describe('archive listing and the progress cache', () => {
   it('keeps seen directories per task and treats a broken cache as missing', () => {
     const layout = new StorageLayout(tempDir('progress-'));
     const state = new YamlProgressState(layout);
-    expect(state.read('T-1')).toBeUndefined();
-    state.write('T-1', { directories: { api: ['2026-11-02-plan-progress'] } });
-    expect(state.read('T-1')).toEqual({ directories: { api: ['2026-11-02-plan-progress'] } });
+    expect(state.read(TaskId.parse('T-1'))).toBeUndefined();
+    state.write(TaskId.parse('T-1'), { directories: { api: ['2026-11-02-plan-progress'] } });
+    expect(state.read(TaskId.parse('T-1'))).toEqual({ directories: { api: ['2026-11-02-plan-progress'] } });
     writeFileSync(layout.taskProgress('T-1'), 'directories: [oops');
-    expect(state.read('T-1')).toBeUndefined();
+    expect(state.read(TaskId.parse('T-1'))).toBeUndefined();
     writeFileSync(layout.taskProgress('T-1'), 'directories: { api: [1] }\n');
-    expect(state.read('T-1')).toBeUndefined();
-    expect(state.read('../x')).toBeUndefined();
+    expect(state.read(TaskId.parse('T-1'))).toBeUndefined();
+    expect(() => TaskId.parse('../x')).toThrow(); // a path never reaches the store: it is no TaskId
   });
 });

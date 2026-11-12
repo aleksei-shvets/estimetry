@@ -31,6 +31,8 @@ import { InMemoryEventJournal, InMemoryProjectRepository, InMemoryTaskRepository
 import { ChangeArchives } from '../../../src/application/shared/change-archives.js';
 import { EventMetaSource } from '../../../src/application/shared/event-meta-source.js';
 import { ProgressLog } from '../../../src/application/hooks/progress-log.js';
+import { SessionId } from '../../../src/domain/measurement/session-id.js';
+import { ProjectId } from '../../../src/domain/project/project-id.js';
 
 let tasks: InMemoryTaskRepository;
 let journal: InMemoryEventJournal;
@@ -141,19 +143,19 @@ describe('revising the estimate', () => {
     expect(status.estimateShare).toBeCloseTo(20 / 60 / 12);
     expect(app.closing.summary({}).fact).toBe(20);
     const facts = new MeasuredTaskFacts(tasks, new TaskMeasurement(journal, new FixedMeasurementSettings(), clock), new TaskPlanProgress(plans, journal));
-    expect(facts.fact('T-1')?.minutes).toBe(20);
+    expect(facts.fact(TaskId.parse('T-1'))?.minutes).toBe(20);
     expect(app.measuring.parallel({ enabled: true }).budgetShare).toBeCloseTo(Math.round((20 / 60 / 12) * 1000) / 1000);
   });
 
   it('takes the rolled back change out of the plan and of the completed changes, and drops the proposal about it', () => {
     startedTask();
-    closing.proposals.put('T-1', { change: 'auth', completedAt: time('10:00').toISOString(), session: 's1' });
+    closing.proposals.put(TaskId.parse('T-1'), { change: 'auth', completedAt: time('10:00'), session: SessionId.parse('s1') });
     expect(app.measuring.status({}).plan?.done).toBe(50);
     revise();
     const status = app.measuring.status({});
     expect(status.plan).toMatchObject({ done: 0, archivedBeforeRevision: ['auth'] });
     expect(status.completedChanges).toEqual([]);
-    expect(closing.proposals.peek('T-1')).toBeUndefined();
+    expect(closing.proposals.peek(TaskId.parse('T-1'))).toBeUndefined();
   });
 
   it('the hook receiver never records the rolled back archive, also after losing its cache', () => {
@@ -168,11 +170,11 @@ describe('revising the estimate', () => {
       new RecordingErrorReporter(),
       closing.proposals,
     );
-    const summary = new RepositoryTaskStatusReader(tasks).summary('T-1');
+    const summary = new RepositoryTaskStatusReader(tasks).summary(TaskId.parse('T-1'));
     expect(summary?.exclusions?.archives).toEqual([{ project: 'api', change: 'auth', archivedOn: '2026-10-27' }]);
-    completions.check({ ...(summary as NonNullable<typeof summary>), groups: ['auth', 'billing'] }, time('11:30'), ROOT, 's1');
+    completions.check({ ...(summary as NonNullable<typeof summary>), groups: ['auth', 'billing'] }, time('11:30'), ROOT, SessionId.parse('s1'));
     expect(journal.readRecords(T).filter((r) => r.type === 'change.completed')).toHaveLength(1); // only the one from before
-    expect(closing.proposals.peek('T-1')).toBeUndefined();
+    expect(closing.proposals.peek(TaskId.parse('T-1'))).toBeUndefined();
   });
 
   it('lists extra work since the window and manual time without a moment before writing', () => {
@@ -214,9 +216,9 @@ describe('revising the estimate', () => {
 
   it('keeps a proposal about a change of the same name in another project', () => {
     startedTask();
-    closing.proposals.put('T-1', { change: 'auth', project: 'web', completedAt: time('10:00').toISOString(), session: 's1' });
+    closing.proposals.put(TaskId.parse('T-1'), { change: 'auth', project: ProjectId.parse('web'), completedAt: time('10:00'), session: SessionId.parse('s1') });
     revise();
-    expect(closing.proposals.peek('T-1')?.project).toBe('web');
+    expect(closing.proposals.peek(TaskId.parse('T-1'))?.project?.value).toBe('web');
   });
 
   it('renegotiates after a revision with the counted fact', () => {
@@ -284,7 +286,7 @@ describe('cards of other schemas', () => {
   it('a card newer than this binary stops the recalculation and is reported', () => {
     closeT1();
     const before = closing.calibration.current;
-    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
+    closing.cards.others.set('T-9', { schema: 'newer', task: TaskId.parse('T-9'), version: 4 });
     const report = app.closing.rebuild({ task: T });
     expect(report.calibrationError).toMatch(/T-9 were written by a newer version of estimetry/);
     expect(closing.calibration.current).toBe(before);
@@ -305,7 +307,7 @@ describe('cards of other schemas', () => {
   });
 
   it('closing next to a newer card warns to update estimetry, not to rebuild', () => {
-    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
+    closing.cards.others.set('T-9', { schema: 'newer', task: TaskId.parse('T-9'), version: 4 });
     startedTask();
     const closed = app.closing.close({});
     expect(closed.warnings).toEqual([expect.stringMatching(/newer version of estimetry.*update estimetry\)$/)]);
