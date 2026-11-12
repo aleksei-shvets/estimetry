@@ -54,7 +54,8 @@ export class ResolveCurrentProject {
   }
 
   /**
-   * The id comes from `.estimetry/config.yaml` when it names one: a clone of the
+   * A linked git worktree of a registered main working copy joins its project.
+   * Otherwise the id comes from `.estimetry/config.yaml` when it names one: a clone of the
    * same repository (same fingerprint) joins that project, another repository with
    * the same id gets a suffix. Without the file the id comes from the directory name.
    */
@@ -63,6 +64,12 @@ export class ResolveCurrentProject {
     const existing = this.projects.findByPath(root);
     if (existing) {
       return { kind: 'existing', project: existing };
+    }
+    // A linked worktree shares the repository of its main working copy: it is that project, with a config or without.
+    const main = this.workspace.mainRoot();
+    const mainProject = main === undefined ? undefined : this.projects.findByPath(main);
+    if (mainProject) {
+      return { kind: 'join', project: mainProject, path: root };
     }
     const fingerprint = this.workspace.fingerprint();
     const repository = fingerprint === undefined ? {} : { fingerprint };

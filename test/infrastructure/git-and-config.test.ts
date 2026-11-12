@@ -29,6 +29,29 @@ describe('GitCli', () => {
     symlinkSync(dir, link);
     expect(new GitCli(link).currentRoot()).toBe(dir);
   });
+
+  it('names the main working copy of a linked worktree, and none for the main copy or outside git', () => {
+    const repo = gitRepo();
+    execFileSync('git', ['-c', 'user.name=Dev', 'commit', '-q', '--allow-empty', '-m', 'x'], { cwd: repo });
+    const worktree = join(tempDir('wt-'), 'feature');
+    execFileSync('git', ['worktree', 'add', '-q', worktree], { cwd: repo });
+    mkdirSync(join(worktree, 'src'));
+    const inside = new GitCli(join(worktree, 'src'));
+    expect(inside.currentRoot()).toBe(worktree);
+    expect(inside.mainRoot()).toBe(repo);
+    expect(new GitCli(repo).mainRoot()).toBeUndefined();
+    expect(new GitCli(tempDir('plain-')).mainRoot()).toBeUndefined();
+  });
+
+  it('a worktree of a bare repository has no main working copy: the folder that holds the repository is none', () => {
+    const repo = gitRepo();
+    execFileSync('git', ['-c', 'user.name=Dev', 'commit', '-q', '--allow-empty', '-m', 'x'], { cwd: repo });
+    const parent = tempDir('bare-');
+    execFileSync('git', ['clone', '-q', '--bare', repo, join(parent, 'repo.git')]);
+    execFileSync('git', ['worktree', 'add', '-q', join(parent, 'wt')], { cwd: join(parent, 'repo.git') });
+    expect(new GitCli(join(parent, 'wt')).currentRoot()).toBe(join(parent, 'wt'));
+    expect(new GitCli(join(parent, 'wt')).mainRoot()).toBeUndefined();
+  });
 });
 
 describe('YamlConfigStore', () => {

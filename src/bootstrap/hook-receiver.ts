@@ -44,6 +44,7 @@ import { FlowRegistry } from '../integrations/flows/registry.js';
 import { claudeCodeHooks } from '../integrations/tools/claude-code/hook-translation.js';
 import { gitHooks } from '../integrations/tools/git/git-hooks.js';
 import { HookAdapterRegistry } from '../integrations/tools/hook-adapters.js';
+import { SessionWindow } from '../application/task/session-window.js';
 
 /*
  * The hook receiver, apart from the composition of the facade: the container
@@ -92,7 +93,7 @@ export function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, 
   const proposal = new PendingProposal(proposals, recent, () => hookPlanOf(layout, plans, projects));
   const sessions = new ReceiveSessionHook(
     locator,
-    new SessionTask(bindings, tasks, journal, ids, config),
+    new SessionTask(bindings, tasks, new SessionWindow(journal, meta)),
     new ActivityRecorder(journal, bindings, checkpoints, completions, meta),
     // Only the session start needs the fact, and only it loads the task repository and the calculator.
     new SessionStartContext(() => hookFacts(layout, journal, config, plans), checkpoints, proposal),

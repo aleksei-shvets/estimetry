@@ -68,6 +68,7 @@ import { RevisionRecords } from './task/revision-records.js';
 import { ChangeArchives } from './shared/change-archives.js';
 import { FindSimilarTasks, type SimilarTasksInput, type SimilarTasksView } from './task/find-similar-tasks.js';
 import { ShowCalibration, type CalibrationInput, type CalibrationView } from './task/show-calibration.js';
+import { SessionWindow } from './task/session-window.js';
 
 /** Everything the application needs from the outside world: the ports, side by side. */
 export interface EstimetryDependencies {
@@ -228,7 +229,7 @@ function tasksGroup(deps: EstimetryDependencies, core: CoreServices): Estimetry[
   const { meta, currentProject, activeTask } = core;
   const createTask = new CreateTask(deps.tasks, currentProject, deps.taskTypes, meta);
   const startTask = new StartTask(deps.tasks, currentProject, activeTask, meta, core.planSnapshots, deps.journal);
-  const bindSession = new BindSession(deps.sessionBindings, deps.taskStatus, deps.journal, deps.ids, deps.authors);
+  const bindSession = new BindSession(deps.sessionBindings, deps.taskStatus, new SessionWindow(deps.journal, meta));
   const attachTask = new AttachTask(deps.tasks, currentProject, meta, bindSession, deps.workspace, deps.clock);
   const listTasks = new ListTasks(deps.tasks, currentProject);
   const showTask = new ShowTask(deps.tasks, core.taskCards);
