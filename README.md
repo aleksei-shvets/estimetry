@@ -154,7 +154,7 @@ Sessions that ended before you installed this version are read when the task clo
 ### Which task a session serves
 
 - **One task in progress** — a session binds to it by itself.
-- **Several tasks in progress** — the agent gets the session id at the start of the session and asks you which task it is. It then runs `emt attach <task> --session <id>`. The same command switches a running session to another task; the time before and after the switch goes to the right task.
+- **Several tasks in progress** — the agent gets the session id at the start of the session and asks you which task it is. It then runs `emt attach <task> --session <id>`. For the first task of the session, its work since the task started counts, as when the session binds by itself. The same command switches a running session to another task; the time before and after the switch goes to the right task.
 - **No task in progress** — the session's time is kept in a journal of the project and counts for no task. Start a task, even with `emt start --at "<when you began>"`, and the session's work since then moves into it.
 
 ### Restarts and parallel sessions
@@ -171,6 +171,7 @@ The hooks find the project by the directory Claude Code runs in, not by the sess
 The agent may run in one repository, where the OpenSpec artifacts are, and write code elsewhere.
 
 - **Time and plan progress** are not affected: time goes to the task of the session, and the plan is read where the artifacts are.
+- **A git worktree** of a registered working copy belongs to its project, with or without a committed `.estimetry/config.yaml`: a task started in the worktree is a task of that project, and a session opened in the main working copy sees it. Another clone without the config is a project of its own.
 - **Another worktree of the same repository** shares the git hooks: with `init --track-commits`, its commits are recorded into the task. The code volume is measured at closing in the working copy `emt close` runs in. Commits not yet reachable from the branch checked out there are shown as unreachable and not counted, and uncommitted changes of the other worktree are not seen. Before closing, merge the worktree's branch into the branch of the working copy you close from. Run `emt` commands from the main working copy.
 - **Another repository** belongs to the task only when you add it: run `estimetry init --track-commits` and `emt attach <task>` in it. Then its commits are recorded and its code is measured at closing.
 

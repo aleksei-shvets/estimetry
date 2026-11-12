@@ -38,6 +38,7 @@ import { ListRegistry } from '../../support/in-memory-files.js';
 import { InMemoryEventJournal, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
 import { CheckpointSnapshot } from '../../../src/application/hooks/checkpoint-snapshot.js';
 import { EventMetaSource } from '../../../src/application/shared/event-meta-source.js';
+import { SessionWindow } from '../../../src/application/task/session-window.js';
 
 const API = '/work/api';
 const day = (hhmm: string) => `2026-10-27T${hhmm}:00.000Z`;
@@ -107,7 +108,7 @@ beforeEach(() => {
   const proposal = new PendingProposal(proposals, recent, async () => ({ of: () => ({ done: 51, unfinished: ['release'] }) }));
   const sessions = new ReceiveSessionHook(
     new FakeProjectLocator(),
-    new SessionTask(bindings, status, journal, ids, authors),
+    new SessionTask(bindings, status, new SessionWindow(journal, new EventMetaSource(clock, ids, authors))),
     new ActivityRecorder(journal, bindings, checkpoints, { check: (task) => void checked.push(task.id.toString()) }, new EventMetaSource(clock, ids, authors)),
     new SessionStartContext(async () => ({ fact: () => ({ minutes: 210, likelyHours: 58.5, planDone: 51 }) }), checkpoints, proposal),
     new PromptContext(checkpoints, proposal),
@@ -120,7 +121,7 @@ beforeEach(() => {
   );
   const commits = new CommitRecords(new FakeProjectLocator(), git, new CommitTask(bindings, status, recent), journal, new EventMetaSource(clock, ids, authors));
   receive = new ReceiveHook(new ListRegistry<HookSource>([new FakeHookAdapter(), gitHooks, hgHooks]), clock, commits, sessions);
-  bind = new BindSession(bindings, status, journal, ids, authors);
+  bind = new BindSession(bindings, status, new SessionWindow(journal, new EventMetaSource(clock, ids, authors)));
 });
 
 describe('which task a session serves', () => {
@@ -175,6 +176,38 @@ describe('which task a session serves', () => {
         'Ask the user which one this session serves, then run: emt attach <task> --session s1',
     );
     expect(journal.readUnassigned(ProjectId.parse('api')).map((e) => e.type)).toEqual(['session.started']);
+  });
+
+  it('the first task of a session chosen with attach counts its work since the task started, as an automatic binding does', async () => {
+    startedTask('T-1', 'Payments', day('09:00'));
+    startedTask('T-2', 'Webhooks', day('09:30'));
+    clock.set(day('09:20'));
+    await call('ToolDone', 'tool-done', [tool('before-start')]);
+    clock.set(day('09:40'));
+    await call('ToolDone', 'tool-done', [tool('after-start')]);
+    await call('ToolDone', 'tool-done', [tool('other-session')], { session: 's2' });
+    expect(types('T-2')).toEqual([]);
+    clock.set(day('10:20'));
+    bind.bind(SessionId.parse('s1'), TaskId.parse('T-2'), { id: ProjectId.parse('api'), root: API }, clock.now());
+    const events = journal.readActivity(TaskId.parse('T-2'));
+    expect(events.map((e) => [e.type, e.ts, e.data.session])).toEqual([
+      ['session.bound', day('09:30'), 's1'],
+      ['tool.used', day('09:40'), 's1'],
+    ]);
+    expect(bindings.plain('s1')).toMatchObject({ task: 'T-2', since: day('09:30'), everBound: true });
+    bind.bind(SessionId.parse('s1'), TaskId.parse('T-2'), { id: ProjectId.parse('api'), root: API }, clock.now());
+    expect(journal.readActivity(TaskId.parse('T-2'))).toHaveLength(2);
+    expect(journal.readActivity(TaskId.parse('T-1'))).toEqual([]);
+  });
+
+  it('a session attached from another directory takes its events from the journal of its own project', async () => {
+    startedTask('T-1', 'Payments', day('09:00'));
+    startedTask('T-2', 'Webhooks', day('09:30'));
+    clock.set(day('09:40'));
+    await call('ToolDone', 'tool-done', [tool('in-api')]);
+    clock.set(day('10:20'));
+    bind.bind(SessionId.parse('s1'), TaskId.parse('T-2'), { id: ProjectId.parse('web'), root: '/work/web' }, clock.now());
+    expect(types('T-2')).toEqual(['session.bound', 'tool.used']);
   });
 
   it('a switch with attach closes the window in the old task and opens one in the new task', async () => {

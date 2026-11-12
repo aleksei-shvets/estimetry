@@ -4,4 +4,6 @@ export interface WorkspaceLocator {
   currentRoot(): string;
   /** Smallest root commit of the repository; undefined outside git or before the first commit. */
   fingerprint(): string | undefined;
+  /** The main working copy when the current root is a linked git worktree; undefined for the main copy and outside git. */
+  mainRoot(): string | undefined;
 }

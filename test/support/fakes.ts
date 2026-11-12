@@ -55,6 +55,13 @@ export class FakeWorkspaceLocator implements WorkspaceLocator {
   fingerprint(): string | undefined {
     return this.repository;
   }
+
+  /** The main working copy when this root is a linked git worktree. */
+  main: string | undefined = undefined;
+
+  mainRoot(): string | undefined {
+    return this.main;
+  }
 }
 
 export class FakeAuthorProvider implements AuthorProvider {

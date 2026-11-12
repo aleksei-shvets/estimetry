@@ -1,17 +1,12 @@
 import type { SessionId } from '../../domain/measurement/session-id.js';
-import type { ActivityEvent, SessionBound } from '../../domain/measurement/activity-events.js';
-import { Timestamp } from '../../domain/shared/timestamp.js';
-import type { ProjectId } from '../../domain/project/project-id.js';
+import type { Timestamp } from '../../domain/shared/timestamp.js';
 import type { TaskId } from '../../domain/task/task-id.js';
 import { isInProgress } from '../../domain/task/task-status.js';
 import type { HookKind } from '../contracts/hook-adapter.js';
-import type { AuthorProvider } from '../ports/author-provider.js';
-import type { EventJournal } from '../ports/event-journal.js';
-import type { IdGenerator } from '../ports/id-generator.js';
 import type { LocatedProject } from '../ports/project-locator.js';
 import type { SessionBinding, SessionBindings } from '../ports/session-bindings.js';
 import type { TaskStatusReader, TaskSummary } from '../ports/task-status-reader.js';
-import { CORE_SOURCE, journalEntry } from '../shared/journal-entry.js';
+import type { SessionWindow } from '../task/session-window.js';
 
 /** "No task" is looked at again after this long, so a task started mid-turn is picked up soon. */
 export const RECHECK_MS = 60_000;
@@ -32,9 +27,7 @@ export class SessionTask {
   constructor(
     private readonly bindings: SessionBindings,
     private readonly tasks: TaskStatusReader,
-    private readonly journal: EventJournal,
-    private readonly ids: IdGenerator,
-    private readonly authors: AuthorProvider,
+    private readonly window: Pick<SessionWindow, 'open'>,
   ) {}
 
   resolve(session: SessionId, located: LocatedProject | undefined, kind: HookKind, now: Timestamp): SessionTaskResult | undefined {
@@ -89,31 +82,12 @@ export class SessionTask {
     });
 
     if (bindsNow) {
-      this.openWindow(session, project.id, bindsNow.binding, bindsNow.task, now);
+      // The first window starts with the task: the session's events since then come over from the project.
+      this.window.open(session, { id: bindsNow.task.id, project: project.id }, bindsNow.binding.since ?? now, project.id);
       return { project, task: bindsNow.task, candidates: [] };
     }
     const task = result?.task === undefined ? undefined : this.inProgress(result.task);
     return task ? { project, task, candidates: [] } : { project, candidates: candidates.length > 1 ? candidates : [] };
-  }
-
-  /** `session.bound` at the start of the window, then the session's events made without a task since then. */
-  private openWindow(session: SessionId, project: ProjectId, binding: SessionBinding, task: TaskSummary, now: Timestamp): void {
-    const since = binding.since ?? now;
-    this.journal.append(
-      journalEntry<SessionBound>('session.bound', { source: CORE_SOURCE, session: session.value }, {
-        id: this.ids.next(),
-        at: since,
-        author: this.authors.current(),
-        project,
-        task: task.id,
-      }),
-    );
-    const known = new Set(this.journal.readActivity(task.id).map((event) => event.id));
-    for (const event of this.journal.readUnassigned(project)) {
-      if (event.data.session === session.value && Timestamp.parse(event.ts).toMillis() >= since.toMillis() && !known.has(event.id)) {
-        this.journal.append({ ...event, task: task.id.toString() } as ActivityEvent);
-      }
-    }
   }
 
   private inProgress(task: TaskId): TaskSummary | undefined {

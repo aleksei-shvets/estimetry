@@ -26,8 +26,9 @@ function registered(id: string, path: string, fingerprint?: string): void {
   );
 }
 
-function at(root: string, fingerprint?: string, config?: string): void {
+function at(root: string, fingerprint?: string, config?: string, main?: string): void {
   workspace.root = root;
+  workspace.main = main;
   workspace.repository = fingerprint;
   if (config !== undefined) {
     files.write(`${root}/.estimetry/config.yaml`, config);
@@ -42,6 +43,33 @@ beforeEach(() => {
 });
 
 describe('registering the current project', () => {
+  it('joins a git worktree to the project of its main working copy, with or without a config', () => {
+    registered('core', '/home/u/core', REPO);
+    at('/home/u/wt/core-x', REPO, undefined, '/home/u/core');
+    expect(resolve.planRegistration()).toMatchObject({ kind: 'join', path: '/home/u/wt/core-x' });
+    expect(resolve.findOrRegister().paths).toEqual(['/home/u/core', '/home/u/wt/core-x']);
+    expect(files.writes).toEqual([]);
+    at('/home/u/wt/core-y', REPO, 'project: core\n', '/home/u/core');
+    expect(resolve.findOrRegister().id.value).toBe('core');
+    expect([...projects.ids()]).toEqual(['core']);
+  });
+
+  it('a worktree of a main working copy that is not registered, and a clone without a config, register apart', () => {
+    registered('core', '/home/u/core', REPO);
+    at('/home/u/wt/other-x', REPO, undefined, '/home/u/other');
+    expect(resolve.findOrRegister().id.value).toBe('other-x');
+    at('/home/u/review/core', REPO);
+    expect(resolve.findOrRegister().id.value).toBe('core-2');
+  });
+
+  it('a worktree already registered as a project of its own stays one', () => {
+    registered('core', '/home/u/core', REPO);
+    registered('core-x', '/home/u/wt/core-x', REPO);
+    at('/home/u/wt/core-x', REPO, undefined, '/home/u/core');
+    expect(resolve.planRegistration()).toMatchObject({ kind: 'existing' });
+    expect(resolve.findOrRegister().id.value).toBe('core-x');
+  });
+
   it('derives the id from the directory and keeps the fingerprint', () => {
     at('/home/u/my-app', REPO);
     expect(resolve.findOrRegister().toSnapshot()).toMatchObject({ id: 'my-app', paths: ['/home/u/my-app'], fingerprint: REPO });

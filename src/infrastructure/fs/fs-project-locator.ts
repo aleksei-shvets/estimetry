@@ -1,7 +1,7 @@
-import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { sep } from 'node:path';
 import type { LocatedProject, ProjectLocator } from '../../application/ports/project-locator.js';
 import { readYaml } from './atomic-yaml.js';
+import { mainWorktree, realPath } from './worktree.js';
 import type { StorageLayout } from './storage-layout.js';
 import { ProjectId } from '../../domain/project/project-id.js';
 
@@ -49,38 +49,6 @@ function longestOwner(registered: readonly { id: string; path: string }[], direc
   return owner === undefined ? undefined : { id: ProjectId.parse(owner.id), root: owner.path };
 }
 
-/** For a directory inside a linked worktree, the root of the main working copy. */
-export function mainWorktree(directory: string): string | undefined {
-  for (let dir = directory; ; dir = dirname(dir)) {
-    const dotGit = join(dir, '.git');
-    try {
-      const stat = statSync(dotGit);
-      if (stat.isDirectory()) {
-        return undefined; // the main working copy itself
-      }
-      const gitdir = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, 'utf8'))?.[1]?.trim();
-      if (gitdir === undefined) {
-        return undefined;
-      }
-      const worktreeDir = isAbsolute(gitdir) ? gitdir : resolve(dir, gitdir);
-      const common = readFileSync(join(worktreeDir, 'commondir'), 'utf8').trim();
-      const commonDir = isAbsolute(common) ? common : resolve(worktreeDir, common);
-      return realPath(dirname(commonDir));
-    } catch {
-      if (dirname(dir) === dir) {
-        return undefined;
-      }
-    }
-  }
-}
-
-function realPath(path: string): string | undefined {
-  try {
-    return realpathSync(path);
-  } catch {
-    return undefined;
-  }
-}
 
 function isProjectId(value: string): boolean {
   try {

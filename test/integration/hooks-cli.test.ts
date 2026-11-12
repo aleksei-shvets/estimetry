@@ -76,7 +76,8 @@ describe('hooks write the journal of the session’s task', () => {
     expect(journalLines('unassigned/api.jsonl').map((e) => e.type)).toEqual(['session.started']);
     expect((await emt('attach', 'T-2', '--session', 's1')).code).toBe(0);
     hook('UserPromptSubmit', { prompt: 'go' });
-    expect(activity('T-2').map((e) => e.type)).toEqual(['session.bound', 'turn.started']);
+    // The first task of the session: its start since T-2 started comes over from the journal without a task.
+    expect(activity('T-2').map((e) => e.type)).toEqual(['session.bound', 'session.started', 'turn.started']);
     expect(activity('T-1')).toEqual([]);
     const refused = await emt('attach', 'T-9', '--session', 's1');
     expect(refused.code).toBe(1);
