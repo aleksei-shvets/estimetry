@@ -57,7 +57,9 @@ export class TaskCards {
         this.errors.report('calibration', error);
         throw error;
       }
-      const cards = stored.map((card) => (card.schema === 'current' ? card.card : card.schema === 'newer' ? undefined : this.upgrade(card.card)));
+      const cards = stored.map((card) =>
+        card.schema === 'current' ? card.card : card.schema === 'newer' ? undefined : this.upgrade(card.card),
+      );
       // A card that cannot be read even by its fields is left out, as a broken file is.
       return calibrate(
         cards.filter((card): card is Card => card !== undefined),

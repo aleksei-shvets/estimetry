@@ -18,7 +18,11 @@ export interface EntryMeta {
  * Wraps data into the envelope of the journal; the compiler checks the data
  * against the record's type, the journal validates the whole when it appends it.
  */
-export function journalEntry<T extends { readonly type: string; readonly data: unknown }>(type: T['type'], data: T['data'], meta: EntryMeta): T {
+export function journalEntry<T extends { readonly type: string; readonly data: unknown }>(
+  type: T['type'],
+  data: T['data'],
+  meta: EntryMeta,
+): T {
   const entry = {
     schemaVersion: ACTIVITY_EVENT_SCHEMA_VERSION,
     id: meta.id,

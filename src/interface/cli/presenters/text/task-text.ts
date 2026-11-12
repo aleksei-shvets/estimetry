@@ -12,7 +12,8 @@ export function statusText(view: StatusView): string {
     shown.uncertaintyExceedsTarget ? 'above the 5% target' : undefined,
   ].filter((note) => note !== undefined);
   // The fact lies in this range: the heuristics may have counted too much or left out work.
-  const uncertainty = `${formatMinutes(shown.factLow)} – ${formatMinutes(shown.factHigh)}${notes.length === 0 ? '' : ` (${notes.join(', ')})`}`;
+  const noted = notes.length === 0 ? '' : ` (${notes.join(', ')})`;
+  const uncertainty = `${formatMinutes(shown.factLow)} – ${formatMinutes(shown.factHigh)}${noted}`;
   const extras = Object.entries(view.records.extraMinutesByCategory).map(
     ([category, minutes]) => `${category} ${formatMinutes(minutes)}`,
   );
@@ -51,7 +52,9 @@ export function statusText(view: StatusView): string {
     (view.task.closedAt === undefined ? '' : `, closed ${localTime(view.task.closedAt)}`);
   const notStarted =
     view.task.status === 'new' || view.task.status === 'estimated'
-      ? [`not started: the time of sessions is not counted until \`emt start ${view.task.id}\` (add --at "YYYY-MM-DD HH:MM" if work already began)`]
+      ? [
+          `not started: the time of sessions is not counted until \`emt start ${view.task.id}\` (add --at "YYYY-MM-DD HH:MM" if work already began)`,
+        ]
       : [];
   return [`${view.task.id} "${view.task.title}" ${view.task.status}${since}`, ...notStarted, table(rows)].join('\n');
 }
@@ -98,11 +101,13 @@ function planRows(view: StatusView): [string, string][] {
     const first = view.untrackedProjects[0];
     return view.planUnavailable === null || first === undefined ? [] : [['plan', `not tracked: ${untrackedText(first)}`]];
   }
+  const grouped = formatMinutes((plan.groupedHours ?? 0) * 60);
+  const estimated = formatMinutes((plan.estimateHours ?? 0) * 60);
   const rows: [string, string][] = [
     [
       'plan',
       plan.mode === 'changes'
-        ? `${plan.done}% done by changes (${formatMinutes((plan.groupedHours ?? 0) * 60)} of ${formatMinutes((plan.estimateHours ?? 0) * 60)} in groups)`
+        ? `${plan.done}% done by changes (${grouped} of ${estimated} in groups)`
         : `${plan.done}% done by checkboxes (not linked to the estimate)`,
     ],
   ];

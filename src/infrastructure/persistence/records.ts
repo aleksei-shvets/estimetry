@@ -7,7 +7,13 @@ import type { ProjectSnapshot } from '../../domain/project/project.js';
 import type { TaskSnapshot } from '../../domain/task/task.js';
 import { isSpentPolicy } from '../../domain/estimate/estimate-revision.js';
 import { JournalTooNew } from '../../domain/task/task-errors.js';
-import { isTaskEventType, TASK_EVENT_SCHEMA_VERSION, TASK_OUTCOMES, type TaskEvent, type TaskOutcome } from '../../domain/task/task-events.js';
+import {
+  isTaskEventType,
+  TASK_EVENT_SCHEMA_VERSION,
+  TASK_OUTCOMES,
+  type TaskEvent,
+  type TaskOutcome,
+} from '../../domain/task/task-events.js';
 import { isTaskStatus } from '../../domain/task/task-status.js';
 
 /*

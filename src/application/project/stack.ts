@@ -38,7 +38,9 @@ export function detectStack(
           tags.add(tag);
         }
       } catch (error) {
-        warnings.push(`${files.inside(root, path) ?? path}: ${error instanceof Error ? error.message : String(error)}; skipped when detecting the stack`);
+        const file = files.inside(root, path) ?? path;
+        const reason = error instanceof Error ? error.message : String(error);
+        warnings.push(`${file}: ${reason}; skipped when detecting the stack`);
       }
     }
   }

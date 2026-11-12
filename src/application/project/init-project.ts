@@ -103,7 +103,9 @@ export class InitProject {
       this.deps.sharing.save(share);
     }
     if (!this.deps.commands.has(HOOK_COMMAND)) {
-      warnings.push(`${HOOK_COMMAND} is not on PATH, so the hooks will not run until the package is installed globally (npm install -g estimetry)`);
+      warnings.push(
+        `${HOOK_COMMAND} is not on PATH, so the hooks will not run until the package is installed globally (npm install -g estimetry)`,
+      );
     }
     return {
       project: project.id.value,
@@ -145,7 +147,8 @@ export class InitProject {
         changes: [],
         skipped: [],
         warnings: unignored.map(
-          (path, i) => `${path} is not ignored by git and may be committed; to keep it out of every repository: echo '${patterns[i]}' >> ${file}`,
+          (path, i) =>
+            `${path} is not ignored by git and may be committed; to keep it out of every repository: echo '${patterns[i]}' >> ${file}`,
         ),
       };
     }

@@ -8,7 +8,8 @@ import { Author } from '../shared/author.js';
 import { Timestamp } from '../shared/timestamp.js';
 import type { RetroReason, TaskOutcome } from './task-events.js';
 import { TaskId } from './task-id.js';
-import type { TaskClosure, TaskRetro, TaskRevision, TaskState } from './task-state.js';
+import type { TaskClosure, TaskRetro, TaskRevision } from './task-records.js';
+import type { TaskState } from './task-state.js';
 import type { TaskStatus } from './task-status.js';
 import { TaskType } from './task-type.js';
 

@@ -1,11 +1,14 @@
 export const BLOCK_START = '<!-- estimetry:start -->';
 export const BLOCK_END = '<!-- estimetry:end -->';
 
-const BLOCK = `${BLOCK_START}
-## estimetry
-
-Before you name a deadline or an effort for a task, run \`/emt-estimate\`: it bases the estimate on past tasks and saves it as the plan the actual effort is measured against.
-${BLOCK_END}`;
+const BLOCK = [
+  BLOCK_START,
+  '## estimetry',
+  '',
+  'Before you name a deadline or an effort for a task, run `/emt-estimate`: ' +
+    'it bases the estimate on past tasks and saves it as the plan the actual effort is measured against.',
+  BLOCK_END,
+].join('\n');
 
 const EXISTING = new RegExp(`\\n*${escape(BLOCK_START)}[\\s\\S]*?${escape(BLOCK_END)}\\n?`);
 

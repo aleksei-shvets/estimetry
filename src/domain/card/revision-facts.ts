@@ -1,7 +1,7 @@
 import { LostWindow } from '../estimate/lost-window.js';
 import type { EffortReport } from '../measurement/effort-report.js';
 import type { Timestamp } from '../shared/timestamp.js';
-import type { TaskRevision } from '../task/task.js';
+import type { TaskRevision } from '../task/task-records.js';
 
 /** What a revision leaves on the card: the counted fact at its moment and the work it threw away. */
 export interface RevisionFact {

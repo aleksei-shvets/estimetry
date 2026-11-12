@@ -49,7 +49,10 @@ function registerRevise(estimate: Command, ctx: CliContext): void {
     .option('--category <category>', 'new-requirement, missed-analysis, rework or environment')
     .option('--spent <policy>', 'include: work so far counts; exclude: work in the lost window was thrown away')
     .option('--lost-from <time>', 'with exclude: when the work started going the wrong way (ISO 8601 or "YYYY-MM-DD HH:MM")')
-    .option('--covers <id>', 'id of extra work that describes the same loss; repeat for several', (value: string, all: string[] = []) => [...all, value])
+    .option('--covers <id>', 'id of extra work that describes the same loss; repeat for several', (value: string, all: string[] = []) => [
+      ...all,
+      value,
+    ])
     .option('--at <time>', 'when the new estimate starts to hold; defaults to now')
     .option('--task <id>', 'task id; defaults to the only task in progress in this project')
     .option('--repair', 'write the missing plan snapshot of the last revision')

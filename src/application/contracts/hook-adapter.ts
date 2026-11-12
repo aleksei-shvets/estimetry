@@ -5,7 +5,9 @@ import type { SessionId } from '../../domain/measurement/session-id.js';
 export type HookKind = 'session-start' | 'session-end' | 'prompt' | 'tool-done' | 'turn-end' | 'other';
 
 /** The draft of one kind of activity event: its data without `source` and `session`, which the core adds. */
-type DraftOf<E extends ActivityEvent> = E extends ActivityEvent ? { readonly type: E['type']; readonly data: Omit<E['data'], 'source' | 'session'> } : never;
+type DraftOf<E extends ActivityEvent> = E extends ActivityEvent
+  ? { readonly type: E['type']; readonly data: Omit<E['data'], 'source' | 'session'> }
+  : never;
 
 /** An activity event without its envelope and without `source` and `session`; the compiler checks its data by its type. */
 export type ActivityDraft = DraftOf<ActivityEvent>;

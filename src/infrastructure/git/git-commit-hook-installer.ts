@@ -48,7 +48,11 @@ export class GitCommitHookInstaller implements CommitHookInstaller {
     }
     if (current === undefined) {
       const header = layout.husky === 9 ? [] : layout.husky === 5 ? ['#!/bin/sh', HUSKY_LOADER, ''] : ['#!/bin/sh'];
-      return { changes: [{ path: layout.path, content: `${[...header, ...BLOCK].join('\n')}\n`, executable: true }], skipped: [], warnings };
+      return {
+        changes: [{ path: layout.path, content: `${[...header, ...BLOCK].join('\n')}\n`, executable: true }],
+        skipped: [],
+        warnings,
+      };
     }
     const lines = current.split('\n');
     if (lines[0]?.startsWith('#!') && !SHELLS.test(lines[0])) {
@@ -60,7 +64,9 @@ export class GitCommitHookInstaller implements CommitHookInstaller {
     }
     const manager = layout.husky === undefined ? MANAGERS.find(([pattern]) => pattern.test(current))?.[1] : undefined;
     if (manager !== undefined) {
-      warnings.push(`${layout.shown} is managed by ${manager}, which may drop the estimetry block when it reinstalls its hooks; run init again then`);
+      warnings.push(
+        `${layout.shown} is managed by ${manager}, which may drop the estimetry block when it reinstalls its hooks; run init again then`,
+      );
     }
     return { changes: [{ path: layout.path, content: withBlock(lines), executable: true }], skipped: [], warnings };
   }

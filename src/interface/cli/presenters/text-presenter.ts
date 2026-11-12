@@ -54,7 +54,8 @@ export const textPresenter: Presenter = {
     attached ? `Attached ${task.id} to project ${project}` : `${task.id} is already attached to project ${project}`,
 
   estimateSaved: ({ task, total, parts }) =>
-    `Estimate saved for ${task.id}: ${total.optimistic} / ${total.likely} / ${total.pessimistic} h, ${parts} part${parts === 1 ? '' : 's'}` +
+    `Estimate saved for ${task.id}: ${total.optimistic} / ${total.likely} / ${total.pessimistic} h, ` +
+    (parts === 1 ? '1 part' : `${parts} parts`) +
     (task.status === 'in-progress'
       ? ''
       : `\nTime is not measured yet: start the task when work begins with \`emt start ${task.id}\` (or /emt-start); add --at "YYYY-MM-DD HH:MM" if it already began.`),
@@ -111,7 +112,11 @@ export const textPresenter: Presenter = {
   taskReopened: ({ task }) => `Reopened ${task.id} "${task.title}"; it is in progress again.`,
 
   retroRecorded: ({ task, reasons, lesson }) =>
-    [`Retro recorded for ${task.id}:`, ...reasons.map((r) => `  - ${r.part === undefined ? '' : `[${r.part}] `}${r.text}`), `  lesson: ${lesson}`].join('\n'),
+    [
+      `Retro recorded for ${task.id}:`,
+      ...reasons.map((r) => `  - ${r.part === undefined ? '' : `[${r.part}] `}${r.text}`),
+      `  lesson: ${lesson}`,
+    ].join('\n'),
 
   renegotiated: ({ closed, spawned }) =>
     `Closed ${closed.task.id} as renegotiated: ${factText(closed.fact, closed.estimateHours, closed.estimateShare)}.\n` +

@@ -50,7 +50,9 @@ export class FileTaskStatusReader implements TaskStatusReader {
       status: snapshot.status,
       projects: snapshot.projects,
       ...groupsOf(snapshot.estimate?.parts),
-      ...((snapshot.revisions ?? []).some((revision) => revision.spent === 'exclude') ? { exclusions: exclusionsOf(snapshot.revisions ?? []) } : {}),
+      ...((snapshot.revisions ?? []).some((revision) => revision.spent === 'exclude')
+        ? { exclusions: exclusionsOf(snapshot.revisions ?? []) }
+        : {}),
       ...(snapshot.startedAt === undefined ? {} : { startedAt: snapshot.startedAt }),
     };
   }

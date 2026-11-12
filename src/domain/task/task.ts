@@ -21,12 +21,12 @@ import type { TaskId } from './task-id.js';
 import { STARTABLE_STATUSES, type TaskStatus } from './task-status.js';
 import type { TaskType } from './task-type.js';
 import { revisionData, snapshotOf, stateFromSnapshot, type TaskSnapshot } from './task-snapshot.js';
-import { initialState, type ExtraRecord, type ManualRecord, type TaskClosure, type TaskRetro, type TaskRevision, type TaskState } from './task-state.js';
+import type { ExtraRecord, ManualRecord, TaskClosure, TaskRetro, TaskRevision } from './task-records.js';
+import { initialState, type TaskState } from './task-state.js';
 import { checkClosingMoment, closedData, lastReopening, type ClosingInput } from './task-closures.js';
 import { lostWindowFloor, lostWindowsOf, revisedData } from './task-revisions.js';
 
 export { TASK_SNAPSHOT_SCHEMA_VERSION, type TaskSnapshot } from './task-snapshot.js';
-export type { ExtraRecord, ManualRecord, TaskClosure, TaskRetro, TaskRevision } from './task-state.js';
 
 /** The event of a task with the given type. */
 type EventOf<T extends TaskEvent['type']> = Extract<TaskEvent, { type: T }>;

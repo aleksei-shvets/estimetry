@@ -2,7 +2,15 @@ import type { Card } from '../card/card.js';
 import { stackLabels } from '../estimate/stack-labels.js';
 import { exclusion, ratioOf, revisedExclusion, revisedRatioOf, type Exclusion } from './task-ratio.js';
 import { EXTRA_CATEGORIES, type ExtraAccounting, type ExtraCategory } from '../measurement/extra.js';
-import { isRevised, linesPerHour, partsByKind, volumeAccuracy, type PartsStats, type ShareStats, type VolumeStats } from './code-and-parts.js';
+import {
+  isRevised,
+  linesPerHour,
+  partsByKind,
+  volumeAccuracy,
+  type PartsStats,
+  type ShareStats,
+  type VolumeStats,
+} from './code-and-parts.js';
 import { median, round } from './statistics.js';
 
 export type { Exclusion } from './task-ratio.js';

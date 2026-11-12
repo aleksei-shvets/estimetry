@@ -74,7 +74,9 @@ function checkOptions(revision: EstimateRevision, firstOne: boolean): void {
     throw new InvalidValue('the task has no estimate yet, so this is its first one: --spent, --lost-from and --covers do not apply');
   }
   if (revision.covers.length > 0 && revision.spent !== 'exclude') {
-    throw new InvalidValue('--covers goes only with --spent exclude: with include nothing is lost, and the covered extra work would leave calibration');
+    throw new InvalidValue(
+      '--covers goes only with --spent exclude: with include nothing is lost, and the covered extra work would leave calibration',
+    );
   }
 }
 

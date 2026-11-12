@@ -1,5 +1,12 @@
 import { applicableCoefficient, type ApplicableCoefficient } from '../../domain/calibration/applicable-coefficient.js';
-import { calibrate, normalized, type AuthorCalibration, type RatioSlices, type RatioStats, type RevisedStats } from '../../domain/calibration/calibration.js';
+import {
+  calibrate,
+  normalized,
+  type AuthorCalibration,
+  type RatioSlices,
+  type RatioStats,
+  type RevisedStats,
+} from '../../domain/calibration/calibration.js';
 import type { ResolveCurrentProject } from '../project/resolve-current-project.js';
 import type { CalibrationSettings } from '../ports/calibration-settings.js';
 import type { TaskTypeCatalog } from '../ports/task-type-catalog.js';
