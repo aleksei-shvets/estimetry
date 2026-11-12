@@ -15,8 +15,9 @@ export class ChangeArchives {
     private readonly files: Pick<ProjectFiles, 'changedAt'>,
   ) {}
 
-  read(projects: readonly ProjectId[], where: WorkingCopy = {}): ProjectPlanReading[] {
-    return this.plans.archives(projects, nearOf(where));
+  /** `changes` are the changes of the task: they pick the working copy of the task (plan-progress spec). */
+  read(projects: readonly ProjectId[], where: WorkingCopy = {}, changes: readonly string[] = []): ProjectPlanReading[] {
+    return this.plans.archives(projects, { ...nearOf(where), changes });
   }
 
   /** When the directory last changed (ms); undefined when it is gone. */

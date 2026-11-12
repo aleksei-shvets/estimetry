@@ -155,6 +155,11 @@ export class FakeProjectPlans implements ProjectPlans {
     });
   }
 
+  /** The root of the reading of the project, as a test sets it. */
+  workingCopy(project: ProjectId): string | undefined {
+    return this.readings.find((reading) => reading.project === project.value)?.root;
+  }
+
   archives(projects: readonly ProjectId[], options: { readonly near?: string } = {}): ProjectPlanReading[] {
     return this.plans(projects, options).map(({ changes: _changes, ...rest }) => rest);
   }

@@ -251,8 +251,9 @@ export function fakeInstallDependencies(files: InMemoryProjectFiles, overrides: 
             setupHint: (root, f) => (f.isDirectory(`${root}/openspec`) ? undefined : 'run `openspec init`'),
             plan: () => [],
             archived: () => [],
+            touched: () => undefined,
           },
-          { id: 'none', title: 'No SDD', detect: () => true, plan: () => [], archived: () => [] },
+          { id: 'none', title: 'No SDD', detect: () => true, plan: () => [], archived: () => [], touched: () => undefined },
         ]),
       detectors:
         overrides.detectors ??

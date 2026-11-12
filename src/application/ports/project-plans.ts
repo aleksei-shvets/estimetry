@@ -31,14 +31,21 @@ export interface PlanReadOptions {
    * (worktrees, clones) the one containing it is read, not the first registered.
    */
   readonly near?: string;
+  /**
+   * Changes of the task (the groups of its estimate): of several working copies
+   * the one that holds one of them is the task's, wherever the work is asked from.
+   */
+  readonly changes?: readonly string[];
 }
 
 /** Plans of the flows of projects (from `.estimetry/config.yaml`), on the paths this machine has. */
 export interface ProjectPlans {
   /** The plan of one working copy, for checkpoints; undefined when it cannot be read. */
-  plan(projectRoot: string): readonly ChangeProgress[] | undefined;
+  plan(projectRoot: string, project?: ProjectId): readonly ChangeProgress[] | undefined;
   /** Plans of the projects of a task, with their archives; archives before `archivedSince` are not read. */
   plans(projects: readonly ProjectId[], options?: PlanReadOptions & { readonly archivedSince?: CalendarDate }): ProjectPlanReading[];
   /** Only the archives: the hot path of a hook, one directory listing per project. */
   archives(projects: readonly ProjectId[], options?: PlanReadOptions): ProjectPlanReading[];
+  /** The working copy of a task in a project, as plans and archives are read in it; undefined when none is on this machine. */
+  workingCopy(project: ProjectId, options?: PlanReadOptions): string | undefined;
 }

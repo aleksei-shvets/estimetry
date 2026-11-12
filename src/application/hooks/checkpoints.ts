@@ -15,6 +15,14 @@ import type { TaskId } from '../../domain/task/task-id.js';
 /** Calls that run in the background, so a snapshot that runs git does not hold the agent up. */
 const WRITES_CHECKPOINTS: ReadonlySet<HookKind> = new Set(['tool-done', 'turn-end']);
 
+/** The task a checkpoint is written for: its project and copy as the session sees them, and its changes. */
+export interface CheckpointTask {
+  readonly id: TaskId;
+  readonly project: LocatedProject;
+  /** The groups of the estimate: they pick the working copy of the task. */
+  readonly changes?: readonly string[];
+}
+
 /** Checkpoints of a session (checkpoints spec) and the reminder they leave for the next prompt. */
 export class Checkpoints {
   constructor(
@@ -31,7 +39,7 @@ export class Checkpoints {
     session: SessionId,
     kind: HookKind,
     now: Timestamp,
-    task?: { readonly id: TaskId; readonly project: LocatedProject },
+    task?: CheckpointTask,
   ): CheckpointStatus {
     let status: CheckpointStatus = { ...this.state.read(session), lastSeenAt: now.toISOString() };
     if (task !== undefined && WRITES_CHECKPOINTS.has(kind)) {
@@ -61,11 +69,15 @@ export class Checkpoints {
   }
 
   /** A part of the snapshot that fails stays empty; the checkpoint is still written. */
-  private write(session: SessionId, now: Timestamp, task: { readonly id: TaskId; readonly project: LocatedProject }): void {
+  private write(session: SessionId, now: Timestamp, task: CheckpointTask): void {
     this.journal.appendRecord(
       journalEntry<CheckpointRecorded>(
         'checkpoint.recorded',
-        { source: 'estimetry', session: session.value, ...this.snapshot.take(task.project.root) },
+        {
+          source: 'estimetry',
+          session: session.value,
+          ...this.snapshot.take({ project: task.project.id, root: task.project.root, changes: task.changes ?? [] }),
+        },
         { ...this.meta.at(now), project: task.project.id, task: task.id },
       ),
     );

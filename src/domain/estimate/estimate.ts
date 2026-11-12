@@ -119,6 +119,11 @@ export class Estimate {
     return this.parts.map((part) => part.id);
   }
 
+  /** The groups of the parts, each once in the order of the parts: the changes of the plan. */
+  get groups(): readonly string[] {
+    return [...new Set(this.parts.flatMap((part) => (part.group === undefined ? [] : [part.group])))];
+  }
+
   toData(): EstimateData {
     return {
       schemaVersion: ESTIMATE_SCHEMA_VERSION,

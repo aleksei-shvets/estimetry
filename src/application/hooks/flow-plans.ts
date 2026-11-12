@@ -17,8 +17,10 @@ export class FlowProjectPlans implements ProjectPlans {
     private readonly projects: Pick<ProjectRepository, 'findById'>,
   ) {}
 
-  plan(projectRoot: string): readonly ChangeProgress[] | undefined {
-    return this.flowOf(projectRoot)?.plan(projectRoot, this.files);
+  /** `project` lends the flow of its other copies to a copy without its own config. */
+  plan(projectRoot: string, project?: ProjectId): readonly ChangeProgress[] | undefined {
+    const copies = this.copiesOf(project === undefined ? [projectRoot] : [projectRoot, ...this.pathsOf(project)]);
+    return copies.flowOf(projectRoot)?.plan(projectRoot, this.files);
   }
 
   plans(projects: readonly ProjectId[], options: PlanReadOptions & { readonly archivedSince?: CalendarDate } = {}): ProjectPlanReading[] {
@@ -34,11 +36,12 @@ export class FlowProjectPlans implements ProjectPlans {
     options: PlanReadOptions & { readonly archivedSince?: CalendarDate },
     withChanges: boolean,
   ): ProjectPlanReading {
-    const root = this.rootOf(this.projects.findById(project)?.paths ?? [], options.near);
+    const copies = this.copiesOf(this.pathsOf(project));
+    const root = this.choose(copies, options);
     if (root === undefined) {
       return { project, unavailable: 'not-on-this-machine' };
     }
-    const flowId = this.config.read(root).config?.flow;
+    const flowId = copies.flowIdOf(root);
     if (flowId === undefined) {
       return { project, root, unavailable: 'no-config' };
     }
@@ -60,19 +63,78 @@ export class FlowProjectPlans implements ProjectPlans {
   }
 
   /**
-   * The working copy that contains `near`, else the first registered path this
-   * machine has: a task may span working copies on other machines.
+   * The working copy of a task: of the copies that hold a change of the task,
+   * the one where the changes moved last if the copies went apart, else the one
+   * the work is in, else the first; without such a copy the one the work is in,
+   * else the first this machine has (plan-progress spec).
    */
-  private rootOf(paths: readonly string[], near: string | undefined): string | undefined {
-    const containing =
-      near === undefined ? undefined : paths.filter((path) => this.files.contains(path, near));
-    // The deepest match: a worktree may live inside the main working copy.
-    const best = containing?.sort((a, b) => b.length - a.length)[0];
-    return best ?? paths.find((path) => this.files.isDirectory(path));
+  workingCopy(project: ProjectId, options: PlanReadOptions = {}): string | undefined {
+    return this.choose(this.copiesOf(this.pathsOf(project)), options);
   }
 
-  private flowOf(root: string): Flow | undefined {
-    const id = this.config.read(root).config?.flow;
-    return id === undefined ? undefined : this.flows.get(id);
+  private choose(copies: Copies, options: PlanReadOptions): string | undefined {
+    const changes = options.changes ?? [];
+    if (copies.paths.length > 1 && changes.length > 0) {
+      const touched = copies.paths.flatMap((root) => {
+        const touch = copies.flowOf(root)?.touched(root, this.files, changes);
+        return touch === undefined ? [] : [{ root, ...touch }];
+      });
+      const holding = touched.map((copy) => copy.root);
+      if (new Set(touched.map((copy) => copy.state)).size > 1) {
+        // The copies went apart: the task is kept where its changes moved last. A change proposed
+        // on main before the worktree was made is in both copies, and only one of them moves on.
+        const latest = Math.max(...touched.map((copy) => copy.at));
+        const freshest = touched.filter((copy) => copy.at === latest).map((copy) => copy.root);
+        return this.containing(freshest, options.near) ?? freshest[0];
+      }
+      // The same changes in every copy that has them (a worktree checked out later): the copy of the work.
+      if (holding.length > 0) {
+        return this.containing(holding, options.near) ?? holding[0];
+      }
+    }
+    return this.containing(copies.paths, options.near) ?? copies.paths[0];
   }
+
+  /** The deepest copy that contains `near`: a worktree may live inside the main working copy. */
+  private containing(paths: readonly string[], near: string | undefined): string | undefined {
+    if (near === undefined) {
+      return undefined;
+    }
+    return paths.filter((path) => this.files.contains(path, near)).sort((a, b) => b.length - a.length)[0];
+  }
+
+  /** The copies of a project this machine has. */
+  private pathsOf(project: ProjectId): string[] {
+    return (this.projects.findById(project)?.paths ?? []).filter((path) => this.files.isDirectory(path));
+  }
+
+  /**
+   * Copies with their flows, each config read once: a copy without its own
+   * config takes the flow of another copy of the same project. A worktree has
+   * no config of its own when the file is not committed.
+   */
+  private copiesOf(paths: readonly string[]): Copies {
+    const own = new Map(paths.map((path) => [path, this.config.read(path)] as const));
+    const shared = [...own.values()].find((read) => read.config?.flow !== undefined)?.config?.flow;
+    // A broken config is the copy's own and stays broken: only a missing one takes the flow of another copy.
+    const flowIdOf = (root: string) => {
+      const read = own.get(root);
+      return read?.config?.flow ?? (read?.warning === undefined ? shared : undefined);
+    };
+    return {
+      paths: [...own.keys()],
+      flowIdOf,
+      flowOf: (root) => {
+        const id = flowIdOf(root);
+        return id === undefined ? undefined : this.flows.get(id);
+      },
+    };
+  }
+}
+
+/** The copies of a project on this machine with the flow of each. */
+interface Copies {
+  readonly paths: readonly string[];
+  flowIdOf(root: string): string | undefined;
+  flowOf(root: string): Flow | undefined;
 }

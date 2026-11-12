@@ -234,6 +234,101 @@ describe('change completions', () => {
     expect(completed('T-1').map((c) => c.change)).toEqual(['auth']);
   });
 
+  it('reads the archive of the worktree that holds the change of the task, while the session runs in the main copy', () => {
+    projects.update(ProjectId.parse('api'), (p) => p.withPath('/work/api-wt'));
+    files.write('/work/api-wt/.estimetry/config.yaml', 'flow: openspec\n');
+    change('/work/api-wt', 'auth');
+    const task = summary('T-1', ['auth']);
+    completions.check(task, NOW, '/work/api');
+    archive('/work/api-wt', 'auth', '2026-11-01');
+    completions.check(task, NOW, '/work/api');
+    expect(completed('T-1').map((c) => c.change)).toEqual(['auth']);
+  });
+
+  it('a worktree without its own config takes the flow of the other copies of its project', () => {
+    projects.update(ProjectId.parse('api'), (p) => p.withPath('/work/api-wt'));
+    files.write('/work/api-wt/.keep', '');
+    change('/work/api-wt', 'auth', '- [x] 1\n- [ ] 2\n');
+    expect(plans.workingCopy(ProjectId.parse('api'), { near: '/work/api', changes: ['auth'] })).toBe('/work/api-wt');
+    const [reading] = plans.plans([ProjectId.parse('api')], { near: '/work/api', changes: ['auth'] });
+    expect(reading).toMatchObject({ root: '/work/api-wt', flow: 'openspec', changes: [{ change: 'auth', done: 1, total: 2 }] });
+  });
+
+  it('of copies that all hold the change, the one that touched it last is the copy of the task, wherever the session is', () => {
+    projects.update(ProjectId.parse('api'), (p) => p.withPath('/work/api-wt'));
+    const api = ProjectId.parse('api');
+    // Proposed and committed on main, then the worktree was made: the change is active in both copies.
+    change('/work/api', 'auth', '- [ ] 1\n- [ ] 2\n');
+    change('/work/api-wt', 'auth', '- [ ] 1\n- [ ] 2\n');
+    files.changed.set('/work/api/openspec/changes/auth/tasks.md', START_MS);
+    files.changed.set('/work/api-wt/openspec/changes/auth/tasks.md', START_MS);
+    expect(plans.workingCopy(api, { near: '/work/api', changes: ['auth'] })).toBe('/work/api');
+    // A checkbox ticked in the worktree.
+    files.write('/work/api-wt/openspec/changes/auth/tasks.md', '- [x] 1\n- [ ] 2\n');
+    files.changed.set('/work/api-wt/openspec/changes/auth/tasks.md', START_MS + 60_000);
+    expect(plans.workingCopy(api, { near: '/work/api', changes: ['auth'] })).toBe('/work/api-wt');
+    // Archived in the worktree while main still has it active: the completion is seen.
+    const task = summary('T-1', ['auth']);
+    completions.check(task, NOW, '/work/api');
+    archive('/work/api-wt', 'auth', '2026-11-01', START_MS + 120_000);
+    completions.check(task, NOW, '/work/api');
+    expect(completed('T-1').map((c) => c.change)).toEqual(['auth']);
+  });
+
+  it('a worktree made later, with the change untouched, does not take the task from the copy it is kept in', () => {
+    projects.update(ProjectId.parse('api'), (p) => p.withPath('/work/api-wt'));
+    const api = ProjectId.parse('api');
+    change('/work/api', 'auth', '- [ ] 1\n- [ ] 2\n');
+    files.changed.set('/work/api/openspec/changes/auth/tasks.md', START_MS);
+    // Another task's worktree, checked out later: the same tasks.md, a newer ctime.
+    change('/work/api-wt', 'auth', '- [ ] 1\n- [ ] 2\n');
+    files.changed.set('/work/api-wt/openspec/changes/auth/tasks.md', START_MS + 600_000);
+    expect(plans.workingCopy(api, { near: '/work/api', changes: ['auth'] })).toBe('/work/api');
+    // The work moves on in main: main is the copy whose state moved last.
+    files.write('/work/api/openspec/changes/auth/tasks.md', '- [x] 1\n- [ ] 2\n');
+    files.changed.set('/work/api/openspec/changes/auth/tasks.md', START_MS + 900_000);
+    expect(plans.workingCopy(api, { near: '/work/api-wt', changes: ['auth'] })).toBe('/work/api');
+  });
+
+  it('a copy holds no change named archive, and a broken config of a copy lends no flow', () => {
+    projects.update(ProjectId.parse('api'), (p) => p.withPath('/work/api-wt'));
+    const api = ProjectId.parse('api');
+    change('/work/api-wt', 'auth');
+    expect(plans.workingCopy(api, { near: '/work/api', changes: ['archive'] })).toBe('/work/api');
+    files.write('/work/api-wt/.estimetry/config.yaml', 'flow: [\n');
+    const [reading] = plans.plans([api], { near: '/work/api-wt' });
+    expect(reading).toMatchObject({ root: '/work/api-wt', unavailable: 'no-config' });
+    files.write('/work/api-wt/.estimetry/config.yaml', 'flow: none\n');
+    expect(plans.plans([api], { near: '/work/api-wt' })[0]).toMatchObject({ root: '/work/api-wt', unavailable: 'flow-none' });
+    expect(plans.workingCopy(api, { near: '/work/api', changes: ['auth'] })).toBe('/work/api');
+  });
+
+  it('a project with one copy is read without looking for the changes of the task', () => {
+    const listed: string[] = [];
+    const list = files.list.bind(files);
+    files.list = (dir: string) => (listed.push(dir), list(dir));
+    archive('/work/api', 'auth', '2026-11-01');
+    plans.archives([ProjectId.parse('api')], { near: '/work/api', changes: ['auth', 'billing', 'search'] });
+    expect(listed).toEqual(['/work/api/openspec/changes/archive']);
+  });
+
+  it('chooses the working copy of a task: its change first, the copy of the work among several, else as before', () => {
+    projects.update(ProjectId.parse('api'), (p) => p.withPath('/work/api-wt'));
+    files.write('/work/api-wt/.estimetry/config.yaml', 'flow: openspec\n');
+    const api = ProjectId.parse('api');
+    const root = (near: string, changes?: string[]) => plans.workingCopy(api, { near, ...(changes === undefined ? {} : { changes }) });
+    change('/work/api-wt', 'auth');
+    expect(root('/work/api', ['auth'])).toBe('/work/api-wt');
+    archive('/work/api', 'auth', '2026-11-01');
+    expect(root('/work/api', ['auth'])).toBe('/work/api');
+    // Archived in main later than the worktree touched it: main is fresher, wherever the work is asked from.
+    expect(root('/work/api-wt/src', ['auth'])).toBe('/work/api');
+    expect(root('/work/api', ['billing'])).toBe('/work/api');
+    expect(root('/work/api-wt', [])).toBe('/work/api-wt');
+    expect(root('/elsewhere', ['billing'])).toBe('/work/api');
+    expect(plans.workingCopy(ProjectId.parse('web'), { changes: ['auth'] })).toBeUndefined();
+  });
+
   it('keeps a directory of another task out of the cache, so the decision does not depend on it', () => {
     const alone = summary('T-1');
     const other = summary('T-2');
@@ -320,6 +415,14 @@ describe('the progress of a task plan', () => {
       startedTask([{ group: 'auth', likely: 4 }, { group: 'billing', likely: 4 }, { group: 'search', likely: 2 }], ['api', 'web']),
     );
     expect(progress.plan).toMatchObject({ done: 60, mode: 'changes', notStarted: ['search'], possibleTypos: [] });
+  });
+
+  it('reads the plan of a task in the worktree that holds its change, whatever directory asks', () => {
+    projects.update(ProjectId.parse('api'), (p) => p.withPath('/work/api-wt'));
+    files.write('/work/api-wt/.estimetry/config.yaml', 'flow: openspec\n');
+    change('/work/api-wt', 'auth', '- [x] 1\n- [ ] 2\n');
+    const progress = new TaskPlanProgress(plans, journal).of(startedTask([{ group: 'auth', likely: 4 }], ['api']), { near: '/work/api' });
+    expect(progress.plan).toMatchObject({ done: 50, mode: 'changes' });
   });
 
   it('names the projects left out of a plan that is counted', () => {
