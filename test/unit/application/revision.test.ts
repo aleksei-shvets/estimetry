@@ -1,3 +1,4 @@
+import { InMemoryInstallVersions } from '../../support/in-memory-files.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
 import { ChangeCompletions } from '../../../src/application/hooks/change-completions.js';
@@ -116,6 +117,7 @@ beforeEach(() => {
     install: fakeInstallDependencies(files),
     sessionBindings: new InMemorySessionBindings(), taskStatus: new RepositoryTaskStatusReader(tasks),
     plans,
+    installVersions: new InMemoryInstallVersions(),
     ...closingPorts(closing),
   });
 });

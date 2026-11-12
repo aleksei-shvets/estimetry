@@ -41,6 +41,7 @@
     "test": "npm run build && vitest run --exclude test/integration/hook-budget.test.ts && npm run test:budgets",
     "test:budgets": "vitest run test/integration/hook-budget.test.ts",
     "test:coverage": "vitest run test/unit --coverage",
+    "docs:commands": "UPDATE_COMMAND_REFERENCE=1 vitest run test/unit/interface/command-reference.test.ts",
     "prepack": "npm run build"
   },
   "dependencies": {

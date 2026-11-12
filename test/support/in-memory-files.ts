@@ -1,3 +1,4 @@
+import type { InstallVersions } from '../../src/application/ports/install-versions.js';
 import { posix } from 'node:path';
 import { stringify, parse } from 'yaml';
 import type { FileChange, InstallPlan } from '../../src/application/ports/file-change.js';
@@ -266,4 +267,15 @@ export function fakeInstallDependencies(files: InMemoryProjectFiles, overrides: 
     commands: overrides.commands ?? new FakeCommandLocator(),
     version: overrides.version ?? '1.2.3',
   };
+}
+
+/** Versions of installs by the root of the copy. */
+export class InMemoryInstallVersions implements InstallVersions {
+  readonly saved = new Map<string, string>();
+  read(root: string): string | undefined {
+    return this.saved.get(root);
+  }
+  record(root: string, version: string): void {
+    this.saved.set(root, version);
+  }
 }

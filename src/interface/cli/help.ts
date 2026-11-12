@@ -60,7 +60,13 @@ export function shownOptions(command: Command): Option[] {
   );
 }
 
-function argumentsOf(command: Command): string {
+/** The description of an option as help shows it: required ones are marked. */
+export function optionDescription(helper: Help, option: Option): string {
+  return `${helper.optionDescription(option)}${option.mandatory ? ' (required)' : ''}`;
+}
+
+/** The arguments of a command as help shows them: `<required>`, `[optional]`, `name...` for several. */
+export function argumentsOf(command: Command): string {
   return command.registeredArguments
     .map((argument) => {
       const name = `${argument.name()}${argument.variadic ? '...' : ''}`;
@@ -83,7 +89,7 @@ export function formatHelp(command: Command, helper: Help): string {
   const name = rootOf(command).name();
   const below = leaves(command, root ? '' : pathOf(command));
   const optionTerm = (option: Option) => helper.optionTerm(option);
-  const optionText = (option: Option) => `${helper.optionDescription(option)}${option.mandatory ? ' (required)' : ''}`;
+  const optionText = (option: Option) => optionDescription(helper, option);
   const commandTerm = (leaf: Leaf) => [leaf.path, argumentsOf(leaf.command)].filter((part) => part !== '').join(' ');
 
   // One column of descriptions for commands (indent 2) and their options (indent 4), as git and gh do.

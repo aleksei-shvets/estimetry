@@ -1,3 +1,4 @@
+import { InMemoryInstallVersions } from '../../support/in-memory-files.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { closingPorts, fakeClosing } from '../../support/closing-fakes.js';
 import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
@@ -93,6 +94,7 @@ beforeEach(() => {
     install: fakeInstallDependencies(projectFiles),
     sessionBindings: new InMemorySessionBindings(), taskStatus: new RepositoryTaskStatusReader(tasks),
     plans,
+    installVersions: new InMemoryInstallVersions(),
     ...closingPorts(fakeClosing()),
   });
 });

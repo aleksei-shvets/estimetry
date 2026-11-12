@@ -44,6 +44,10 @@ Write the reason as a short summary agreed with the user, never a quote of the c
 - When the customer agrees to more work than estimated, the task closes as it is and the rest becomes a new task: \`emt renegotiate "<new title>" --yes\`, again only after the user agrees.
 - A task closed by mistake: \`emt reopen <task>\`.
 
+## After estimetry is updated
+
+When estimetry says this project was set up by an older version, suggest \`emt upgrade\` to the user: it sets estimetry up again in every project on this machine. Never run it on your own; run \`emt upgrade --yes\` only after the user agrees in the conversation.
+
 When an \`emt\` command fails, show its message to the user instead of retrying with guessed arguments.
 `,
 };

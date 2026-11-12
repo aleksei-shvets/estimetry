@@ -1,7 +1,7 @@
 import type { ProjectConfigFile } from '../ports/project-config-file.js';
 import type { ShareMode } from '../ports/sharing-preference.js';
 import type { WorkspaceLocator } from '../ports/workspace-locator.js';
-import { defaultFlow, defaultTools, unignoredPersonalFiles } from './init-defaults.js';
+import { defaultFlow, defaultTools, isSharedInstall, unignoredPersonalFiles } from './init-defaults.js';
 import type { InstallDependencies } from './install-dependencies.js';
 
 /** What `init` would do by default, for the questions and for the non-interactive run. */
@@ -39,7 +39,7 @@ export class ShowInitChoices {
         tools: tools.map((tool) => tool.id),
         flow: defaultFlow(this.deps, this.projectConfig, root),
         share: this.deps.sharing.mode() ?? 'none',
-        shared: tools.some((tool) => tool.state(root, this.deps.files).shared),
+        shared: isSharedInstall(this.deps, root, tools),
         trackCommits: this.deps.git.commitHook.installed(root),
       },
       unignoredPersonalFiles: unignoredPersonalFiles(this.deps, root, tools),

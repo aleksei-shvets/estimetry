@@ -20,6 +20,9 @@ import { ReceiveSessionHook } from '../application/hooks/receive-session-hook.js
 import { RecentSessions } from '../application/hooks/recent-sessions.js';
 import { SessionEndImport } from '../application/hooks/session-end-import.js';
 import { SessionStartContext } from '../application/hooks/session-start-context.js';
+import { UpgradeNotice } from '../application/hooks/upgrade-notice.js';
+import { YamlInstallVersions } from '../infrastructure/persistence/yaml-install-versions.js';
+import { packageVersion } from './package-version.js';
 import { SessionTask } from '../application/hooks/session-task.js';
 import { ChangeArchives } from '../application/shared/change-archives.js';
 import { EventMetaSource } from '../application/shared/event-meta-source.js';
@@ -96,7 +99,12 @@ export function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, 
     new SessionTask(bindings, tasks, new SessionWindow(journal, meta)),
     new ActivityRecorder(journal, bindings, checkpoints, completions, meta),
     // Only the session start needs the fact, and only it loads the task repository and the calculator.
-    new SessionStartContext(() => hookFacts(layout, journal, config, plans), checkpoints, proposal),
+    new SessionStartContext(
+      () => hookFacts(layout, journal, config, plans),
+      checkpoints,
+      proposal,
+      new UpgradeNotice(new YamlInstallVersions(layout), packageVersion),
+    ),
     new PromptContext(checkpoints, proposal),
     // Only the session end parses a log, and only it loads the reader.
     new SessionEndImport(bindings, tasks, () => hookLogs({ layout, claudeConfig, journal, ids, config, errors })),

@@ -48,6 +48,11 @@ describe('Claude Code hooks', () => {
     expect(adapter.state(ROOT, files)).toEqual({ installed: true, shared: false });
   });
 
+  it('says a settings file that is not JSON cannot be read, so whether it is installed is unknown', () => {
+    files.write(SHARED, '{ broken');
+    expect(adapter.state(ROOT, files)).toEqual({ installed: false, shared: false, unreadable: '.claude/settings.json is not valid JSON' });
+  });
+
   it('keeps the user’s keys and hooks and does not duplicate on a repeated install', () => {
     files.write(
       LOCAL,

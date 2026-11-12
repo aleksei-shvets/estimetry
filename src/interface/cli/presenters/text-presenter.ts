@@ -1,3 +1,4 @@
+import { upgradePlanText, upgradeReportText } from './text/upgrade-text.js';
 import type { Presenter } from './presenter.js';
 import { cardText, closeSummaryText } from './text/closing-text.js';
 import { calibrationText, estimateText, similarText } from './text/estimate-text.js';
@@ -103,6 +104,10 @@ export const textPresenter: Presenter = {
   closeSummary: closeSummaryText,
 
   initReport: (report) => initText(report),
+
+  upgradePlan: upgradePlanText,
+
+  upgradeReport: upgradeReportText,
 
   taskClosed: (result) =>
     `Closed ${result.task.id} "${result.task.title}"${result.outcome === 'completed' ? '' : ` (${result.outcome})`}: ` +

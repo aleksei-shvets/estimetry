@@ -5,7 +5,7 @@ import type { InstallContext, ToolAdapter, ToolState } from '../../../applicatio
 import type { ProjectFiles } from '../../../application/ports/project-files.js';
 import { COMMANDS, ESTIMETRY_SKILL } from '../content/commands.js';
 import { withBlock, withoutBlock } from './claude-md.js';
-import { hasOurHooks, withHooks, withoutHooks } from './hook-settings.js';
+import { hasOurHooks, isBrokenJson, withHooks, withoutHooks } from './hook-settings.js';
 import { CLAUDE_CODE_HOOK_EVENTS, SYNCHRONOUS_HOOK_EVENTS } from './hook-events.js';
 import { ownership, renderSkill } from './skill-file.js';
 
@@ -29,8 +29,18 @@ export class ClaudeCodeAdapter implements ToolAdapter {
   constructor(private readonly configDir: string) {}
 
   state(projectRoot: string, files: ProjectFiles): ToolState {
-    const shared = hasOurHooks(files.read(join(projectRoot, SHARED_SETTINGS)));
-    return { installed: shared || hasOurHooks(files.read(join(projectRoot, LOCAL_SETTINGS))), shared };
+    const sharedText = files.read(join(projectRoot, SHARED_SETTINGS));
+    const localText = files.read(join(projectRoot, LOCAL_SETTINGS));
+    const shared = hasOurHooks(sharedText);
+    const broken = [
+      ...(isBrokenJson(sharedText) ? [SHARED_SETTINGS] : []),
+      ...(isBrokenJson(localText) ? [LOCAL_SETTINGS] : []),
+    ];
+    return {
+      installed: shared || hasOurHooks(localText),
+      shared,
+      ...(broken.length === 0 ? {} : { unreadable: `${broken.join(' and ')} ${broken.length === 1 ? 'is' : 'are'} not valid JSON` }),
+    };
   }
 
   personalFiles(): readonly string[] {

@@ -1,3 +1,4 @@
+import { InMemoryInstallVersions } from '../../support/in-memory-files.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { closingPorts, fakeClosing } from '../../support/closing-fakes.js';
 import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
@@ -38,6 +39,7 @@ let sharing: InMemorySharingPreference;
 let excludes: FakeGitExcludes;
 let workspace: FakeWorkspaceLocator;
 let app: Estimetry;
+let versions: InMemoryInstallVersions;
 
 function build(overrides: FakeInstallOverrides = {}): void {
   app = createEstimetry({
@@ -55,6 +57,7 @@ function build(overrides: FakeInstallOverrides = {}): void {
     install: fakeInstallDependencies(files, { tools: new ListRegistry([tool]), commitHook: hook, sharing, excludes, ...overrides }),
     sessionBindings: new InMemorySessionBindings(), taskStatus: new RepositoryTaskStatusReader(new InMemoryTaskRepository()),
     plans: new FakeProjectPlans(),
+    installVersions: versions,
     ...closingPorts(fakeClosing()),
   });
 }
@@ -67,6 +70,7 @@ beforeEach(() => {
   sharing = new InMemorySharingPreference();
   excludes = new FakeGitExcludes(true);
   workspace = new FakeWorkspaceLocator(ROOT, REPO);
+  versions = new InMemoryInstallVersions();
   build();
 });
 
@@ -83,6 +87,7 @@ describe('init', () => {
     expect(files.read(`${ROOT}/.estimetry/config.yaml`)).toBe('schemaVersion: 1\nproject: api\nflow: openspec\n');
     expect(projects.findById(projects.findByPath(ROOT)!.id)?.toSnapshot()).toMatchObject({ stack: ['go'], fingerprint: REPO });
     expect(hook.plans).toEqual([false]);
+    expect(versions.read(ROOT)).toBe('1.2.3');
   });
 
   it('is idempotent', () => {
@@ -154,6 +159,7 @@ describe('init', () => {
           projectConfig: new InMemoryProjectConfigFile(files), install: fakeInstallDependencies(files),
           sessionBindings: new InMemorySessionBindings(), taskStatus: new RepositoryTaskStatusReader(new InMemoryTaskRepository()),
           plans: new FakeProjectPlans(),
+          installVersions: versions,
           ...closingPorts(fakeClosing()),
         });
         resolve.tasks.create({ title: 'x' });

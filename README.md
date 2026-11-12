@@ -1,5 +1,7 @@
 # estimetry
 
+**English** | [Русский](https://github.com/aleksei-shvets/estimetry/blob/main/README.ru.md)
+
 Compares work estimates with the actual effort in AI-agent development and reuses that experience in the next estimate.
 
 The CLI is `estimetry`, with the short alias `emt`.
@@ -18,6 +20,8 @@ emt --version
 
 Install it globally: the hooks of Claude Code call `estimetry` from `PATH`.
 
+To update later: `npm install -g estimetry@latest`, then `emt upgrade` once (see [After upgrading estimetry](#after-upgrading-estimetry)).
+
 > estimetry is at 0.x: commands and the storage format may still change between minor versions. [CHANGELOG.md](CHANGELOG.md) says what changed and what to do after an upgrade.
 
 ## Getting started
@@ -34,6 +38,8 @@ Every closed task makes the next estimate more grounded: `emt similar` finds pas
 `emt --help` lists every command, nested ones included (`task new`, `estimate save`, `parallel on`), grouped by stage: setup, tasks and estimates, measuring, closing. Each comes with its options; required ones are marked. Examples of the usual order close the list.
 
 `emt <command> --help` or `emt help <command>` shows one command in full, e.g. `emt help task new`.
+
+The same list with every flag is in the [command reference](#command-reference) at the end of this README.
 
 ## Setting up a project: `estimetry init`
 
@@ -161,7 +167,7 @@ Sessions that ended before you installed this version are read when the task clo
 
 The hooks find the project by the directory Claude Code runs in, not by the session id.
 
-- **After a restart** (VS Code, a crash, a reboot) the new session has a new id and binds again by the rules above: with one task in progress, time goes on into it without anything to do. With several, answer the agent which task it is. Work the new session did before `emt attach` stays in the project's journal and does not count.
+- **After a restart** (VS Code, a crash, a reboot) the new session has a new id and binds again by the rules above: with one task in progress, time goes on into it without anything to do. With several, answer the agent which task it is: once attached, the work the new session did since the task started counts too.
 - **A turn cut off by a crash** gets no end. Its tail is closed by the idle threshold and shows as uncertainty (`± …` in `emt status`). The time between the crash and the restart does not count.
 - **Two sessions on one task** both write into its journal. Overlapping agent time counts once, so the fact is shorter than the work of both agents together. Switch on parallel mode (`emt parallel on --agents 2`): calibration then uses the sequential equivalent, the sum of the agents' work.
 - **Two sessions on two tasks** each serve their own task after `emt attach`. A commit goes to the task of the session active last: the git hook does not know which session made it. When both commit at the same moment, one commit may land in the other task. This affects only the code volume of the card, not the time.
@@ -172,15 +178,15 @@ The agent may run in one repository, where the OpenSpec artifacts are, and write
 
 - **Time and plan progress** are not affected: time goes to the task of the session, and the plan is read where the artifacts are.
 - **A git worktree** of a registered working copy belongs to its project, with or without a committed `.estimetry/config.yaml`: a task started in the worktree is a task of that project, and a session opened in the main working copy sees it. Another clone without the config is a project of its own.
-- **The plan of a task kept in a worktree** is read in the working copy that holds its changes (the groups of its estimate) — where they moved last when copies differ — even when the session runs in the main working copy: the percent done, the completion of a change, checkpoints and the code volume at closing. A worktree without its own `.estimetry/config.yaml` takes the flow of the other working copies of the project.
-- **Another worktree of the same repository** shares the git hooks: with `init --track-commits`, its commits are recorded into the task. The code volume is measured at closing in the working copy `emt close` runs in. Commits not yet reachable from the branch checked out there are shown as unreachable and not counted, and uncommitted changes of the other worktree are not seen. Before closing, merge the worktree's branch into the branch of the working copy you close from. Run `emt` commands from the main working copy.
+- **The plan of a task kept in a worktree** is read in the working copy that holds its changes (the groups of its estimate and of every revision of it) — where they moved last when copies differ — even when the session runs in the main working copy: the percent done, the completion of a change, checkpoints and the code volume at closing. A worktree without its own `.estimetry/config.yaml` takes the flow of the other working copies of the project.
+- **Commits in a worktree** are recorded into the task: worktrees share the git hooks of the repository (with `init --track-commits`). The code volume is measured at closing in the working copy of the task, wherever `emt close` runs: the commits reachable from its `HEAD` and its uncommitted changes. Uncommitted changes of other worktrees are not seen.
 - **Another repository** belongs to the task only when you add it: run `estimetry init --track-commits` and `emt attach <task>` in it. Then its commits are recorded and its code is measured at closing.
 
 The code volume is a self-check only: it never changes the fact or the coefficients.
 
 ### Checkpoints
 
-Every 20 minutes of work a checkpoint records the state of the plan (the checkboxes of OpenSpec `tasks.md`), `HEAD` and the uncommitted changes of the repository. It runs only in background hooks. Set the interval in `~/.local/share/estimetry/config.yaml`:
+Every 20 minutes of work a checkpoint records the state of the plan (the checkboxes of OpenSpec `tasks.md`), `HEAD` and the uncommitted changes, all of the working copy of the task. It runs only in background hooks. Set the interval in `~/.local/share/estimetry/config.yaml`:
 
 ```yaml
 measurement:
@@ -204,7 +210,7 @@ changes         4 done, last hooks-and-flows 2026-11-01 (approx.)
 - **Groups without a change** are listed as `not started`, as `possible typo` when a change has a similar name, or as `archived before start`.
 - **Without groups** (or without an estimate) the plan is counted by the checkboxes of all its changes and marked as not linked to the estimate.
 - **Not tracked** when the project's flow is `none` or unknown, the project has no `.estimetry/config.yaml`, or it is not on this machine. For a task in several projects, the percent counts the projects estimetry can read and lists the others under `not tracked`: their groups may look not started although they are done.
-- **Several working copies** of a project (worktrees, clones): the plan is read in the one you work in.
+- **Several working copies** of a project (worktrees, clones): the plan is read in the working copy of the task, the one that holds its changes (see [Code in another working copy or repository](#code-in-another-working-copy-or-repository)); without such a copy, in the one you work in.
 
 A change is completed when its directory appears in the archive, however it got there: `openspec archive`, a skill moving it, or you in a terminal. The next hook call of a session bound to the task records it, with the time of the move. Changes already archived when estimetry first looks at a task are recorded with their date only, marked `(approx.)`. A change moved back out of the archive no longer counts as completed. The start of a session shows the percent too (`plan 51% done`), and `emt parallel on` records it.
 
@@ -299,7 +305,113 @@ The journal keeps when things happened, not what was said or done: no prompt tex
 
 ### After upgrading estimetry
 
-Run `estimetry init` again in each project. Most hooks then run in the background, so the agent does not wait for them. Before that they still work, just slower.
+Run `emt upgrade` once, from any directory. It sets estimetry up again in every working copy of every registered project on this machine (worktrees included), each with the choices it already has: tools, flow, a personal or shared install, the commit hook. It shows what will change and asks first; without a terminal it needs `--yes`. A copy where estimetry was never set up is skipped, and so is one that is not on this machine. With a shared install the plan warns that the files it changes are committed by the project. To update a single project instead, run `emt init` inside it.
+
+Until then the hooks keep working: they run the new `estimetry` from `PATH`; only what `init` wrote is old — the hook settings in each project, the skills and, with a shared install, the reminder in `CLAUDE.md`. At the start of a session in a project set up by an older version, the agent is told to suggest `emt upgrade`; it never runs it on its own.
 
 Update every installed copy of estimetry at once. Cards written by an older version are rebuilt from the journals on the next closing, `emt task show` or `emt rebuild`. A newer card stops an older estimetry from rewriting `calibration.json` and is reported instead; versions before this check skip such cards silently, so close no task with them.
 
+## Command reference
+
+Every command and flag, by stage, as `emt --help` lists them. `estimetry` and `emt` are the same command.
+
+<!-- commands:start: generated from the CLI by `npm run docs:commands` -->
+
+### Setup
+
+- **`emt init`** — set up estimetry in this project: hooks, skills and commands of the AI tool, project config
+  - `--tools <ids>` — AI tools, comma-separated (claude-code)
+  - `--flow <id>` — development process: openspec or none (default: detected)
+  - `--share <mode>` — sharing with the team: none, calibration, cards
+  - `--track-commits` — install a git post-commit hook
+  - `--no-track-commits` — remove the git post-commit hook
+  - `--shared-hooks` — install for the whole team, into files the project commits
+  - `--no-shared-hooks` — install for yourself only (default)
+  - `--force` — overwrite generated skills you have edited
+  - `--no-interactive` — do not ask; use flags and defaults
+- **`emt upgrade`** — after updating estimetry: set it up again in every project on this machine, each with its own choices
+  - `--yes` — the user has already agreed (needed without a terminal)
+- **`emt rebuild [task]`** — rebuild task snapshots, cards and calibration.json from the journals
+
+### Tasks and estimates
+
+- **`emt task new <title>`** — create a task in the current project
+  - `--type <type>` — task type: feature, integration, bugfix, refactor, infra, migration, research
+  - `--ticket <key>` — key of the ticket in an external tracker
+- **`emt task list`** — list tasks of the current project
+  - `--all` — list tasks of all projects
+  - `--closed` — include closed tasks
+- **`emt task show <task>`** — show a task
+- **`emt similar`** — find closed tasks like a new one: their estimates, fact, extra work and lessons
+  - `--type <type>` — task type of the new task
+  - `--stack <labels>` — comma-separated technologies the task touches; defaults to the stack of the project
+  - `--hours <hours>` — preliminary most likely hours of the new task, before calibration
+  - `--limit <n>` — how many tasks to show (default: "5")
+- **`emt calibrate`** — show your coefficients for a type and a stack, and the one an estimate may apply
+  - `--type <type>` — task type of the task being estimated
+  - `--stack <labels>` — comma-separated technologies the task touches; defaults to the stack of the project
+  - `--revise` — for a revision of a task in progress: the coefficient of estimates made during work
+- **`emt estimate save <file>`** — make an estimate file the plan of a task (allowed until work starts)
+  - `--task <id>` — task id; defaults to the only new or estimated task of this project
+- **`emt estimate revise [file]`** — revise the plan of a task in progress: the old estimate stays, the new one is compared with the counted fact
+  - `--reason <text>` — why the plan changed: a short summary agreed with the user
+  - `--category <category>` — new-requirement, missed-analysis, rework or environment
+  - `--spent <policy>` — include: work so far counts; exclude: work in the lost window was thrown away
+  - `--lost-from <time>` — with exclude: when the work started going the wrong way (ISO 8601 or "YYYY-MM-DD HH:MM")
+  - `--covers <id>` — id of extra work that describes the same loss; repeat for several
+  - `--at <time>` — when the new estimate starts to hold; defaults to now
+  - `--task <id>` — task id; defaults to the only task in progress in this project
+  - `--repair` — write the missing plan snapshot of the last revision
+
+### Measuring
+
+- **`emt start [task]`** — start work on a task; from now on its effort is recorded
+  - `--at <time>` — backdate the start (ISO 8601 or "YYYY-MM-DD HH:MM"), for work begun earlier
+- **`emt attach <task>`** — connect a task to the current project (for tasks that span several repositories)
+  - `--session <id>` — also bind this session of the AI tool to the task (when several tasks are in progress)
+- **`emt manual <duration> <description>`** — record time the hooks did not see: your work outside agent sessions, or agent work with --agent
+  - `--at <time>` — when the work ended (ISO 8601 or "YYYY-MM-DD HH:MM"); merges with measured time
+  - `--agent` — agent time, e.g. work done before estimetry was installed
+  - `--task <id>` — task id; defaults to the only task in progress in this project
+  - `--part <id>` — id of the estimate part the time belongs to, e.g. manual-testing
+- **`emt extra <description>`** — record work outside the estimated plan
+  - `--category <category>` — one of: new-requirement, missed-analysis, rework, environment (required)
+  - `--time <duration>` — your guess of what it cost; does not change the fact
+  - `--lines <n>` — lines of code it took
+  - `--change <name>` — change it belongs to
+  - `--task <id>` — task id; defaults to the only task in progress in this project
+- **`emt parallel on`** — switch parallel mode on; records how much of the budget is spent
+  - `--reason <text>` — why the work goes parallel
+  - `--agents <n>` — number of agents
+  - `--parts <ids>` — comma-separated ids of the estimate parts done in parallel
+  - `--task <id>` — task id; defaults to the only task in progress in this project
+- **`emt parallel off`** — switch parallel mode off
+  - `--task <id>` — task id; defaults to the only task in progress in this project
+- **`emt status [task]`** — show the fact of a task so far: agents, you, uncertainty, and the estimate
+  - `--json` — print JSON (durations in minutes)
+
+### Closing
+
+- **`emt close [task]`** — close a task after the user agreed; then run `emt retro`
+  - `--at <time>` — when the work ended (ISO 8601 or "YYYY-MM-DD HH:MM"); defaults to now
+  - `--abandoned` — the task was dropped: it is not used for calibration
+  - `--yes` — the user has already agreed to close it (needed without a terminal)
+- **`emt reopen <task>`** — open a task closed by mistake
+- **`emt retro [task]`** — record why the fact differs from the estimate, and one lesson
+  - `--reason <text>` — a reason, optionally "<part id>: <text>"; repeat for several (required)
+  - `--lesson <text>` — one lesson for the next estimate (required)
+- **`emt renegotiate <title>`** — the customer agreed to more work: close the task as it is and start a new one for the rest
+  - `--task <id>` — the task being renegotiated; defaults to the only task in progress in this project
+  - `--description <text>` — what changed; defaults to the title
+  - `--category <category>` — category of the extra work, new-requirement by default
+  - `--type <type>` — type of the new task; defaults to the type of the original
+  - `--at <time>` — when the original work ended; defaults to now
+  - `--yes` — the user has already agreed (needed without a terminal)
+
+### General options
+
+- `-v, --version` — output the version number
+- `-h, --help` — display help for command
+- `--json` — print JSON; most commands have it
+
+<!-- commands:end -->

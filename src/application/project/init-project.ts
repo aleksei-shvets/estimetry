@@ -1,15 +1,14 @@
 import type { InstallDependencies } from './install-dependencies.js';
 import type { ProjectRepository } from '../../domain/project/project-repository.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
-import { isRemoval, mergePlans, type FileChange, type InstallPlan } from '../ports/file-change.js';
 import type { Flow } from '../contracts/flow.js';
 import type { ToolAdapter } from '../contracts/tool-adapter.js';
 import type { ProjectConfigFile } from '../ports/project-config-file.js';
-import type { ProjectPaths } from '../ports/project-paths.js';
 import { isShareMode, SHARE_MODES, type ShareMode } from '../ports/sharing-preference.js';
 import type { WorkspaceLocator } from '../ports/workspace-locator.js';
 import type { RegistrationPlan, ResolveCurrentProject } from './resolve-current-project.js';
-import { defaultFlow, defaultTools, unignoredPersonalFiles } from './init-defaults.js';
+import { defaultFlow, defaultTools, isSharedInstall } from './init-defaults.js';
+import type { InstallCopy, PlannedFile } from './install-copy.js';
 import { detectStack } from './stack.js';
 import type { ProjectId } from '../../domain/project/project-id.js';
 
@@ -26,7 +25,6 @@ export interface InitInput {
   readonly excludePersonalFiles?: boolean;
 }
 
-export type FileStatus = 'created' | 'updated' | 'removed' | 'unchanged' | 'skipped';
 
 export interface InitReport {
   readonly project: string;
@@ -35,7 +33,7 @@ export interface InitReport {
   readonly stack: readonly string[];
   readonly share: ShareMode;
   /** Paths inside the project are relative to its root, others are absolute. */
-  readonly files: readonly { readonly path: string; readonly status: FileStatus; readonly reason?: string }[];
+  readonly files: readonly PlannedFile[];
   readonly warnings: readonly string[];
 }
 
@@ -48,6 +46,7 @@ export class InitProject {
     private readonly projects: ProjectRepository,
     private readonly projectConfig: ProjectConfigFile,
     private readonly deps: InstallDependencies,
+    private readonly install: InstallCopy,
   ) {}
 
   /**
@@ -59,7 +58,7 @@ export class InitProject {
     const tools = input.tools === undefined ? defaultTools(this.deps, root) : this.toolsById(input.tools);
     const flow = this.flowById(input.flow ?? defaultFlow(this.deps, this.projectConfig, root));
     const share = this.shareMode(input.share ?? this.deps.sharing.mode() ?? 'none');
-    const shared = input.shared ?? tools.some((tool) => tool.state(root, this.deps.files).shared);
+    const shared = input.shared ?? isSharedInstall(this.deps, root, tools);
     const trackCommits = input.trackCommits ?? this.deps.git.commitHook.installed(root);
     const warnings: string[] = [];
 
@@ -78,28 +77,23 @@ export class InitProject {
     const stack = detectStack(root, this.deps.files, this.deps.registries.detectors.all());
     warnings.push(...stack.warnings);
 
-    const plan = mergePlans([
-      ...tools.map((tool) =>
-        tool.plan({ projectRoot: root, files: this.deps.files, shared, force: input.force ?? false, version: this.deps.version }),
-      ),
-      this.deps.git.commitHook.plan(root, trackCommits),
-      {
-        changes: [this.projectConfig.plan(root, { project: config.config?.project ?? plannedId(registration), flow: flow.id })],
-        skipped: [],
-        warnings: [],
-      },
-      shared ? EMPTY : this.excludePersonalFiles(root, tools, input.excludePersonalFiles),
-    ]);
+    const plan = this.install.plan({
+      root,
+      project: config.config?.project ?? plannedId(registration),
+      tools,
+      flow,
+      shared,
+      trackCommits,
+      force: input.force ?? false,
+      ...(input.excludePersonalFiles === undefined ? {} : { excludePersonalFiles: input.excludePersonalFiles }),
+    });
 
     const project = this.projects.update(this.currentProject.register(registration).id, (registered) => {
       const fingerprint = this.workspace.fingerprint();
       const withStack = registered.withStack(stack.tags);
       return fingerprint !== undefined && registered.fingerprint === undefined ? withStack.withFingerprint(fingerprint) : withStack;
     });
-    const files = [
-      ...plan.changes.map((change) => ({ path: display(this.deps.files, root, change.path), status: this.apply(change) })),
-      ...plan.skipped.map((skip) => ({ path: display(this.deps.files, root, skip.path), status: 'skipped' as const, reason: skip.reason })),
-    ];
+    this.install.apply(plan);
     if (this.deps.sharing.mode() !== share) {
       this.deps.sharing.save(share);
     }
@@ -114,48 +108,9 @@ export class InitProject {
       tools: tools.map((tool) => tool.id),
       stack: project.stack,
       share,
-      files,
+      files: plan.entries.map((entry) => entry.file),
       warnings: [...warnings, ...plan.warnings],
     };
-  }
-
-  private apply(change: FileChange): FileStatus {
-    const current = this.deps.files.read(change.path);
-    if (isRemoval(change)) {
-      if (current === undefined) {
-        return 'unchanged';
-      }
-      this.deps.files.remove(change.path);
-      return 'removed';
-    }
-    if (current === change.content) {
-      return 'unchanged';
-    }
-    this.deps.files.write(change.path, change.content, change.executable ? { executable: true } : {});
-    return current === undefined ? 'created' : 'updated';
-  }
-
-  /** Personal files must stay out of git; with consent they go to the global excludes, as Claude Code does. */
-  private excludePersonalFiles(root: string, tools: readonly ToolAdapter[], consent: boolean | undefined): InstallPlan {
-    const unignored = unignoredPersonalFiles(this.deps, root, tools);
-    if (unignored.length === 0) {
-      return EMPTY;
-    }
-    const file = this.deps.git.excludes.globalFile();
-    const patterns = unignored.map((path) => `**/${this.deps.files.portable(path)}`);
-    if (consent !== true) {
-      return {
-        changes: [],
-        skipped: [],
-        warnings: unignored.map(
-          (path, i) =>
-            `${path} is not ignored by git and may be committed; to keep it out of every repository: echo '${patterns[i]}' >> ${file}`,
-        ),
-      };
-    }
-    const current = this.deps.files.read(file) ?? '';
-    const separator = current === '' || current.endsWith('\n') ? '' : '\n';
-    return { changes: [{ path: file, content: `${current}${separator}${patterns.join('\n')}\n` }], skipped: [], warnings: [] };
   }
 
   private toolsById(ids: readonly string[]): ToolAdapter[] {
@@ -188,14 +143,6 @@ export class InitProject {
   }
 }
 
-const EMPTY: InstallPlan = { changes: [], skipped: [], warnings: [] };
-
 function plannedId(plan: RegistrationPlan): ProjectId {
   return plan.kind === 'new' ? plan.id : plan.project.id;
 }
-
-/** Relative inside the project, absolute outside it. */
-function display(paths: ProjectPaths, root: string, path: string): string {
-  return paths.inside(root, path) ?? path;
-}
-

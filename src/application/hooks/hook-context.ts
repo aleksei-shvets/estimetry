@@ -7,6 +7,14 @@ export const EXTRA_REMINDER = 'estimetry: if the work has gone beyond the plan, 
 /** First line of every session start: estimates go through the protocol, never a guess (estimate mode, design §5.1). */
 export const ESTIMATE_REMINDER = 'estimetry: before you name an effort or a deadline for a task, run /emt-estimate.';
 
+/** The copy of the session was set up by an older estimetry (claude-code-hooks spec): the agent suggests, never runs, `emt upgrade`. */
+export function upgradeText(current: string, installed: string | undefined): string {
+  return (
+    `estimetry: estimetry ${current} is installed, but this project was set up by ${installed ?? 'an older version'}. ` +
+    'Suggest that the user runs `emt upgrade`; do not run it yourself.'
+  );
+}
+
 export interface TaskFact {
   readonly minutes: number;
   /** "Most likely" of the estimate, in hours. */
