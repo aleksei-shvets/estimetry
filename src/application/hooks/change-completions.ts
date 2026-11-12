@@ -72,7 +72,9 @@ export class ChangeCompletions {
     }
     this.progress.record(task.id, records, changed ? { directories } : undefined);
     // The latest exact completion is the one to ask about; approximate ones are old work.
-    const exact = records.filter((record): record is ChangeCompleted => record.type === 'change.completed' && !record.data.approximate).at(-1);
+    const exact = records
+      .filter((record): record is ChangeCompleted => record.type === 'change.completed' && !record.data.approximate)
+      .at(-1);
     if (exact !== undefined && session !== undefined && this.proposals !== undefined) {
       this.proposals.put(task.id, { change: exact.data.change, project: exact.data.project, completedAt: exact.data.completedAt, session });
     }

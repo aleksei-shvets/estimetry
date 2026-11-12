@@ -44,7 +44,13 @@ export class ClosingRecords {
         ofTask(task, code),
       ),
     );
-    this.journal.appendRecord(journalEntry<PlanClosing>('plan.closing', { source: CORE_SOURCE, ...this.plans.closing(task, where) }, ofTask(task, this.meta.at(now))));
+    this.journal.appendRecord(
+      journalEntry<PlanClosing>(
+        'plan.closing',
+        { source: CORE_SOURCE, ...this.plans.closing(task, where) },
+        ofTask(task, this.meta.at(now)),
+      ),
+    );
     return warnings;
   }
 

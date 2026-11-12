@@ -92,10 +92,14 @@ function translateEvent(event: string, p: Json): ActivityDraft[] {
         ? [{ type: 'turn.awaiting-input', data: { ...onAgent, reason: 'question', ...turn } }]
         : [{ type: 'tool.started', data: call }];
     case 'PermissionRequest':
-      return tool !== undefined && QUESTION_TOOLS.has(tool) ? [] : [{ type: 'turn.awaiting-input', data: { ...onAgent, reason: 'permission', ...turn } }];
+      return tool !== undefined && QUESTION_TOOLS.has(tool)
+        ? []
+        : [{ type: 'turn.awaiting-input', data: { ...onAgent, reason: 'permission', ...turn } }];
     case 'Notification': {
       const type = text(p['notification_type']);
-      return type !== undefined && QUESTION_NOTIFICATIONS.has(type) ? [{ type: 'turn.awaiting-input', data: { ...onAgent, reason: 'question', ...turn } }] : [];
+      return type !== undefined && QUESTION_NOTIFICATIONS.has(type)
+        ? [{ type: 'turn.awaiting-input', data: { ...onAgent, reason: 'question', ...turn } }]
+        : [];
     }
     case 'PostToolUse': {
       const used: ActivityDraft = { type: 'tool.used', data: { ...call, ...duration(p) } };

@@ -32,7 +32,14 @@ export function planProgress(estimate: Estimate | undefined, plan: TaskPlan): Pl
     return undefined;
   }
   const done = plan.changes.reduce((sum, change) => sum + (change.archived ? change.total : change.done), 0);
-  return { done: percent(done / total), mode: 'checkboxes', notStarted: [], possibleTypos: [], archivedBeforeStart: [], archivedBeforeRevision: [] };
+  return {
+    done: percent(done / total),
+    mode: 'checkboxes',
+    notStarted: [],
+    possibleTypos: [],
+    archivedBeforeStart: [],
+    archivedBeforeRevision: [],
+  };
 }
 
 function byChanges(

@@ -82,7 +82,13 @@ function untrackedLines(root: string, path: string): FileLines[] {
 
 function git(cwd: string, args: readonly string[]): string | undefined {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, maxBuffer: MAX_OUTPUT });
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
+      maxBuffer: MAX_OUTPUT,
+    });
   } catch {
     return undefined;
   }

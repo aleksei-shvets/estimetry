@@ -60,5 +60,9 @@ export function applyClosed(state: TaskState, event: TaskClosed): TaskState {
 /** The last closing is reopened at `ts`; the task is in progress again. */
 export function applyReopened(state: TaskState, ts: Timestamp): TaskState {
   const last = state.closures.at(-1);
-  return { ...state, closures: last ? [...state.closures.slice(0, -1), { ...last, reopenedAt: ts }] : state.closures, status: 'in-progress' };
+  return {
+    ...state,
+    closures: last ? [...state.closures.slice(0, -1), { ...last, reopenedAt: ts }] : state.closures,
+    status: 'in-progress',
+  };
 }

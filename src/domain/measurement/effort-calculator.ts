@@ -175,7 +175,9 @@ function splitManual(
     agentWithoutTime: untimed('agent'),
     userWithoutTime: untimed('user'),
     agentWork: Duration.sum(
-      records.filter((record) => record.kind === 'agent').map((record) => (record.at === undefined ? record.duration : interval(record).total)),
+      records
+        .filter((record) => record.kind === 'agent')
+        .map((record) => (record.at === undefined ? record.duration : interval(record).total)),
     ),
   };
 }

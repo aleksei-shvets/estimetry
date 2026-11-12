@@ -3,10 +3,21 @@ import { noExtraTallies } from './extra-tallies.js';
 import { upgradeCardV2, type CardFactV2, type CardV2 } from './card-v2.js';
 
 /** A card of schema 1, as `estimate-revision` and earlier wrote it. */
-export interface CardV1 extends Omit<
-  Card,
-  'schemaVersion' | 'estimate' | 'currentEstimate' | 'revisions' | 'fact' | 'currentParts' | 'beforeRevisionMinutes' | 'coveredByRevision' | 'convertedFrom' | 'text' | 'usage'
-> {
+export interface CardV1
+  extends Omit<
+    Card,
+    | 'schemaVersion'
+    | 'estimate'
+    | 'currentEstimate'
+    | 'revisions'
+    | 'fact'
+    | 'currentParts'
+    | 'beforeRevisionMinutes'
+    | 'coveredByRevision'
+    | 'convertedFrom'
+    | 'text'
+    | 'usage'
+  > {
   readonly schemaVersion: 1;
   readonly estimate: Omit<CardEstimate, 'type'> | null;
   readonly fact: CardFactV2;

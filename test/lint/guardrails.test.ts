@@ -93,15 +93,25 @@ describe('architecture checks', () => {
     expect(await sizes(longFunction(78), 'src/application/x.ts')).toEqual(['max-lines-per-function']);
   });
 
-  it('a line of code over 140 characters is an error, a long text is not', async () => {
+  it('a line of code over 140 characters is an error, a line of text alone is not', async () => {
     const length = async (code: string, file = 'src/domain/x.ts') => (await messages(code, file)).filter((m) => m.ruleId === 'max-len').length;
     const sum = (count: number) => `export const s = ${Array.from({ length: count }, (_, i) => `v${i}`).join(' + ')};\n`;
     const declared = Array.from({ length: 40 }, (_, i) => `const v${i} = ${i};`).join('\n');
+    const text = 'x'.repeat(200);
     expect(await length(`${declared}\n${sum(22)}`)).toBe(0);
     expect(await length(`${declared}\n${sum(40)}`)).toBe(1);
-    expect(await length(`export const message = '${'x'.repeat(200)}';\n`, 'src/application/task/x.ts')).toBe(0);
-    expect(await length(`export const message = \`${'x'.repeat(200)}\`;\n`, 'src/interface/cli/x.ts')).toBe(0);
     expect(await length(`${declared}\n${sum(40)}`, 'src/integrations/tools/content/x.ts')).toBe(0);
+    // Text alone on its line: a string, a part of a concatenation, a branch of a condition, a property, a template with names.
+    expect(await length(`export const message =\n  '${text}';\n`, 'src/application/task/x.ts')).toBe(0);
+    expect(await length(`declare const id: string;\nexport const m =\n  \`${text} \${id}\` +\n  'b';\n`, 'src/interface/cli/x.ts')).toBe(0);
+    expect(await length(`declare const ok: boolean;\nexport const m = ok\n  ? ''\n  : '${text}';\n`)).toBe(0);
+    expect(await length(`export const o = {\n  problem: '${text}',\n};\n`)).toBe(0);
+    // Code with a literal in it is code: the literal does not excuse the line.
+    expect(await length(`export const message = '${text}';\n`, 'src/application/task/x.ts')).toBe(1);
+    expect(await length(`declare function f(a: string, b: number): void;\nf('plan.closing', ${'1 + '.repeat(40)}1);\n`)).toBe(1);
+    // A computation or a nested template inside a template is code packed into a text.
+    expect(await length(`declare const n: number;\nexport const m =\n  \`${text} \${Math.round((n / 3) * 100)}\`;\n`)).toBe(1);
+    expect(await length(`declare const n: number;\nexport const m =\n  \`${text}\${n > 0 ? \` (\${n})\` : ''}\`;\n`)).toBe(1);
   });
 
   it('a function of application with more than six parameters is an error', async () => {

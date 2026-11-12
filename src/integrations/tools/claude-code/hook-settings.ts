@@ -24,7 +24,12 @@ export function withHooks(
   for (const event of events) {
     const groups = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
     // The agent does not wait for an async hook: only hooks whose context it needs now, or the session end, are synchronous.
-    const handler = { type: 'command', command: `${HOOK_PREFIX} ${event}`, timeout: HOOK_TIMEOUT_SECONDS, ...(synchronous.includes(event) ? {} : { async: true }) };
+    const handler = {
+      type: 'command',
+      command: `${HOOK_PREFIX} ${event}`,
+      timeout: HOOK_TIMEOUT_SECONDS,
+      ...(synchronous.includes(event) ? {} : { async: true }),
+    };
     hooks[event] = [...groups, { hooks: [handler] }];
   }
   return render({ ...settings, hooks }, text);

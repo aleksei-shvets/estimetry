@@ -67,7 +67,13 @@ function registerClose(program: Command, ctx: CliContext): void {
     .action(async (id: string | undefined, options: CloseOptions) => {
       const app = await ctx.app();
       const task = { ...parseTaskOption(id), near: ctx.cwd };
-      const go = await confirmed(ctx, options, 'closing a task', () => presenterFor(options).closeSummary(app.closing.summary(task)), 'Close the task?');
+      const go = await confirmed(
+        ctx,
+        options,
+        'closing a task',
+        () => presenterFor(options).closeSummary(app.closing.summary(task)),
+        'Close the task?',
+      );
       if (!go) {
         ctx.out.error('Not closed.');
         return;
@@ -104,7 +110,11 @@ function registerRetro(program: Command, ctx: CliContext): void {
     .helpGroup('Closing')
     .description('record why the fact differs from the estimate, and one lesson')
     .argument('[task]', 'task id; defaults to the task of this project closed last')
-    .requiredOption('--reason <text>', 'a reason, optionally "<part id>: <text>"; repeat for several', (value: string, all: string[] = []) => [...all, value])
+    .requiredOption(
+      '--reason <text>',
+      'a reason, optionally "<part id>: <text>"; repeat for several',
+      (value: string, all: string[] = []) => [...all, value],
+    )
     .requiredOption('--lesson <text>', 'one lesson for the next estimate')
     .option('--json', 'print JSON')
     .action(async (id: string | undefined, options: { reason: string[]; lesson: string; json?: boolean }) => {

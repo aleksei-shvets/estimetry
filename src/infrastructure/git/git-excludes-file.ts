@@ -11,7 +11,12 @@ export class GitExcludesFile implements GitExcludes {
 
   isIgnored(projectRoot: string, path: string): boolean | undefined {
     // check-ignore: 0 — ignored, 1 — not ignored, anything else — not a repository or git missing.
-    const result = spawnSync('git', ['check-ignore', '-q', '--no-index', path], { cwd: projectRoot, stdio: 'ignore', windowsHide: true, env: this.processEnv() });
+    const result = spawnSync('git', ['check-ignore', '-q', '--no-index', path], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+      windowsHide: true,
+      env: this.processEnv(),
+    });
     return result.status === 0 ? true : result.status === 1 ? false : undefined;
   }
 

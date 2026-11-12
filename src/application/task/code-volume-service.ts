@@ -90,7 +90,8 @@ function baseOf(project: string, records: readonly ProgressRecord[]): string | u
     }
   }
   const checkpoint = records.find(
-    (record): record is CheckpointRecorded => record.type === 'checkpoint.recorded' && record.project === project && record.data.head !== undefined,
+    (record): record is CheckpointRecorded =>
+      record.type === 'checkpoint.recorded' && record.project === project && record.data.head !== undefined,
   );
   return checkpoint?.data.head;
 }

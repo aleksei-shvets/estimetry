@@ -53,15 +53,17 @@ export function cardText(card: Card): string {
   if (card.currentParts.length > 0 && card.unattributedMinutes > 0) {
     rows.push(['  unattributed', formatMinutes(card.unattributedMinutes)]);
   }
-  const extras = Object.entries(card.extras).flatMap(([category, tally]) =>
-    tally.absorbed.count + tally.renegotiated.count === 0
-      ? []
-      : [`${category} ${tally.absorbed.count + tally.renegotiated.count}${tally.renegotiated.count > 0 ? ` (${tally.renegotiated.count} renegotiated)` : ''}`],
-  );
+  const extras = Object.entries(card.extras).flatMap(([category, tally]) => {
+    const count = tally.absorbed.count + tally.renegotiated.count;
+    const renegotiated = tally.renegotiated.count > 0 ? ` (${tally.renegotiated.count} renegotiated)` : '';
+    return count === 0 ? [] : [`${category} ${count}${renegotiated}`];
+  });
   if (extras.length > 0) {
     rows.push(['extras', extras.join(', ')]);
   }
-  const covered = Object.entries(card.coveredByRevision).flatMap(([category, tally]) => (tally.count === 0 ? [] : [`${category} ${tally.count}`]));
+  const covered = Object.entries(card.coveredByRevision).flatMap(([category, tally]) =>
+    tally.count === 0 ? [] : [`${category} ${tally.count}`],
+  );
   if (covered.length > 0) {
     rows.push(['covered by revision', covered.join(', ')]);
   }
@@ -97,14 +99,14 @@ export function usageRows(usage: CardUsage | null): [string, string][] {
     return [];
   }
   const cost =
-    usage.costUSD === null
-      ? 'unknown'
-      : `$${usage.costUSD.toFixed(2)}${usage.approximate ? ' (approximate: split by tokens)' : ''}`;
-  const models = Object.entries(usage.tokens).map(
-    ([model, t]): [string, string] => [
-      `  ${model}`,
-      `in ${tokenCount(t.input)}, out ${tokenCount(t.output)}, cache read ${tokenCount(t.cacheRead)}, cache write ${tokenCount(t.cacheWrite5m + t.cacheWrite1h)}`,
-    ],
-  );
-  return [['cost', `${cost}, from the logs of ${usage.withLogs} of ${usage.sessions} sessions`], ...(models.length === 0 ? [] : [['tokens', ''] as [string, string], ...models])];
+    usage.costUSD === null ? 'unknown' : `$${usage.costUSD.toFixed(2)}${usage.approximate ? ' (approximate: split by tokens)' : ''}`;
+  const models = Object.entries(usage.tokens).map(([model, t]): [string, string] => {
+    const cacheWrite = tokenCount(t.cacheWrite5m + t.cacheWrite1h);
+    const read = `in ${tokenCount(t.input)}, out ${tokenCount(t.output)}, cache read ${tokenCount(t.cacheRead)}`;
+    return [`  ${model}`, `${read}, cache write ${cacheWrite}`];
+  });
+  return [
+    ['cost', `${cost}, from the logs of ${usage.withLogs} of ${usage.sessions} sessions`],
+    ...(models.length === 0 ? [] : [['tokens', ''] as [string, string], ...models]),
+  ];
 }

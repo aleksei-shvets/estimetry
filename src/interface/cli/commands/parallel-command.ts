@@ -12,7 +12,9 @@ interface OnOptions {
 }
 
 export function registerParallelCommand(program: Command, ctx: CliContext): void {
-  const parallel = groupCommand(program, 'parallel', 'Measuring', ctx).description('switch parallel mode of a task (several agents at once)');
+  const parallel = groupCommand(program, 'parallel', 'Measuring', ctx).description(
+    'switch parallel mode of a task (several agents at once)',
+  );
 
   parallel
     .command('on')

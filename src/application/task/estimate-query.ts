@@ -11,7 +11,11 @@ export interface EstimateQueryInput {
 }
 
 /** Type checked by the catalog, labels of the stack — given or the current project's. */
-export function estimateQuery(input: EstimateQueryInput, project: Pick<ResolveCurrentProject, 'find'>, taskTypes: TaskTypeCatalog): EstimateQuery {
+export function estimateQuery(
+  input: EstimateQueryInput,
+  project: Pick<ResolveCurrentProject, 'find'>,
+  taskTypes: TaskTypeCatalog,
+): EstimateQuery {
   const stack = input.stack ?? project.find()?.stack ?? [];
   return EstimateQuery.of(input.type === undefined ? { stack } : { type: TaskType.of(input.type, taskTypes.allowed()), stack });
 }

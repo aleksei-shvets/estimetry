@@ -55,7 +55,9 @@ export function groupOf(command: Command): string {
 
 /** Options shown for a command in the overview: not `--help`, and `--json` only when it says something of its own. */
 export function shownOptions(command: Command): Option[] {
-  return command.options.filter((option) => option.long !== '--help' && !(option.long === '--json' && option.description === JSON_DESCRIPTION));
+  return command.options.filter(
+    (option) => option.long !== '--help' && !(option.long === '--json' && option.description === JSON_DESCRIPTION),
+  );
 }
 
 function argumentsOf(command: Command): string {
@@ -93,7 +95,10 @@ export function formatHelp(command: Command, helper: Help): string {
   const column = Math.min(Math.max(0, ...terms) + 2, MAX_TERM_COLUMN);
   const row = (term: string, description: string): string => {
     const wrapped = helper.boxWrap(description, Math.max(20, width - column)).split('\n');
-    const head = helper.displayWidth(term) + 2 <= column ? `${term.padEnd(column)}${wrapped[0] ?? ''}` : `${term}\n${' '.repeat(column)}${wrapped[0] ?? ''}`;
+    const head =
+      helper.displayWidth(term) + 2 <= column
+        ? `${term.padEnd(column)}${wrapped[0] ?? ''}`
+        : `${term}\n${' '.repeat(column)}${wrapped[0] ?? ''}`;
     return [head, ...wrapped.slice(1).map((line) => `${' '.repeat(column)}${line}`)].join('\n');
   };
 

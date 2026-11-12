@@ -66,7 +66,8 @@ export class ReviseEstimate {
       const from = input.lostFrom ?? task.lostWindowFloor;
       // Only a task that already has an estimate is revised; its first estimate reads no archive.
       // A window that ends before it starts is the aggregate's to reject, with its own message.
-      const window = input.spent === 'exclude' && task.estimate !== undefined && from !== undefined ? LostWindow.between(from, revisedAt) : undefined;
+      const window =
+        input.spent === 'exclude' && task.estimate !== undefined && from !== undefined ? LostWindow.between(from, revisedAt) : undefined;
       excluded = window === undefined ? [] : this.archives(task, window, input);
       task.reviseEstimate(
         EstimateRevision.of({

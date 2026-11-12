@@ -73,7 +73,8 @@ export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, Measure
   /** `calibration.minTasks`: a whole number ≥ 1, 5 by default; anything else gives the default. */
   minTasks(): number {
     const calibration = this.read()['calibration'];
-    const value = typeof calibration === 'object' && calibration !== null ? (calibration as Record<string, unknown>)['minTasks'] : undefined;
+    const value =
+      typeof calibration === 'object' && calibration !== null ? (calibration as Record<string, unknown>)['minTasks'] : undefined;
     return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : DEFAULT_MIN_TASKS;
   }
 

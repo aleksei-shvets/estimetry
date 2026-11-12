@@ -67,7 +67,9 @@ export class EstimateRevision {
   }): EstimateRevision {
     const category = input.category?.trim().toLowerCase();
     if (category !== undefined && !isExtraCategory(category)) {
-      throw new InvalidValue(`unknown category "${input.category}", expected one of: new-requirement, missed-analysis, rework, environment`);
+      throw new InvalidValue(
+        `unknown category "${input.category}", expected one of: new-requirement, missed-analysis, rework, environment`,
+      );
     }
     if (input.spent !== undefined && !isSpentPolicy(input.spent)) {
       throw new InvalidValue(`--spent must be include or exclude, got "${input.spent}"`);

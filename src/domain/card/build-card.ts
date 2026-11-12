@@ -5,7 +5,18 @@ import { InvalidValue } from '../shared/domain-error.js';
 import type { Task } from '../task/task.js';
 import { usageSummary, type TaskUsage } from '../usage/task-usage.js';
 import { CARD_SCHEMA_VERSION, type Card } from './card.js';
-import { cardCode, cardEstimate, cardFact, cardParallel, cardParts, cardRetro, cardRevisions, cardText, closedMinutes, minutes } from './card-sections.js';
+import {
+  cardCode,
+  cardEstimate,
+  cardFact,
+  cardParallel,
+  cardParts,
+  cardRetro,
+  cardRevisions,
+  cardText,
+  closedMinutes,
+  minutes,
+} from './card-sections.js';
 import { tallyCovered, tallyExtras } from './extra-tallies.js';
 import type { RevisionFact } from './revision-facts.js';
 

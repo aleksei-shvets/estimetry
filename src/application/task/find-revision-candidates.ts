@@ -36,7 +36,11 @@ export class FindRevisionCandidates {
   execute(input: RevisionCandidatesInput): RevisionCandidates {
     const task = this.activeTask.inProgress(input.task);
     // The window of lost work starts by default at the latest of the start, the previous revision and the last reopening.
-    return revisionCandidatesOf(task, input.spent === 'exclude' ? (input.lostFrom ?? task.lostWindowFloor) : undefined, this.meta.next().at);
+    return revisionCandidatesOf(
+      task,
+      input.spent === 'exclude' ? (input.lostFrom ?? task.lostWindowFloor) : undefined,
+      this.meta.next().at,
+    );
   }
 }
 

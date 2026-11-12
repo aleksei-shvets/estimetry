@@ -25,6 +25,12 @@ const MAX_FUNCTION_LINES = 80;
 const MAX_PARAMS = 6;
 /** Longer lines would let a file or a function fit its limit by packing code into fewer lines. */
 const MAX_LINE_LENGTH = 140;
+/**
+ * A line of text alone: one string or template literal, maybe after `+`, `?`, `:` or a property name and before
+ * `+`, `,`, `;` or closing parentheses. A template may only put in names, paths and simple calls (`${x}`,
+ * `${task.id}`, `${localTime(r.at)}`): a computation or a nested template inside it is code packed into a text.
+ */
+export const TEXT_LINE = String.raw`^\s*(?:[+?:]\s*|\w+:\s*)?(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|${"`"}(?:[^${"`"}\\$]|\\.|\$(?!\{)|\$\{[\w.]+(?:\([\w.,' ]*\))?\})*${"`"})\s*(?:\+|,|;|\)+[;,]?)?\s*$`;
 
 /** @type {Debt} */
 export const DEBT = {
@@ -99,8 +105,9 @@ function sizeRules(debt) {
   const lines = (max) => ['error', { max, skipBlankLines: false, skipComments: false }];
   /** @param {number} max */
   const functionLines = (max) => ['error', { max, skipBlankLines: false, skipComments: false, IIFEs: true }];
-  // Strings and templates are texts, not packed code: messages, help and the content installed by `init` keep their lines.
-  const lineLength = ['error', { code: MAX_LINE_LENGTH, ignoreStrings: true, ignoreTemplateLiterals: true, ignoreUrls: true, ignoreRegExpLiterals: true }];
+  // Only a line that is a text alone may be longer: a string or a template, a part of a concatenation or an argument.
+  // A line of code with a literal in it is code (ignoreStrings would let it pass); the content installed by `init` has no limit.
+  const lineLength = ['error', { code: MAX_LINE_LENGTH, ignorePattern: TEXT_LINE, ignoreUrls: true, ignoreRegExpLiterals: true }];
   return [
     {
       files: ['src/**'],

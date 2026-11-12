@@ -60,7 +60,11 @@ export class ClosingFollowUp {
         });
         if (released) {
           this.journal.append(
-            journalEntry<SessionUnbound>('session.unbound', { source: CORE_SOURCE, session: session.value }, { ...this.meta.at(closedAt), project: binding.project, task: id }),
+            journalEntry<SessionUnbound>(
+              'session.unbound',
+              { source: CORE_SOURCE, session: session.value },
+              { ...this.meta.at(closedAt), project: binding.project, task: id },
+            ),
           );
         }
       }

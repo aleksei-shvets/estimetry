@@ -54,7 +54,13 @@ export class BindSession {
     return summary !== undefined && isInProgress(summary.status);
   }
 
-  private mark<T extends SessionBound | SessionUnbound>(type: T['type'], session: SessionId, task: string, project: string, at: Timestamp): void {
+  private mark<T extends SessionBound | SessionUnbound>(
+    type: T['type'],
+    session: SessionId,
+    task: string,
+    project: string,
+    at: Timestamp,
+  ): void {
     this.journal.append(
       journalEntry<T>(
         type,

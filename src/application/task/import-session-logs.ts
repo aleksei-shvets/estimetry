@@ -71,7 +71,9 @@ export class ImportSessionLogs {
           return results('not-found');
         }
         const due = request.tasks.filter((task) => !same(known[task.id]?.fingerprint, fingerprint));
-        const fresh = request.tasks.filter((task) => !due.includes(task)).map((task) => ({ session: request.session, task: task.id, outcome: 'no-new-data' as const }));
+        const fresh = request.tasks
+          .filter((task) => !due.includes(task))
+          .map((task) => ({ session: request.session, task: task.id, outcome: 'no-new-data' as const }));
         if (due.length === 0) {
           return fresh;
         }
@@ -83,7 +85,10 @@ export class ImportSessionLogs {
           ...(request.budgetMs === undefined ? {} : { budgetMs: request.budgetMs }),
         });
         if (read.status === 'over-budget' || read.status === 'unrecognized') {
-          this.deps.errors.report(`importing the log of session ${request.session}`, new SessionLogFailure(read.status === 'over-budget' ? 'log-import-budget' : 'log-format-unrecognized'));
+          this.deps.errors.report(
+            `importing the log of session ${request.session}`,
+            new SessionLogFailure(read.status === 'over-budget' ? 'log-import-budget' : 'log-format-unrecognized'),
+          );
         }
         if (read.status === 'no-data') {
           for (const task of due) {
@@ -101,14 +106,23 @@ export class ImportSessionLogs {
           const agents: LogAgent[] = read.agents
             .filter((agent) => !sameFile(entry?.fingerprint.agents[agent.agent], read.fingerprint.agents[agent.agent]) || read.from < from)
             .map((agent) => ({ agent: agent.agent, spans: agent.spans.map(([a, b]) => [a, b] as const), tokens: [...agent.tokens] }));
-          this.write(task, request.session, `${request.source}-log`, request.at ?? this.deps.meta.now(), { from: offset, turns, agents, cost: read.cost, skipped: read.skipped });
+          this.write(task, request.session, `${request.source}-log`, request.at ?? this.deps.meta.now(), {
+            from: offset,
+            turns,
+            agents,
+            cost: read.cost,
+            skipped: read.skipped,
+          });
           this.deps.state.write(request.session, task.id, { fingerprint: read.fingerprint, next: read.next });
         }
         return [...fresh, ...results('imported', due)];
       });
     } catch (error) {
       // Only a code and the session reach the error log: never a line or a path of the log.
-      this.deps.errors.report(`importing the log of session ${request.session}`, error instanceof SessionLogFailure ? error : new SessionLogFailure('log-import-failed'));
+      this.deps.errors.report(
+        `importing the log of session ${request.session}`,
+        error instanceof SessionLogFailure ? error : new SessionLogFailure('log-import-failed'),
+      );
       return results('failed');
     }
   }

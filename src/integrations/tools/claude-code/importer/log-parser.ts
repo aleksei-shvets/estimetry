@@ -100,7 +100,13 @@ export class MainLogParser {
     if (type === 'cost-state') {
       const startTime = record['startTime'];
       const total = record['totalCostUSD'];
-      if (typeof startTime === 'number' && Number.isFinite(startTime) && typeof total === 'number' && Number.isFinite(total) && total >= 0) {
+      if (
+        typeof startTime === 'number' &&
+        Number.isFinite(startTime) &&
+        typeof total === 'number' &&
+        Number.isFinite(total) &&
+        total >= 0
+      ) {
         this.costs.set(startTime, { startTime, totalUSD: total, unknown: record['hasUnknownModelCost'] === true });
       } else {
         this.skipped += 1;

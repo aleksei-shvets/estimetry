@@ -27,14 +27,12 @@ export function sessionStartContext(input: {
   const budget = input.budget ?? MAX_CONTEXT_LENGTH;
   if (input.task) {
     const fact = input.fact;
-    const progress =
-      fact === undefined
-        ? ''
-        : fact.likelyHours === undefined
-          ? ` — ${duration(fact.minutes)} so far`
-          : ` — ${duration(fact.minutes)} of ${duration(fact.likelyHours * 60)} (${Math.round((fact.minutes / (fact.likelyHours * 60)) * 100)}%)`;
+    const progress = fact === undefined ? '' : progressText(fact.minutes, fact.likelyHours);
     const plan = fact?.planDone === undefined ? '' : `, plan ${fact.planDone}% done`;
-    return cut(`estimetry: task ${input.task.id} "${input.task.title}"${progress}${plan}. ${EXTRA_REMINDER.replace('estimetry: if', 'If')}`, budget);
+    return cut(
+      `estimetry: task ${input.task.id} "${input.task.title}"${progress}${plan}. ${EXTRA_REMINDER.replace('estimetry: if', 'If')}`,
+      budget,
+    );
   }
   if (input.candidates.length > 1) {
     // The command goes last and must survive the limit: the list of tasks is shortened instead.
@@ -79,4 +77,13 @@ function duration(minutes: number): string {
   const hours = Math.floor(whole / 60);
   const rest = whole % 60;
   return hours === 0 ? `${rest}m` : rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/** The fact so far, and against the estimate when there is one. */
+function progressText(minutes: number, likelyHours: number | undefined): string {
+  if (likelyHours === undefined) {
+    return ` — ${duration(minutes)} so far`;
+  }
+  const share = Math.round((minutes / (likelyHours * 60)) * 100);
+  return ` — ${duration(minutes)} of ${duration(likelyHours * 60)} (${share}%)`;
 }

@@ -31,7 +31,8 @@ const COMING_SOON = {
 const SHARE_HINTS: Readonly<Record<ShareMode, string>> = {
   none: 'your data stays on this machine; + private, − no team baseline',
   calibration: 'share calibration coefficients with the team; + team baseline, − mixes the speed of different people (saved only for now)',
-  cards: 'exchange anonymised task cards; + more similar tasks to learn from, − descriptions need review before sharing (saved only for now)',
+  cards:
+    'exchange anonymised task cards; + more similar tasks to learn from, − descriptions need review before sharing (saved only for now)',
 };
 
 export function registerInitCommand(program: Command, ctx: CliContext): void {

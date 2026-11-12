@@ -10,7 +10,11 @@ export function defaultTools(deps: Pick<InstallDependencies, 'registries' | 'fil
 }
 
 /** The flow saved in the project config, else the first one detected, else the last one (`none`). */
-export function defaultFlow(deps: Pick<InstallDependencies, 'registries' | 'files'>, projectConfig: ProjectConfigFile, root: string): string {
+export function defaultFlow(
+  deps: Pick<InstallDependencies, 'registries' | 'files'>,
+  projectConfig: ProjectConfigFile,
+  root: string,
+): string {
   const saved = projectConfig.read(root).config?.flow;
   if (saved !== undefined && deps.registries.flows.get(saved)) {
     return saved;
