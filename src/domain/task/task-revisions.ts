@@ -121,6 +121,8 @@ export function applyRevision(state: TaskState, event: TaskEstimateRevised): Tas
     ...state,
     estimate: after,
     estimated: true,
+    // Revisions add their changes: a change a revision dropped stays one of the task.
+    changes: [...new Set([...state.changes, ...after.groups])],
     ...(event.data.taskType === undefined ? {} : { type: TaskType.restore(event.data.taskType) }),
   };
   if (before === undefined) {

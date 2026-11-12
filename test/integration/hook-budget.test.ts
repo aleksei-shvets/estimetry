@@ -1,7 +1,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { Estimate } from '../../src/domain/estimate/estimate.js';
+import { EstimatePart } from '../../src/domain/estimate/estimate-part.js';
+import { ThreePointEstimate } from '../../src/domain/estimate/three-point-estimate.js';
 import { ProjectId } from '../../src/domain/project/project-id.js';
 import { Project } from '../../src/domain/project/project.js';
 import { Author } from '../../src/domain/shared/author.js';
@@ -106,5 +109,75 @@ describe('hook budgets on a large store', () => {
     expect(proposing).toBeLessThan(300);
     expect(end).toBeLessThan(300);
     expect(start).toBeLessThan(2000);
+  }, 180_000);
+
+  it('stays within the budgets for a project with three worktrees, where every call looks at each copy', () => {
+    const cli = cliSandbox();
+    const repo = cli.repo('core');
+    const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'ignore' });
+    git(repo, 'init', '-q');
+    git(repo, '-c', 'user.name=Dev', '-c', 'user.email=dev@example.com', 'commit', '-q', '--allow-empty', '-m', 'init');
+    const worktrees = [1, 2, 3].map((i) => join(cli.repo(`wt${i}`), `core-${i}`));
+    worktrees.forEach((worktree) => git(repo, 'worktree', 'add', '-q', worktree));
+    const copies = [repo, ...worktrees];
+    // Each copy: 50 archived changes; the changes of the task are active in the last worktree.
+    for (const copy of copies) {
+      for (let i = 0; i < 50; i++) {
+        const dir = join(copy, 'openspec', 'changes', 'archive', `2026-10-${String(1 + (i % 28)).padStart(2, '0')}-change-${i}`);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'tasks.md'), '- [x] done\n');
+      }
+    }
+    for (const change of ['task-a', 'task-b']) {
+      mkdirSync(join(copies[3] as string, 'openspec', 'changes', change), { recursive: true });
+      writeFileSync(join(copies[3] as string, 'openspec', 'changes', change, 'tasks.md'), '- [x] one\n- [ ] two\n');
+    }
+    mkdirSync(join(repo, '.estimetry'), { recursive: true });
+    writeFileSync(join(repo, '.estimetry', 'config.yaml'), 'schemaVersion: 1\nproject: core\nflow: openspec\n');
+    const layout = new StorageLayout(cli.home);
+    mkdirSync(cli.home, { recursive: true });
+    writeFileSync(layout.configFile, 'schemaVersion: 1\nauthor:\n  id: dev@example.com\n');
+    const projects = new FileProjectRepository(layout);
+    const core = ProjectId.parse('core');
+    projects.addIfAbsent(Project.register({ id: core, name: 'core', path: repo }, Author.of('dev@example.com'), Timestamp.fromMillis(0)));
+    worktrees.forEach((worktree) => projects.update(core, (project) => project.withPath(worktree)));
+    const tasks = new FileTaskRepository(layout);
+    let n = 0;
+    const meta = () => ({ id: `m-${++n}`, at: Timestamp.parse('2026-10-27T08:00:00.000Z'), author: Author.of('dev@example.com') });
+    const task = Task.create({ id: tasks.nextId(), title: 'In a worktree', type: TaskType.of('feature', DEFAULT_TASK_TYPES), project: core }, meta());
+    const parts = ['task-a', 'task-b'].map((group) => EstimatePart.of({ id: group, name: group, group, hours: ThreePointEstimate.of({ optimistic: 1, likely: 2, pessimistic: 3 }) }));
+    task.saveEstimate(Estimate.of({ parts }), undefined, meta());
+    task.start(core, meta());
+    tasks.save(task);
+    new YamlSessionStore(layout).update(SessionId.parse('live'), () => ({ session: SessionId.parse('live'), project: core, root: repo, task: task.id, since: Timestamp.parse('2026-10-27T08:00:00.000Z'), everBound: true }));
+    new YamlCheckpointState(layout).write(SessionId.parse('live'), { lastAt: new Date().toISOString() });
+    const run = (event: string, extra: Record<string, unknown> = {}) =>
+      timed(process.execPath, [join(cli.bin, 'estimetry'), 'hook', 'claude-code', event], {
+        cwd: repo,
+        env: cli.env,
+        input: JSON.stringify({ session_id: 'live', cwd: repo, prompt_id: 'p', ...extra }),
+      });
+    const node = median(Array.from({ length: 10 }, () => timed(process.execPath, ['-e', '0'], { cwd: repo, env: cli.env })));
+    const background = median(Array.from({ length: 10 }, () => run('PostToolUse', { tool_name: 'Read', tool_use_id: 'x', duration_ms: 3 }))) - node;
+    const prompt = median(Array.from({ length: 10 }, () => run('UserPromptSubmit', { prompt: 'go' }))) - node;
+    // A checkpoint is due: the working copy of the task is looked for again, then git snapshots it.
+    const checkpoints = new YamlCheckpointState(layout);
+    const checkpoint = median(
+      Array.from({ length: 5 }, () => {
+        checkpoints.write(SessionId.parse('live'), { lastAt: '2026-10-27T08:00:00.000Z' });
+        return run('PostToolUse', { tool_name: 'Read', tool_use_id: 'x', duration_ms: 3 });
+      }),
+    ) - node;
+    // Each due call wrote one: the time above is the time of a checkpoint.
+    const written = readFileSync(layout.taskJournal(task.id.toString()), 'utf8').split('\n').filter((line) => line.includes('"checkpoint.recorded"'));
+    expect(written).toHaveLength(5);
+    console.log(
+      `hook budget with four copies, ms beyond node start: background ${background.toFixed(0)}, prompt ${prompt.toFixed(0)}, ` +
+        `background with a checkpoint ${checkpoint.toFixed(0)}`,
+    );
+    // The same budgets as for one copy: 150 ms, CI machines get twice as much.
+    expect(background).toBeLessThan(300);
+    expect(prompt).toBeLessThan(300);
+    expect(checkpoint).toBeLessThan(300);
   }, 180_000);
 });

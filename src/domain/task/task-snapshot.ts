@@ -1,4 +1,5 @@
 import { Estimate, type EstimateData } from '../estimate/estimate.js';
+import { groupsOf } from '../estimate/plan-changes.js';
 import type { ExcludedArchives, SpentPolicy } from '../estimate/estimate-revision.js';
 import { Extra, type ExtraCategory, type ExtraData } from '../measurement/extra.js';
 import { ManualTime, type ManualTimeData } from '../measurement/manual-time.js';
@@ -14,7 +15,7 @@ import type { TaskStatus } from './task-status.js';
 import { TaskType } from './task-type.js';
 
 /** 2: revisions, the first estimate, ids of extra work; 3: task types of revisions. Older snapshots are rebuilt from the journal. */
-export const TASK_SNAPSHOT_SCHEMA_VERSION = 3;
+export const TASK_SNAPSHOT_SCHEMA_VERSION = 4;
 
 /** A closing as the snapshot stores it. */
 export interface TaskClosureData {
@@ -84,6 +85,8 @@ export interface TaskSnapshot {
   readonly manualRecordedAt?: readonly string[];
   /** When manual time of an estimate part was last recorded: a revision cannot start before it. */
   readonly lastPartRecordAt?: string;
+  /** Since schema 4; a snapshot of an older schema is rebuilt from the journal. */
+  readonly changes?: readonly string[];
   readonly version: number;
   readonly lastEventId: string;
 }
@@ -178,6 +181,7 @@ export function stateFromSnapshot(snapshot: TaskSnapshot): TaskState {
     estimatedAfterStart: snapshot.estimatedAfterStart ?? false,
     revisions: (snapshot.revisions ?? []).map(revisionOf),
     lastPartRecordAt: time(snapshot.lastPartRecordAt),
+    changes: [...snapshotChanges(snapshot)],
   };
 }
 
@@ -212,7 +216,23 @@ export function snapshotOf(s: TaskState, version: { readonly count: number; read
     ...(extraRecords.length === 0 ? {} : { extraRecords }),
     ...(manualRecordedAt.length === 0 ? {} : { manualRecordedAt }),
     ...field('lastPartRecordAt', iso(s.lastPartRecordAt)),
+    ...(s.changes.length === 0 ? {} : { changes: [...s.changes] }),
     version: version.count,
     lastEventId: version.lastEventId,
   };
+}
+
+/** The schema that keeps the changes of a task. */
+const CHANGES_SINCE_SCHEMA = 4;
+
+/**
+ * The changes of a task as its snapshot keeps them (`Task.changes`), for readers
+ * without the aggregate. A snapshot of an older schema has no list until the CLI
+ * rebuilds it: the groups of its current and first estimate, the rule before it.
+ */
+export function snapshotChanges(snapshot: TaskSnapshot): readonly string[] {
+  if (snapshot.changes !== undefined || snapshot.schemaVersion >= CHANGES_SINCE_SCHEMA) {
+    return snapshot.changes ?? [];
+  }
+  return groupsOf([...(snapshot.estimate?.parts ?? []), ...(snapshot.firstEstimate?.parts ?? [])]);
 }

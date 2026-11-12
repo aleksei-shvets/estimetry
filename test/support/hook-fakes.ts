@@ -1,6 +1,4 @@
 import { exclusionsOf } from '../../src/domain/progress/plan-exclusions.js';
-import type { TaskRevisionData } from '../../src/domain/task/task-snapshot.js';
-import type { TaskStatus } from '../../src/domain/task/task-status.js';
 import type { ActivityDraft, HookAdapter, HookKind, HookTranslation } from '../../src/application/contracts/hook-adapter.js';
 import type { CheckpointState, CheckpointStatus } from '../../src/application/ports/checkpoint-state.js';
 import type { CommitInfo, GitHead, GitSnapshots } from '../../src/application/ports/git-snapshot.js';
@@ -15,6 +13,9 @@ import { ProjectId } from '../../src/domain/project/project-id.js';
 import { Timestamp } from '../../src/domain/shared/timestamp.js';
 import { TaskId } from '../../src/domain/task/task-id.js';
 import type { SessionImportRequest } from '../../src/application/task/import-session-logs.js';
+import { groupsOf } from '../../src/domain/estimate/plan-changes.js';
+import type { TaskSnapshot } from '../../src/domain/task/task.js';
+import { snapshotChanges } from '../../src/domain/task/task-snapshot.js';
 
 /** Payload of the fake tool: the events to write, already normalized. */
 export interface FakePayload {
@@ -123,9 +124,13 @@ export class RepositoryTaskStatusReader implements TaskStatusReader {
   }
 }
 
-function toSummary(s: { id: string; title: string; status: TaskStatus; startedAt?: string; projects: readonly string[]; revisions?: readonly TaskRevisionData[] }): TaskSummary {
+function toSummary(s: TaskSnapshot): TaskSummary {
   const excluding = (s.revisions ?? []).some((revision) => revision.spent === 'exclude');
+  const groups = groupsOf(s.estimate?.parts);
+  const changes = snapshotChanges(s);
   return {
+    ...(groups.length === 0 ? {} : { groups }),
+    ...(changes.length === 0 ? {} : { changes }),
     id: TaskId.parse(s.id),
     title: s.title,
     status: s.status,

@@ -14,7 +14,6 @@ import { revisionCandidatesOf, type RevisionCandidates } from './find-revision-c
 import type { ResolveActiveTask } from './resolve-active-task.js';
 import type { RevisionRecords } from './revision-records.js';
 import { toTaskView, type TaskView } from './task-view.js';
-import { changesOf } from './task-changes.js';
 
 export interface ReviseEstimateInput extends WorkingCopy {
   readonly task?: TaskId;
@@ -114,7 +113,7 @@ export class ReviseEstimate {
    * left out: they count from the day of the revision.
    */
   private archives(task: Task, window: LostWindow, where: WorkingCopy): ExcludedArchives[] {
-    return this.archived.read(task.projects, where, changesOf(task)).flatMap((reading) => {
+    return this.archived.read(task.projects, where, task.changes).flatMap((reading) => {
       if (reading.archived === undefined) {
         return [];
       }

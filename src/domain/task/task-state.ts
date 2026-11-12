@@ -39,6 +39,8 @@ export interface TaskState {
   readonly revisions: readonly TaskRevision[];
   /** When manual time of an estimate part was last recorded: a revision cannot start before it. */
   readonly lastPartRecordAt: Timestamp | undefined;
+  /** The changes of the task (plan-progress spec): groups of the estimate before the start and of every revision after it. */
+  readonly changes: readonly string[];
 }
 
 export function later(a: Timestamp, b: Timestamp): Timestamp {
@@ -71,5 +73,6 @@ export function initialState(event: TaskCreated): TaskState {
     estimatedAfterStart: false,
     revisions: [],
     lastPartRecordAt: undefined,
+    changes: [],
   };
 }

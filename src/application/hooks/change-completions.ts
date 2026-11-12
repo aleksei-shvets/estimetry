@@ -19,7 +19,8 @@ const SOURCE = 'estimetry';
 
 /**
  * Notices changes of a task moved into the archive (plan-progress spec): one
- * listing of each project's archive per hook call, no `tasks.md`, no git.
+ * listing of the archive per working copy of each project per hook call (the
+ * task's copy is picked by its changes, `TaskSummary.changes`), no git.
  * The journal is the source of truth; the cache only spares reading it.
  */
 export class ChangeCompletions {
@@ -49,7 +50,7 @@ export class ChangeCompletions {
       return;
     }
     const readings = this.archives
-      .read(task.projects, near === undefined ? {} : { near }, task.groups)
+      .read(task.projects, near === undefined ? {} : { near }, task.changes)
       .filter((reading) => reading.archived !== undefined);
     if (readings.length === 0) {
       return;

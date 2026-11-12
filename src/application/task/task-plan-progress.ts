@@ -7,7 +7,6 @@ import { taskPlan } from '../../domain/progress/task-plan.js';
 import type { Task } from '../../domain/task/task.js';
 import type { EventJournal } from '../ports/event-journal.js';
 import type { PlanUnavailable, ProjectPlanReading, ProjectPlans } from '../ports/project-plans.js';
-import { changesOf } from './task-changes.js';
 
 export interface CompletedChange {
   readonly project: string;
@@ -58,7 +57,7 @@ export class TaskPlanProgress {
     }
     const near = options.near;
     const readings = this.plans.plans(task.projects, {
-      changes: changesOf(task),
+      changes: task.changes,
       ...(near === undefined ? {} : { near }),
       // Older archives only name groups `archived before start`: their tasks are not read.
       archivedSince: CalendarDate.of(startedAt).minusDays(1),

@@ -7,6 +7,7 @@ import type { Timestamp } from '../shared/timestamp.js';
 import { isExcluded, isExcludedDirectory, NO_EXCLUSIONS, type PlanExclusions } from './plan-exclusions.js';
 import { CheckboxWalk, type Step, type Update } from './checkbox-walk.js';
 import type { ChangeProgress } from './progress-records.js';
+import { groupsOf } from '../estimate/plan-changes.js';
 
 /** The plan of one project at a moment: `plan.started`, a checkpoint, or `plan.closing`. */
 export interface PlanPoint {
@@ -99,7 +100,7 @@ export function partFacts(input: PartFactsInput): PartFacts {
 
   const grouped = estimate.parts.filter((part) => part.group !== undefined);
   const split = splitManual({ input, records, lost, total, grouped, boundary });
-  const groups = new Set(grouped.map((part) => part.group as string));
+  const groups = new Set(groupsOf(grouped));
   const walk = new CheckboxWalk(split.pooled, groups, exclusions, boundary, input.startedAt.toMillis());
   for (const step of timeline(points, completionPoints(input, boundary, exclusions))) {
     walk.step(step);
@@ -176,15 +177,23 @@ function splitManual(c: {
     (item.record.part !== undefined || item.record.at === undefined) &&
     (item.recordedAt === undefined || item.recordedAt.toMillis() < boundary);
   // Manual time recorded for a grouped part goes to it; the rest of the fact is sliced by time.
-  const ownManual = (item: ManualItem): boolean =>
-    !early(item) && item.record.part !== undefined && grouped.some((part) => part.id === item.record.part);
-  const direct = (item: ManualItem) => ownManual(item) || early(item);
+  const directKey = (item: ManualItem): string | undefined => {
+    if (early(item)) {
+      return BEFORE;
+    }
+    const part = item.record.part;
+    return part !== undefined && grouped.some((known) => known.id === part) ? part : undefined;
+  };
+  const direct = (item: ManualItem) => directKey(item) !== undefined;
   const pooled = timedSets(c.input.measured, records, c.lost, (item) => !direct(item));
   const directMillis = new Map<string, number>();
   const ownMillis =
     c.total.millis - pooled.agent.total.millis - pooled.user.total.millis - untimed(records, (item) => !direct(item)).millis;
   distributeOwnManual(
-    records.filter(direct).map((item) => ({ key: early(item) ? BEFORE : (item.record.part as string), duration: item.record.duration })),
+    records.flatMap((item) => {
+      const key = directKey(item);
+      return key === undefined ? [] : [{ key, duration: item.record.duration }];
+    }),
     ownMillis,
     directMillis,
   );

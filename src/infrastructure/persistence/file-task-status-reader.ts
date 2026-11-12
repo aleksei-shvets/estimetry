@@ -8,6 +8,8 @@ import { parseTaskSnapshot } from './records.js';
 import { ProjectId } from '../../domain/project/project-id.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
 import { TaskId } from '../../domain/task/task-id.js';
+import { groupsOf } from '../../domain/estimate/plan-changes.js';
+import { snapshotChanges } from '../../domain/task/task-snapshot.js';
 
 /**
  * Status of tasks from their snapshots, without checking the journal: a hook
@@ -54,7 +56,8 @@ export class FileTaskStatusReader implements TaskStatusReader {
       title: snapshot.title,
       status: snapshot.status,
       projects: snapshot.projects.map((project) => ProjectId.parse(project)),
-      ...groupsOf(snapshot.estimate?.parts),
+      ...listed(groupsOf(snapshot.estimate?.parts), (groups) => ({ groups })),
+      ...listed(snapshotChanges(snapshot), (changes) => ({ changes })),
       ...((snapshot.revisions ?? []).some((revision) => revision.spent === 'exclude')
         ? { exclusions: exclusionsOf(snapshot.revisions ?? []) }
         : {}),
@@ -63,7 +66,7 @@ export class FileTaskStatusReader implements TaskStatusReader {
   }
 }
 
-function groupsOf(parts: readonly { readonly group?: string }[] | undefined): { groups?: string[] } {
-  const groups = [...new Set((parts ?? []).flatMap((part) => (part.group === undefined ? [] : [part.group])))];
-  return groups.length === 0 ? {} : { groups };
+/** A list of the summary, left out when empty, as the summary always had it. */
+function listed<T>(list: readonly string[], field: (list: readonly string[]) => T): T | Record<string, never> {
+  return list.length === 0 ? {} : field(list);
 }

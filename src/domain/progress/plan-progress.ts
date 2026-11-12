@@ -1,6 +1,7 @@
 import type { Estimate } from '../estimate/estimate.js';
 import type { EstimatePart } from '../estimate/estimate-part.js';
 import type { PlannedChange, TaskPlan } from './task-plan.js';
+import { groupsOf } from '../estimate/plan-changes.js';
 
 export type PlanMode = 'changes' | 'checkboxes';
 
@@ -23,7 +24,7 @@ export interface PlanProgress {
  * the checkboxes of the plan count. Undefined when there is nothing to count.
  */
 export function planProgress(estimate: Estimate | undefined, plan: TaskPlan): PlanProgress | undefined {
-  const grouped = (estimate?.parts ?? []).filter((part) => part.group !== undefined);
+  const grouped = (estimate?.parts ?? []).flatMap((part) => (part.group === undefined ? [] : [{ part, group: part.group }]));
   if (grouped.length > 0 && estimate) {
     return byChanges(grouped, estimate.total.likely, plan);
   }
@@ -42,16 +43,21 @@ export function planProgress(estimate: Estimate | undefined, plan: TaskPlan): Pl
   };
 }
 
+/** A part of the estimate with the change it is done in. */
+interface GroupedPart {
+  readonly part: EstimatePart;
+  readonly group: string;
+}
+
 function byChanges(
-  parts: readonly EstimatePart[],
+  parts: readonly GroupedPart[],
   estimateHours: number,
   plan: TaskPlan,
 ): PlanProgress {
   const missing = new Set<string>();
   let weighted = 0;
   let groupedHours = 0;
-  for (const part of parts) {
-    const group = part.group as string;
+  for (const { part, group } of parts) {
     const changes = plan.changes.filter((change) => change.change === group);
     groupedHours += part.hours.likely;
     if (changes.length === 0) {
@@ -61,7 +67,7 @@ function byChanges(
     weighted += part.hours.likely * progressOf(changes);
   }
   // A change that is a group of its own is no typo of another group: `auth-v2` before it exists is not `auth-v1`.
-  const groups = new Set(parts.map((part) => part.group as string));
+  const groups = new Set(groupsOf(parts));
   const names = [...new Set(plan.changes.map((change) => change.change))].filter((name) => !groups.has(name));
   const notStarted: string[] = [];
   const possibleTypos: { group: string; similar: string }[] = [];

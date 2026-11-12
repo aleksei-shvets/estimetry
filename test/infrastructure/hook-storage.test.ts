@@ -1,10 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { parse, stringify } from 'yaml';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { SessionBinding } from '../../src/application/ports/session-bindings.js';
 import { plainOf } from '../support/hook-fakes.js';
 import { describe, expect, it } from 'vitest';
+import { Estimate } from '../../src/domain/estimate/estimate.js';
+import { EstimatePart } from '../../src/domain/estimate/estimate-part.js';
+import { EstimateRevision } from '../../src/domain/estimate/estimate-revision.js';
+import { ThreePointEstimate } from '../../src/domain/estimate/three-point-estimate.js';
 import { SessionId } from '../../src/domain/measurement/session-id.js';
 import { Project } from '../../src/domain/project/project.js';
 import { ProjectId } from '../../src/domain/project/project-id.js';
@@ -122,6 +127,63 @@ describe('FileTaskStatusReader', () => {
     expect(reader.summary(TaskId.parse('T-1'))).toMatchObject({ title: 'One', status: 'in-progress', projects: [api], id: TaskId.parse('T-1') });
     expect(reader.inProgress(api).map((t) => t.id.toString())).toEqual(['T-1']);
     expect(reader.summary(TaskId.parse('T-9'))).toBeUndefined();
+  });
+});
+
+describe('the changes of a task from its snapshot', () => {
+  it('are those of the aggregate: the groups of every estimate since the start, also after a revision dropped one', () => {
+    const layout = new StorageLayout(join(tempDir(), 'home'));
+    const tasks = new FileTaskRepository(layout);
+    const meta = (n: number, at = '2026-10-27T10:00:00.000Z') => ({ id: `m${n}`, at: Timestamp.parse(at), author: Author.of('a') });
+    const api = ProjectId.parse('api');
+    const parts = (...groups: string[]) =>
+      Estimate.of({
+        parts: groups.map((group) => EstimatePart.of({ id: group, name: group, group, hours: ThreePointEstimate.of({ optimistic: 1, likely: 1, pessimistic: 1 }) })),
+      });
+    const task = Task.create({ id: tasks.nextId(), title: 'One', type: TaskType.of('feature', DEFAULT_TASK_TYPES), project: api }, meta(1));
+    task.saveEstimate(parts('keep-a', 'drop-b'), undefined, meta(2));
+    task.start(api, meta(3, '2026-10-27T09:00:00.000Z'));
+    const revision = EstimateRevision.of({
+      estimate: parts('keep-a'), reason: 'b dropped', category: 'missed-analysis', spent: 'exclude', at: Timestamp.parse('2026-10-27T09:50:00.000Z'), covers: [],
+    });
+    task.reviseEstimate(revision, meta(4));
+    tasks.save(task);
+    const summary = new FileTaskStatusReader(layout).summary(task.id);
+    // The hook reads the snapshot, the CLI the aggregate: one value.
+    expect(summary?.changes).toEqual(task.changes);
+    expect(summary?.changes).toEqual(['keep-a', 'drop-b']);
+    expect(summary?.groups).toEqual(['keep-a']);
+  });
+
+  it('of a snapshot before schema 4 are the groups of its current and first estimate, until the CLI rebuilds it', () => {
+    const layout = new StorageLayout(join(tempDir(), 'home'));
+    const tasks = new FileTaskRepository(layout);
+    const meta = (n: number) => ({ id: `m${n}`, at: Timestamp.parse('2026-10-27T10:00:00.000Z'), author: Author.of('a') });
+    const api = ProjectId.parse('api');
+    const parts = (...groups: string[]) =>
+      Estimate.of({
+        parts: groups.map((group) => EstimatePart.of({ id: group, name: group, group, hours: ThreePointEstimate.of({ optimistic: 1, likely: 1, pessimistic: 1 }) })),
+      });
+    const revise = (task: Task, n: number, ...groups: string[]) =>
+      task.reviseEstimate(
+        EstimateRevision.of({ estimate: parts(...groups), reason: 'r', category: 'missed-analysis', spent: 'include', at: Timestamp.parse('2026-10-27T10:00:00.000Z'), covers: [] }),
+        meta(n),
+      );
+    const task = Task.create({ id: tasks.nextId(), title: 'Old', type: TaskType.of('feature', DEFAULT_TASK_TYPES), project: api }, meta(1));
+    task.saveEstimate(parts('a'), undefined, meta(2));
+    task.start(api, meta(3));
+    revise(task, 4, 'a', 'b');
+    revise(task, 5, 'a', 'c');
+    tasks.save(task);
+    // The snapshot as a binary before schema 4 wrote it: no list of changes.
+    const file = layout.taskSnapshot(task.id.toString());
+    const { changes: _dropped, ...older } = parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    writeFileSync(file, stringify({ ...older, schemaVersion: 3 }));
+    const reader = new FileTaskStatusReader(layout);
+    expect(reader.summary(task.id)?.changes).toEqual(['a', 'c']);
+    // The next CLI command rebuilds the snapshot from the journal: the intermediate revision is back.
+    expect(tasks.find(task.id)?.changes).toEqual(['a', 'b', 'c']);
+    expect(reader.summary(task.id)?.changes).toEqual(['a', 'b', 'c']);
   });
 });
 

@@ -23,14 +23,18 @@ export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
       throw new InvalidValue(`task ${state.id.toString()} is created twice`);
     case 'task.started':
       return { ...s, status: 'in-progress', startedAt: event.data.at === undefined ? ts : Timestamp.parse(event.data.at) };
-    case 'task.estimated':
+    case 'task.estimated': {
+      const estimate = Estimate.fromData(event.data.estimate);
       return {
         ...s,
         status: 'estimated',
         estimated: true,
-        estimate: Estimate.fromData(event.data.estimate),
+        estimate,
+        // Before the start the estimate is still free: a replaced one leaves no changes.
+        changes: estimate.groups,
         ...(event.data.taskType === undefined ? {} : { type: TaskType.restore(event.data.taskType) }),
       };
+    }
     case 'task.manual-time-recorded': {
       const manual = ManualTime.fromData(event.data);
       return {

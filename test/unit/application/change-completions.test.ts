@@ -93,7 +93,8 @@ function summary(id: string, groups: string[] = [], taskProjects = ['api']): Tas
     status: 'in-progress',
     startedAt: Timestamp.parse(START),
     projects: taskProjects.map((project) => ProjectId.parse(project)),
-    ...(groups.length === 0 ? {} : { groups }),
+    // A summary as the reader builds it from the snapshot: no revision here, so the changes are the groups.
+    ...(groups.length === 0 ? {} : { groups, changes: groups }),
   };
 }
 
@@ -243,6 +244,32 @@ describe('change completions', () => {
     archive('/work/api-wt', 'auth', '2026-11-01');
     completions.check(task, NOW, '/work/api');
     expect(completed('T-1').map((c) => c.change)).toEqual(['auth']);
+  });
+
+  it('after a revision dropped a change, the copy is picked by every change of the task, the completion only by the current plan', () => {
+    projects.update(ProjectId.parse('api'), (p) => p.withPath('/work/api-wt'));
+    files.write('/work/api-wt/.estimetry/config.yaml', 'flow: openspec\n');
+    change('/work/api-wt', 'drop-b');
+    const api = ProjectId.parse('api');
+    // The revision dropped drop-b: no longer a group of the estimate, still a change of the task, kept in the worktree.
+    const task: TaskSummary = { ...summary('T-1'), groups: ['keep-a'], changes: ['keep-a', 'drop-b'] };
+    expect(plans.workingCopy(api, { near: '/work/api', changes: ['keep-a'] })).toBe('/work/api');
+    expect(plans.workingCopy(api, { near: '/work/api', changes: task.changes ?? [] })).toBe('/work/api-wt');
+    const asked: (readonly string[] | undefined)[] = [];
+    const archives = plans.archives.bind(plans);
+    plans.archives = (ids, options) => {
+      asked.push(options?.changes);
+      return archives(ids, options);
+    };
+    completions.check(task, NOW, '/work/api');
+    expect(asked).toEqual([['keep-a', 'drop-b']]);
+    archive('/work/api-wt', 'drop-b', '2026-11-01');
+    completions.check(task, NOW, '/work/api');
+    expect(completed('T-1')).toEqual([]);
+    change('/work/api-wt', 'keep-a');
+    archive('/work/api-wt', 'keep-a', '2026-11-02');
+    completions.check(task, NOW, '/work/api');
+    expect(completed('T-1').map((c) => c.change)).toEqual(['keep-a']);
   });
 
   it('a worktree without its own config takes the flow of the other copies of its project', () => {
