@@ -8,10 +8,15 @@ import { tempDir } from '../support/temp-dir.js';
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const version = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
 
-/** A copy of the repository with only what a fresh clone has and no `dist`: the packing builds it. */
+/**
+ * A copy of the repository with what a fresh clone has and no `dist`: the packing builds it.
+ * Every tracked entry of the root is copied, so a file npm always packs (any `README*`) is seen.
+ */
 function cleanCopy(): string {
   const copy = tempDir('pack-src-');
-  for (const entry of ['package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', 'README.md', 'LICENSE', 'CHANGELOG.md', 'src']) {
+  const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter((path) => path !== '');
+  // A tracked file deleted in the working tree is not in a fresh clone of it either.
+  for (const entry of new Set(tracked.map((path) => path.split('/')[0] ?? path).filter((entry) => existsSync(join(ROOT, entry))))) {
     cpSync(join(ROOT, entry), join(copy, entry), { recursive: true });
   }
   symlinkSync(join(ROOT, 'node_modules'), join(copy, 'node_modules'), 'dir');
@@ -31,6 +36,8 @@ describe('the npm package', () => {
     expect(files).toEqual(expect.arrayContaining(['dist/bootstrap/main.js', 'README.md', 'LICENSE', 'CHANGELOG.md', 'package.json']));
     expect(files.filter((path) => !path.startsWith('dist/') && !['README.md', 'LICENSE', 'CHANGELOG.md', 'package.json'].includes(path))).toEqual([]);
     expect(files.filter((path) => path.endsWith('.map') || path.endsWith('.ts'))).toEqual([]);
+    // npm shows the README it finds first: only the English one may be in the package.
+    expect(files.filter((path) => /^readme/i.test(path))).toEqual(['README.md']);
 
     const prefix = tempDir('pack-prefix-');
     execFileSync(npm, ['install', '-g', '--prefer-offline', '--no-audit', '--no-fund', '--prefix', prefix, join(out, packed[0]?.filename ?? '')], {
@@ -57,8 +64,13 @@ describe('the npm package', () => {
     const repo = join(user, 'app');
     mkdirSync(repo);
     execFileSync('git', ['init', '-q'], { cwd: repo, env });
-    const init = run('estimetry', ['init', '--no-interactive', '--json'], repo);
+    const init = run('estimetry', ['init', '--no-interactive', '--json', '--track-commits'], repo);
     expect(init.status, init.stderr).toBe(0);
     expect((JSON.parse(init.stdout) as { tools: string[] }).tools).toContain('claude-code');
+    // The personal commit hook names the node and the entry point of this install, for a commit without PATH.
+    const hook = readFileSync(join(repo, '.git', 'hooks', 'post-commit'), 'utf8');
+    const named = (name: string) => new RegExp(`estimetry_${name}='([^']+)'`).exec(hook)?.[1] ?? '';
+    expect(existsSync(named('node')) && existsSync(named('main'))).toBe(true);
+    expect(named('main').startsWith(prefix)).toBe(true);
   }, 180_000);
 });

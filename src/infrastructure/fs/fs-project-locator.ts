@@ -1,7 +1,7 @@
 import { sep } from 'node:path';
 import type { LocatedProject, ProjectLocator } from '../../application/ports/project-locator.js';
 import { readYaml } from './atomic-yaml.js';
-import { mainWorktree, realPath } from './worktree.js';
+import { mainWorktree, realPath, registeredPath } from './worktree.js';
 import type { StorageLayout } from './storage-layout.js';
 import { ProjectId } from '../../domain/project/project-id.js';
 
@@ -18,8 +18,15 @@ export class FsProjectLocator implements ProjectLocator {
     if (real === undefined) {
       return undefined;
     }
+    const main = mainWorktree(real) ?? real;
     const registered = this.registered();
-    return longestOwner(registered, real) ?? longestOwner(registered, mainWorktree(real) ?? real);
+    const found = longestOwner(registered, real) ?? longestOwner(registered, main);
+    if (found !== undefined) {
+      return found;
+    }
+    // A path registered before paths were made real (a symlink, another case on macOS): only on a miss the disk is asked.
+    const madeReal = registered.map(({ id, path }) => ({ id, path: registeredPath(path) }));
+    return longestOwner(madeReal, real) ?? longestOwner(madeReal, main);
   }
 
   private registered(): { id: string; path: string }[] {
@@ -36,7 +43,9 @@ export class FsProjectLocator implements ProjectLocator {
     return projects.flatMap((p: unknown) => {
       const project = p as { id?: unknown; paths?: unknown };
       return typeof project.id === 'string' && isProjectId(project.id) && Array.isArray(project.paths)
-        ? project.paths.filter((path): path is string => typeof path === 'string').map((path) => ({ id: project.id as string, path }))
+        ? project.paths
+            .filter((path): path is string => typeof path === 'string')
+            .map((path) => ({ id: project.id as string, path }))
         : [];
     });
   }

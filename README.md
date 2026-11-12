@@ -1,6 +1,6 @@
 # estimetry
 
-**English** | [Русский](https://github.com/aleksei-shvets/estimetry/blob/main/README.ru.md)
+**English** | [Русский](https://github.com/aleksei-shvets/estimetry/blob/main/README-ru.md)
 
 Compares work estimates with the actual effort in AI-agent development and reuses that experience in the next estimate.
 
@@ -67,7 +67,7 @@ In a terminal it asks a few questions:
 
 With `--shared-hooks` the hooks go to `.claude/settings.json` and the skills to `.claude/skills/` of the project. A reminder to run `/emt-estimate` before naming a deadline is added to `CLAUDE.md`, between `<!-- estimetry:start -->` and `<!-- estimetry:end -->`. These are files the project commits, so the whole team gets them.
 
-With `--track-commits` a `post-commit` hook is installed into the repository's hooks directory. This respects `core.hooksPath`, worktrees and husky (`.husky/post-commit`). An existing hook keeps its content: estimetry adds its own block between `# >>> estimetry >>>` and `# <<< estimetry <<<`. The hook runs estimetry in the background, so commits never wait for it. Colleagues without estimetry see nothing.
+With `--track-commits` a `post-commit` hook is installed into the repository's hooks directory. This respects `core.hooksPath`, worktrees and husky (`.husky/post-commit`). An existing hook keeps its content: estimetry adds its own block between `# >>> estimetry >>>` and `# <<< estimetry <<<`. The hook runs estimetry in the background, so commits never wait for it. Colleagues without estimetry see nothing. A commit from a program that does not get your shell's `PATH` (an IDE started from the Dock on macOS) is recorded too: a personal hook (in `.git`, or a hooks directory outside the repository) falls back to the Node.js, estimetry and data directory `init` ran with. After switching Node.js versions, run `emt upgrade` so it points to the new ones. A hook the project commits (husky, `core.hooksPath` inside the repository) holds no paths of your machine and needs `estimetry` on `PATH`.
 
 No task data ever goes into the repository. Tasks, estimates and the event journal live in `~/.local/share/estimetry/`, or in `ESTIMETRY_HOME` if set.
 

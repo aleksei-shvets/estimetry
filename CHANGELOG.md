@@ -4,6 +4,12 @@ All notable changes to estimetry. Versions follow [semantic versioning](https://
 
 ## Unreleased
 
+## 0.1.1 — 2026-11-12
+
+- The npm page shows the English README: the Russian one is now `README-ru.md`, which npm does not pack.
+- macOS: a directory spelled in another case than at `init` is the same project, for the CLI and the hooks; paths are compared as the disk keeps them, and paths registered before are matched too.
+- A commit from a program without your shell's `PATH` (an IDE started from the Dock on macOS) is recorded: the personal `post-commit` hook falls back to the Node.js and estimetry `init` ran with. Run `emt upgrade` once to update the hook.
+
 ## 0.1.0 — 2026-11-12
 
 The first public version: estimates of AI-agent development work compared with the actual effort, and that experience reused in the next estimate. Claude Code is the only supported AI tool.
@@ -16,5 +22,5 @@ The first public version: estimates of AI-agent development work compared with t
 - Estimates from past tasks: `emt similar` and `emt calibrate`, used by `/emt-estimate`.
 - Work in git worktrees: a worktree belongs to the project of its main working copy, and the plan, checkpoints and code volume of a task are read in the working copy that holds its changes, also when the session runs in the main working copy. `emt attach --session` counts the first task of a session from the start of the task.
 - `emt upgrade`: after updating estimetry, sets it up again in every project on this machine with one command, after showing the plan and asking. The session start tells the agent to suggest it when a project was set up by an older version.
-- The README in English and Russian, with a reference of every command and flag ([README.ru.md](https://github.com/aleksei-shvets/estimetry/blob/main/README.ru.md)).
+- The README in English and Russian, with a reference of every command and flag ([README-ru.md](https://github.com/aleksei-shvets/estimetry/blob/main/README-ru.md)).
 - Requires Node.js 22.12 or newer.

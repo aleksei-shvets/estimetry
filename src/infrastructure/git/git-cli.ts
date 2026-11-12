@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
 import type { WorkspaceLocator } from '../../application/ports/workspace-locator.js';
-import { mainWorktree } from '../fs/worktree.js';
+import { mainWorktree, realPath } from '../fs/worktree.js';
 
 /** Talks to the `git` executable directly (no shell), so it also works on Windows. */
 export class GitCli implements WorkspaceLocator {
@@ -10,7 +9,10 @@ export class GitCli implements WorkspaceLocator {
   constructor(private readonly cwd: string) {}
 
   currentRoot(): string {
-    this.root ??= realpathSync(this.run(['rev-parse', '--show-toplevel']) ?? this.cwd);
+    if (this.root === undefined) {
+      const root = this.run(['rev-parse', '--show-toplevel']) ?? this.cwd;
+      this.root = realPath(root) ?? root;
+    }
     return this.root;
   }
 
