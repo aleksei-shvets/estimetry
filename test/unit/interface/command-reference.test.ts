@@ -6,7 +6,7 @@ import { commandReference, referenceBlock, referenceShape, withReference } from 
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 const README = join(ROOT, 'README.md');
-const README_RU = join(ROOT, 'README.ru.md');
+const README_RU = join(ROOT, 'README-ru.md');
 
 function program() {
   const fail = () => {
@@ -36,9 +36,9 @@ describe('the command reference of the README', () => {
     expect(referenceBlock(readme), 'README.md: run `npm run docs:commands`').toBe(reference);
   });
 
-  it('in README.ru.md has the same stages, commands and flags in the same order', () => {
+  it('in README-ru.md has the same stages, commands and flags in the same order', () => {
     const block = referenceBlock(readFileSync(README_RU, 'utf8'));
-    expect(block, 'README.ru.md has no command reference markers').toBeDefined();
+    expect(block, 'README-ru.md has no command reference markers').toBeDefined();
     expect(referenceShape(block ?? '')).toEqual(referenceShape(reference));
   });
 

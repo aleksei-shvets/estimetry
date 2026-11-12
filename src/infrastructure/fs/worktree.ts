@@ -33,11 +33,48 @@ export function mainWorktree(directory: string): string | undefined {
   }
 }
 
-/** The real path, or undefined when it does not exist. */
+/**
+ * The real path, or undefined when it does not exist: symlinks resolved and,
+ * on a file system that ignores case (macOS), the case the disk keeps — so a
+ * directory spelled otherwise is the same path in the registry. The one place
+ * paths are made real. Where the native call fails for another reason (a
+ * virtual file system, Linux without `/proc`) the JS one resolves symlinks.
+ */
 export function realPath(path: string): string | undefined {
   try {
-    return realpathSync(path);
-  } catch {
-    return undefined;
+    return realpathSync.native(path);
+  } catch (error) {
+    if (isMissing(error)) {
+      return undefined;
+    }
+    try {
+      return realpathSync(path);
+    } catch {
+      return undefined;
+    }
   }
+}
+
+/** The real path of a file that may not exist yet: its nearest existing directory made real, the rest as written. */
+export function realPathAhead(path: string): string {
+  const real = realPath(path);
+  if (real !== undefined) {
+    return real;
+  }
+  const parent = dirname(path);
+  return parent === path ? path : join(realPathAhead(parent), basename(path));
+}
+
+/**
+ * A registered path as it is compared: the real path while it exists here, else
+ * as written. A path registered before paths were made real (through a symlink,
+ * another case on macOS) still matches; one of another machine stays as it is.
+ */
+export function registeredPath(path: string): string {
+  return realPath(path) ?? path;
+}
+
+function isMissing(error: unknown): boolean {
+  const code = (error as { code?: unknown } | undefined)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
 }

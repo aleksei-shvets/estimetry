@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join, normalize, relative, sep } from 'node:path';
+import { isAbsolute, join, normalize, relative, sep } from 'node:path';
 import type { InstallPlan } from '../../application/ports/file-change.js';
 import type { CommitHookInstaller } from '../../application/ports/commit-hook-installer.js';
+import { realPathAhead } from '../fs/worktree.js';
 
 export const BLOCK_START = '# >>> estimetry >>>';
 export const BLOCK_END = '# <<< estimetry <<<';
@@ -13,7 +14,28 @@ export const BLOCK_END = '# <<< estimetry <<<';
  */
 export const BLOCK_COMMAND =
   'if command -v estimetry >/dev/null 2>&1; then estimetry_sha=$(git rev-parse HEAD 2>/dev/null); printf \'%s\' "$estimetry_sha" | estimetry hook git post-commit >/dev/null 2>&1 & fi';
-const BLOCK = [BLOCK_START, BLOCK_COMMAND, BLOCK_END];
+
+/**
+ * The personal hook also runs when the commit comes from a program without the
+ * user's PATH (an IDE started from the Dock on macOS): `estimetry` from PATH
+ * first, so a terminal always gets the current one, else node and the entry
+ * point `init` ran with. A hook the project commits never holds them: they are paths of this machine.
+ */
+const FALLBACK_COMMAND =
+  'estimetry_sha=$(git rev-parse HEAD 2>/dev/null); ' +
+  'if command -v estimetry >/dev/null 2>&1; then printf \'%s\' "$estimetry_sha" | estimetry hook git post-commit >/dev/null 2>&1 & ' +
+  'elif [ -x "$estimetry_node" ] && [ -f "$estimetry_main" ]; then ' +
+  'printf \'%s\' "$estimetry_sha" | ESTIMETRY_HOME="$estimetry_home" "$estimetry_node" "$estimetry_main" hook git post-commit >/dev/null 2>&1 & fi';
+
+/**
+ * How this installation of estimetry is started: node, the entry point and its
+ * data directory (a program without the shell profile has no ESTIMETRY_HOME).
+ */
+export interface EstimetryRunner {
+  readonly node: string;
+  readonly main: string;
+  readonly home: string;
+}
 const HUSKY_LOADER = '. "$(dirname "$0")/_/husky.sh"';
 const SHELLS = /^#!.*\b(sh|bash|zsh|dash|ksh)\b/;
 const MANAGERS: readonly (readonly [RegExp, string])[] = [
@@ -22,11 +44,16 @@ const MANAGERS: readonly (readonly [RegExp, string])[] = [
   [/husky/i, 'husky'],
 ];
 
-/** `shown` is the path as the user sees it in messages: relative inside the project. */
-type Layout = { readonly path: string; readonly shown: string; readonly husky?: 5 | 9 };
+/**
+ * `shown` is the path as the user sees it in messages: relative inside the project.
+ * `personal` — the hook is not a file the project commits: inside `.git` or outside the working copy.
+ */
+type Layout = { readonly path: string; readonly shown: string; readonly personal: boolean; readonly husky?: 5 | 9 };
 
 /** `post-commit` next to the hooks the repository already has: `core.hooksPath`, worktrees and husky. */
 export class GitCommitHookInstaller implements CommitHookInstaller {
+  constructor(private readonly runner?: EstimetryRunner) {}
+
   installed(projectRoot: string): boolean {
     const layout = this.layout(projectRoot);
     return layout !== undefined && (read(layout.path) ?? '').includes(BLOCK_START);
@@ -42,6 +69,7 @@ export class GitCommitHookInstaller implements CommitHookInstaller {
   }
 
   private install(layout: Layout, current: string | undefined): InstallPlan {
+    const block = this.block(layout);
     const warnings: string[] = [];
     if (layout.husky !== undefined) {
       warnings.push(`${layout.shown} is part of the repository: the hook runs for colleagues who have estimetry installed`);
@@ -49,7 +77,7 @@ export class GitCommitHookInstaller implements CommitHookInstaller {
     if (current === undefined) {
       const header = layout.husky === 9 ? [] : layout.husky === 5 ? ['#!/bin/sh', HUSKY_LOADER, ''] : ['#!/bin/sh'];
       return {
-        changes: [{ path: layout.path, content: `${[...header, ...BLOCK].join('\n')}\n`, executable: true }],
+        changes: [{ path: layout.path, content: `${[...header, ...block].join('\n')}\n`, executable: true }],
         skipped: [],
         warnings,
       };
@@ -68,7 +96,17 @@ export class GitCommitHookInstaller implements CommitHookInstaller {
         `${layout.shown} is managed by ${manager}, which may drop the estimetry block when it reinstalls its hooks; run init again then`,
       );
     }
-    return { changes: [{ path: layout.path, content: withBlock(lines), executable: true }], skipped: [], warnings };
+    return { changes: [{ path: layout.path, content: withBlock(lines, block), executable: true }], skipped: [], warnings };
+  }
+
+  /** The lines between the markers: with the paths of this installation only in a personal hook. */
+  private block(layout: Layout): string[] {
+    if (!layout.personal || this.runner === undefined) {
+      return [BLOCK_START, BLOCK_COMMAND, BLOCK_END];
+    }
+    const { node, main, home } = this.runner;
+    const paths = `estimetry_node=${quoted(node)}; estimetry_main=${quoted(main)}; estimetry_home=${quoted(home)}`;
+    return [BLOCK_START, paths, FALLBACK_COMMAND, BLOCK_END];
   }
 
   private uninstall(layout: Layout, current: string | undefined): InstallPlan {
@@ -109,19 +147,27 @@ export class GitCommitHookInstaller implements CommitHookInstaller {
 const EMPTY: InstallPlan = { changes: [], skipped: [], warnings: [] };
 
 function located(projectRoot: string, path: string, husky?: 5 | 9): Layout {
-  const inside = relative(projectRoot, path);
-  const shown = inside !== '' && !inside.startsWith('..') ? inside : path;
-  return husky === undefined ? { path, shown } : { path, shown, husky };
+  // Real paths on both sides: an absolute core.hooksPath written through a symlink is still inside the repository.
+  const inside = relative(realPathAhead(projectRoot), realPathAhead(path));
+  const outside = inside === '' || inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside);
+  const shown = outside ? path : inside;
+  const personal = husky === undefined && (outside || inside.split(sep)[0] === '.git');
+  return husky === undefined ? { path, shown, personal } : { path, shown, personal, husky };
+}
+
+/** A path for a POSIX shell in single quotes: spaces and quotes in it stay one word. */
+function quoted(path: string): string {
+  return `'${path.replaceAll("'", `'\\''`)}'`;
 }
 
 /** The block right after the shebang (and the husky loader), so an `exit` at the end cannot skip it. */
-function withBlock(lines: readonly string[]): string {
+function withBlock(lines: readonly string[], block: readonly string[]): string {
   const rest = withoutBlock(lines);
   let at = rest[0]?.startsWith('#!') ? 1 : 0;
   if (rest[at]?.includes('husky.sh')) {
     at += 1;
   }
-  return [...rest.slice(0, at), ...BLOCK, ...rest.slice(at)].join('\n');
+  return [...rest.slice(0, at), ...block, ...rest.slice(at)].join('\n');
 }
 
 function withoutBlock(lines: readonly string[]): string[] {

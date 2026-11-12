@@ -1,6 +1,6 @@
 {
   "name": "estimetry",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Compares work estimates with actual effort in AI-agent development and reuses that experience in the next estimate",
   "keywords": [
     "estimation",

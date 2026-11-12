@@ -19,6 +19,7 @@ export class ProjectNotFound extends DomainError {
 }
 
 export interface ProjectRepository {
+  /** `path` is a real path, as `WorkspaceLocator.currentRoot` gives it. */
   findByPath(path: string): Project | undefined;
   ids(): ReadonlySet<string>;
   /**

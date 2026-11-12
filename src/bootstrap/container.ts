@@ -1,11 +1,14 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { homedir, userInfo } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import type { Estimetry } from '../application/estimetry.js';
 import type { HookCall } from '../application/hooks/hook-call.js';
 import type { SharingPreference } from '../application/ports/sharing-preference.js';
 import type { InstallDependencies } from '../application/project/install-dependencies.js';
 import type { ErrorReporter } from '../application/ports/error-reporter.js';
 import { StorageLayout } from '../infrastructure/fs/storage-layout.js';
+import type { EstimetryRunner } from '../infrastructure/git/git-commit-hook-installer.js';
 import { FileErrorReporter } from '../infrastructure/system/file-error-reporter.js';
 
 export interface Environment {
@@ -35,6 +38,23 @@ export interface ContainerOptions {
 import { packageVersion } from './package-version.js';
 
 export { packageVersion };
+
+/**
+ * How this installation is started, for a commit hook run without the user's
+ * PATH: the entry point beside this file, the node of its install prefix (a
+ * stable link such as Homebrew's `/opt/homebrew/bin/node`, which survives an
+ * upgrade of Node.js) or else the running one, and the data directory. None
+ * from the cache of `npx`, which is cleared.
+ */
+function estimetryRunner(layout: StorageLayout): EstimetryRunner | undefined {
+  const main = fileURLToPath(new URL('./main.js', import.meta.url));
+  if (main.includes(`${sep}_npx${sep}`)) {
+    return undefined;
+  }
+  // <prefix>/lib/node_modules/estimetry/dist/bootstrap/main.js → <prefix>/bin/node
+  const prefixed = join(dirname(main), '..', '..', '..', '..', '..', 'bin', 'node');
+  return { node: existsSync(prefixed) ? prefixed : process.execPath, main, home: layout.root };
+}
 
 /** Claude Code keeps personal skills in `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
 function claudeConfigDir(environment: Environment): string {
@@ -67,7 +87,11 @@ async function toolRegistry(environment: Environment) {
   return new ToolAdapterRegistry().register(new ClaudeCodeAdapter(claudeConfigDir(environment)));
 }
 
-async function installDependencies(environment: Environment, sharing: SharingPreference): Promise<InstallDependencies> {
+async function installDependencies(
+  environment: Environment,
+  sharing: SharingPreference,
+  layout: StorageLayout,
+): Promise<InstallDependencies> {
   const [
     tools,
     { FlowRegistry },
@@ -112,7 +136,10 @@ async function installDependencies(environment: Environment, sharing: SharingPre
         new StackDetectorRegistry(),
       ),
     },
-    git: { commitHook: new GitCommitHookInstaller(), excludes: new GitExcludesFile(environment.env, environment.homeDir) },
+    git: {
+      commitHook: new GitCommitHookInstaller(estimetryRunner(layout)),
+      excludes: new GitExcludesFile(environment.env, environment.homeDir),
+    },
     sharing,
     commands: new PathCommandLocator(environment.env),
     version: packageVersion(),
@@ -156,7 +183,7 @@ async function buildApp(layout: StorageLayout, environment: Environment, errors:
   const config = new YamlConfigStore(layout, () => git.userEmail() ?? userInfo().username);
   const projects = new FileProjectRepository(layout);
   const projectConfig = new YamlProjectConfigFile();
-  const install = await installDependencies(environment, config);
+  const install = await installDependencies(environment, config, layout);
   return createEstimetry({
     tasks: new FileTaskRepository(layout),
     projects,
