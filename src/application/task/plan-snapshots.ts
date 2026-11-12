@@ -8,6 +8,7 @@ import type { Task } from '../../domain/task/task.js';
 import type { GitHead } from '../ports/git-snapshot.js';
 import type { ProjectPlanReading, ProjectPlans } from '../ports/project-plans.js';
 import { nearOf, type WorkingCopy } from '../shared/working-copy.js';
+import { changesOf } from './task-changes.js';
 
 export interface ClosingPlan {
   readonly projects: readonly ProjectPlanSnapshot[];
@@ -45,7 +46,7 @@ export class PlanSnapshots {
             task.planExclusions,
           );
     const progress = plan === undefined || available.length === 0 ? undefined : planProgress(task.estimate, plan);
-    const groups = [...new Set((task.estimate?.parts ?? []).flatMap((part) => (part.group === undefined ? [] : [part.group])))];
+    const groups = task.estimate?.groups ?? [];
     const completed = groups.filter((group) => {
       const changes = plan?.changes.filter((change) => change.change === group) ?? [];
       return changes.length > 0 && changes.every((change) => change.archived);
@@ -66,6 +67,7 @@ export class PlanSnapshots {
 
   private read(task: Task, startedAt: Timestamp, where: WorkingCopy): ProjectPlanReading[] {
     return this.plans.plans(task.projects, {
+      changes: changesOf(task),
       ...nearOf(where),
       archivedSince: CalendarDate.of(startedAt).minusDays(1),
     });

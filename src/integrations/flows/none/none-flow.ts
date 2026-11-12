@@ -7,4 +7,5 @@ export const noneFlow: Flow = {
   detect: () => false,
   plan: () => [],
   archived: () => [],
+  touched: () => undefined,
 };

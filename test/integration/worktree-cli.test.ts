@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -75,4 +75,67 @@ describe('tasks in git worktrees, sessions in the main working copy', () => {
     expect(t1[0]?.ts).toBe(started.startedAt);
     expect(events('T-2').filter((e) => e.data['session'] === 's1')).toEqual([]);
   });
+
+  it('the plan, the completion of its change and the code volume of a task are read in its worktree, asked from the main copy', async () => {
+    git(main, 'config', 'user.email', 'dev@example.com');
+    git(main, 'config', 'user.name', 'Dev');
+    expect((await emt(main, 'init', '--no-interactive', '--flow', 'openspec')).code).toBe(0);
+    const changeDir = join(worktrees.a, 'openspec', 'changes', 'feature-a');
+    mkdirSync(join(worktrees.a, 'openspec', 'changes', 'archive'), { recursive: true });
+    mkdirSync(changeDir, { recursive: true });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] one\n- [ ] two\n');
+    writeFileSync(join(worktrees.a, 'plan.yaml'), 'schemaVersion: 1\ntype: feature\nparts:\n  - { name: a, group: feature-a, hours: { optimistic: 1, likely: 2, pessimistic: 3 } }\n');
+    await emt(worktrees.a, 'task', 'new', 'Feature A');
+    expect((await emt(worktrees.a, 'estimate', 'save', 'plan.yaml')).code).toBe(0);
+    expect((await emt(worktrees.a, 'start', '--at', ago(60))).code).toBe(0);
+
+    expect(JSON.parse((await emt(main, 'status', 'T-1', '--json')).stdout)).toMatchObject({ plan: { done: 50 } });
+
+    hook('s1', 'SessionStart', { source: 'startup' });
+    writeFileSync(join(changeDir, 'tasks.md'), '- [x] one\n- [x] two\n');
+    renameSync(changeDir, join(worktrees.a, 'openspec', 'changes', 'archive', `${new Date().toISOString().slice(0, 10)}-feature-a`));
+    hook('s1', 'PostToolUse', { tool_name: 'Bash', tool_use_id: 'tu-1', duration_ms: 5 });
+    const records = events('T-1');
+    expect(records.some((e) => e.type === 'change.completed' && e.data['change'] === 'feature-a')).toBe(true);
+
+    writeFileSync(join(worktrees.a, 'feature.ts'), 'export const a = 1;\nexport const b = 2;\n');
+    git(worktrees.a, 'add', 'feature.ts');
+    git(worktrees.a, 'commit', '-q', '-m', 'feature');
+    expect((await emt(main, 'close', '--yes')).code).toBe(0);
+    const measured = events('T-1').find((e) => e.type === 'code.measured') as { data: { projects: { source: string; files: { path: string }[] }[] } } | undefined;
+    expect(measured?.data.projects[0]?.source).toBe('snapshots');
+    expect(measured?.data.projects[0]?.files.map((f) => f.path)).toContain('feature.ts');
+  });
+
+  it('a change proposed on main before the worktree was made is read where it moves on', async () => {
+    git(main, 'config', 'user.email', 'dev@example.com');
+    git(main, 'config', 'user.name', 'Dev');
+    expect((await emt(main, 'init', '--no-interactive', '--flow', 'openspec')).code).toBe(0);
+    const proposed = join(main, 'openspec', 'changes', 'feature-c');
+    mkdirSync(join(main, 'openspec', 'changes', 'archive'), { recursive: true });
+    mkdirSync(proposed, { recursive: true });
+    writeFileSync(join(proposed, 'tasks.md'), '- [ ] one\n- [ ] two\n');
+    writeFileSync(join(main, 'openspec', 'changes', 'archive', '.keep'), '');
+    git(main, 'add', 'openspec');
+    git(main, 'commit', '-q', '-m', 'propose feature-c');
+    const worktree = join(cli.repo('wt3'), 'core-c');
+    git(main, 'worktree', 'add', '-q', worktree);
+    writeFileSync(join(worktree, 'plan.yaml'), 'schemaVersion: 1\ntype: feature\nparts:\n  - { name: c, group: feature-c, hours: { optimistic: 1, likely: 2, pessimistic: 3 } }\n');
+    await emt(worktree, 'task', 'new', 'Feature C');
+    await emt(worktree, 'estimate', 'save', 'plan.yaml');
+    expect((await emt(worktree, 'start', '--at', ago(60))).code).toBe(0);
+    expect(JSON.parse((await emt(main, 'status', 'T-1', '--json')).stdout)).toMatchObject({ plan: { done: 0 } });
+
+    const inWorktree = join(worktree, 'openspec', 'changes', 'feature-c');
+    writeFileSync(join(inWorktree, 'tasks.md'), '- [x] one\n- [ ] two\n');
+    expect(JSON.parse((await emt(main, 'status', 'T-1', '--json')).stdout)).toMatchObject({ plan: { done: 50 } });
+
+    hook('s1', 'SessionStart', { source: 'startup' });
+    writeFileSync(join(inWorktree, 'tasks.md'), '- [x] one\n- [x] two\n');
+    renameSync(inWorktree, join(worktree, 'openspec', 'changes', 'archive', `${new Date().toISOString().slice(0, 10)}-feature-c`));
+    hook('s1', 'PostToolUse', { tool_name: 'Bash', tool_use_id: 'tu-1', duration_ms: 5 });
+    expect(events('T-1').some((e) => e.type === 'change.completed' && e.data['change'] === 'feature-c')).toBe(true);
+    expect(JSON.parse((await emt(main, 'status', 'T-1', '--json')).stdout)).toMatchObject({ plan: { done: 100 } });
+  });
 });
+

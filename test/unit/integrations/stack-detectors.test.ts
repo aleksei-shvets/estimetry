@@ -68,6 +68,22 @@ describe('flows', () => {
     expect(noneFlow.detect('/p', files)).toBe(false);
   });
 
+  it('OpenSpec tells when a copy last touched changes of a task, active or archived; none never has them', () => {
+    const files = new InMemoryProjectFiles({
+      '/p/openspec/changes/auth/tasks.md': '- [ ] a\n',
+      '/p/openspec/changes/archive/2026-11-01-billing/tasks.md': '- [x] a\n',
+      '/p/openspec/changes/archive/2026-11-02-search-v2/tasks.md': '- [x] a\n',
+    });
+    files.changed.set('/p/openspec/changes/auth/tasks.md', 100);
+    files.changed.set('/p/openspec/changes/archive/2026-11-01-billing', 200);
+    expect(openSpecFlow.touched('/p', files, ['auth'])).toEqual({ at: 100, state: 'active auth\n- [ ] a\n' });
+    expect(openSpecFlow.touched('/p', files, ['auth', 'billing'])).toEqual({ at: 200, state: 'active auth\n- [ ] a\n\narchived 2026-11-01-billing' });
+    expect(openSpecFlow.touched('/p', files, ['search'])).toBeUndefined();
+    expect(openSpecFlow.touched('/q', files, ['auth'])).toBeUndefined();
+    expect(openSpecFlow.touched('/p', files, ['archive', '.', '..', '../changes/auth'])).toBeUndefined();
+    expect(noneFlow.touched('/p', files, ['auth'])).toBeUndefined();
+  });
+
   it('OpenSpec reminds to run openspec init when it is chosen for a project without it', () => {
     const files = new InMemoryProjectFiles({ '/p/openspec/project.md': '' });
     expect(openSpecFlow.setupHint?.('/p', files)).toBeUndefined();

@@ -49,7 +49,7 @@ export class ChangeCompletions {
       return;
     }
     const readings = this.archives
-      .read(task.projects, near === undefined ? {} : { near })
+      .read(task.projects, near === undefined ? {} : { near }, task.groups)
       .filter((reading) => reading.archived !== undefined);
     if (readings.length === 0) {
       return;

@@ -18,4 +18,16 @@ export interface Flow {
   plan(projectRoot: string, files: ProjectFiles, options?: { readonly archivedSince?: CalendarDate }): readonly ChangeProgress[];
   /** Archived changes from one listing of the archive, without reading their tasks; empty without an archive. */
   archived(projectRoot: string, files: ProjectFiles): readonly ArchivedChange[];
+  /**
+   * The changes as this working copy has them: when it last touched any of
+   * them (ms) and their state, equal in copies where they are the same. Undefined
+   * when the copy has none of them. Cheap: only the `tasks.md` of these changes is read.
+   */
+  touched(projectRoot: string, files: ProjectFiles, changes: readonly string[]): ChangesTouch | undefined;
+}
+
+/** The changes of a task in one working copy: the last touch and a state to compare copies by. */
+export interface ChangesTouch {
+  readonly at: number;
+  readonly state: string;
 }
