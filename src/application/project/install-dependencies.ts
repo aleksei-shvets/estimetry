@@ -1,3 +1,4 @@
+import type { Installation } from '../ports/estimetry-runner.js';
 import type { Flows, StackDetectors, ToolAdapters } from '../contracts/registries.js';
 import type { CommandLocator } from '../ports/command-locator.js';
 import type { CommitHookInstaller } from '../ports/commit-hook-installer.js';
@@ -25,6 +26,6 @@ export interface InstallDependencies {
   readonly git: InstallGit;
   readonly sharing: SharingPreference;
   readonly commands: CommandLocator;
-  /** Version of estimetry, stamped into generated files. */
-  readonly version: string;
+  /** This installation of estimetry: its version and how hooks start it. */
+  readonly installation: Installation;
 }

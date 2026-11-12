@@ -4,6 +4,10 @@ All notable changes to estimetry. Versions follow [semantic versioning](https://
 
 ## Unreleased
 
+## 0.1.2 — 2026-11-12
+
+- The hooks `init` writes run the installation of estimetry that ran it, by the paths of its Node.js and entry point, and fall back to `estimetry` on `PATH`. A version manager (asdf, nvm) that picks another Node.js for a project, or one without estimetry, no longer stops the Claude Code hooks or the `post-commit` hook. Settings and hooks the project commits keep the plain `estimetry hook …`. Run `emt upgrade` once to rewrite the hooks.
+
 ## 0.1.1 — 2026-11-12
 
 - The npm page shows the English README: the Russian one is now `README-ru.md`, which npm does not pack.

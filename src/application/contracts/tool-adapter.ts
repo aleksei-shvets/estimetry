@@ -1,3 +1,4 @@
+import type { EstimetryRunner } from '../ports/estimetry-runner.js';
 import type { ProjectFiles } from '../ports/project-files.js';
 import type { InstallPlan } from '../ports/file-change.js';
 
@@ -10,6 +11,8 @@ export interface InstallContext {
   readonly force: boolean;
   /** Version of estimetry, stamped into generated files. */
   readonly version: string;
+  /** How hooks start this installation; omitted — `estimetry` from PATH. */
+  readonly runner?: EstimetryRunner;
 }
 
 /** What is installed now; `init` takes its defaults from here, not from saved choices. */

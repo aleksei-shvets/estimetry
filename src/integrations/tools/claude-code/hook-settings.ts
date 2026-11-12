@@ -1,8 +1,20 @@
+import { isEstimetryCommand } from '../../../application/contracts/estimetry-command.js';
 import { InstallBlocked } from '../../../application/contracts/install-blocked.js';
 
-/** Our hooks are recognised by this prefix; a hook the user rewrote is theirs. */
-export const HOOK_PREFIX = 'estimetry hook claude-code';
+/**
+ * Our hooks are recognised by this prefix, or by the command of this installation
+ * (`estimetryCommand`) that falls back to it; a hook the user rewrote is theirs.
+ */
+const HOOK_ARGS = 'hook claude-code';
+export const HOOK_PREFIX = `estimetry ${HOOK_ARGS}`;
 export const HOOK_TIMEOUT_SECONDS = 10;
+
+/** The hooks to install: one per event, the synchronous ones without `async`, each with its command. */
+export interface HookSet {
+  readonly events: readonly string[];
+  readonly synchronous: readonly string[];
+  readonly command: (event: string) => string;
+}
 
 type Json = Record<string, unknown>;
 
@@ -13,12 +25,8 @@ export type SettingsText = string | undefined;
  * Adds one hook per event and drops our earlier ones; every other key, hook and
  * their order stay. `displayPath` names the file in the error a broken one gives.
  */
-export function withHooks(
-  text: string | undefined,
-  events: readonly string[],
-  displayPath: string,
-  synchronous: readonly string[] = events,
-): string {
+export function withHooks(text: string | undefined, set: HookSet, displayPath: string): string {
+  const { events, synchronous } = set;
   const settings = parse(text, displayPath) ?? {};
   const hooks = withoutOurHooks(hooksOf(settings, displayPath));
   for (const event of events) {
@@ -26,7 +34,7 @@ export function withHooks(
     // The agent does not wait for an async hook: only hooks whose context it needs now, or the session end, are synchronous.
     const handler = {
       type: 'command',
-      command: `${HOOK_PREFIX} ${event}`,
+      command: set.command(event),
       timeout: HOOK_TIMEOUT_SECONDS,
       ...(synchronous.includes(event) ? {} : { async: true }),
     };
@@ -105,8 +113,12 @@ function isOurs(handler: unknown): boolean {
     isObject(handler) &&
     handler['type'] === 'command' &&
     typeof handler['command'] === 'string' &&
-    (handler['command'] === HOOK_PREFIX || handler['command'].startsWith(`${HOOK_PREFIX} `))
+    isOurCommand(handler['command'])
   );
+}
+
+function isOurCommand(command: string): boolean {
+  return isEstimetryCommand(command, HOOK_ARGS);
 }
 
 function hooksOf(settings: Json, displayPath: string): Json {

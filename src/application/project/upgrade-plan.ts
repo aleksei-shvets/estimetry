@@ -79,7 +79,7 @@ export class UpgradePlanner {
         copies.push({ ...result, files, warnings });
       }
     }
-    return { version: this.deps.version, copies, skipped };
+    return { version: this.deps.installation.version, copies, skipped };
   }
 
   private copy(project: Project, root: string): Planned | SkippedCopy {

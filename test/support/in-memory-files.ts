@@ -1,3 +1,4 @@
+import type { EstimetryRunner } from '../../src/application/ports/estimetry-runner.js';
 import type { InstallVersions } from '../../src/application/ports/install-versions.js';
 import { posix } from 'node:path';
 import { stringify, parse } from 'yaml';
@@ -235,7 +236,9 @@ export class ListRegistry<T extends { readonly id: string; readonly aliases?: re
 }
 
 /** Overrides of the fake dependencies of `init`, flat: tests replace a port without rebuilding its group. */
-export type FakeInstallOverrides = Partial<Pick<InstallDependencies, 'files' | 'sharing' | 'commands' | 'version'> & InstallRegistries & InstallGit>;
+export type FakeInstallOverrides = Partial<
+  Pick<InstallDependencies, 'files' | 'sharing' | 'commands'> & InstallRegistries & InstallGit & { version: string; runner: EstimetryRunner }
+>;
 
 export function fakeInstallDependencies(files: InMemoryProjectFiles, overrides: FakeInstallOverrides = {}): InstallDependencies {
   return {
@@ -265,7 +268,7 @@ export function fakeInstallDependencies(files: InMemoryProjectFiles, overrides: 
     git: { commitHook: overrides.commitHook ?? new FakeCommitHookInstaller(), excludes: overrides.excludes ?? new FakeGitExcludes() },
     sharing: overrides.sharing ?? new InMemorySharingPreference(),
     commands: overrides.commands ?? new FakeCommandLocator(),
-    version: overrides.version ?? '1.2.3',
+    installation: { version: overrides.version ?? '1.2.3', ...(overrides.runner === undefined ? {} : { runner: overrides.runner }) },
   };
 }
 

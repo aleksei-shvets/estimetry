@@ -18,7 +18,7 @@ npm install -g estimetry
 emt --version
 ```
 
-Install it globally: the hooks of Claude Code call `estimetry` from `PATH`.
+Install it globally. The hooks `init` writes run this installation by its paths, so neither a version manager (asdf, nvm) that picks another Node.js for a project nor a program without your shell's `PATH` stops them.
 
 To update later: `npm install -g estimetry@latest`, then `emt upgrade` once (see [After upgrading estimetry](#after-upgrading-estimetry)).
 
@@ -61,13 +61,13 @@ In a terminal it asks a few questions:
 
 | What | Where | Who gets it |
 |---|---|---|
-| Hooks for 12 Claude Code events, each running `estimetry hook claude-code <event>` | `.claude/settings.local.json` | you |
+| Hooks for 12 Claude Code events, each running this installation (`<node> <estimetry> hook claude-code <event>`, else `estimetry hook claude-code <event>` from `PATH`) | `.claude/settings.local.json` | you |
 | Skills `estimetry`, `emt-estimate`, `emt-start`, `emt-extra`, `emt-parallel`, `emt-manual`, `emt-close`, `emt-retro` (also the `/emt-…` commands) | `~/.claude/skills/` (or `$CLAUDE_CONFIG_DIR/skills/`) | you, in every project |
 | Project id and development process | `.estimetry/config.yaml` | the team; commit it so clones of the repository are one project |
 
 With `--shared-hooks` the hooks go to `.claude/settings.json` and the skills to `.claude/skills/` of the project. A reminder to run `/emt-estimate` before naming a deadline is added to `CLAUDE.md`, between `<!-- estimetry:start -->` and `<!-- estimetry:end -->`. These are files the project commits, so the whole team gets them.
 
-With `--track-commits` a `post-commit` hook is installed into the repository's hooks directory. This respects `core.hooksPath`, worktrees and husky (`.husky/post-commit`). An existing hook keeps its content: estimetry adds its own block between `# >>> estimetry >>>` and `# <<< estimetry <<<`. The hook runs estimetry in the background, so commits never wait for it. Colleagues without estimetry see nothing. A commit from a program that does not get your shell's `PATH` (an IDE started from the Dock on macOS) is recorded too: a personal hook (in `.git`, or a hooks directory outside the repository) falls back to the Node.js, estimetry and data directory `init` ran with. After switching Node.js versions, run `emt upgrade` so it points to the new ones. A hook the project commits (husky, `core.hooksPath` inside the repository) holds no paths of your machine and needs `estimetry` on `PATH`.
+With `--track-commits` a `post-commit` hook is installed into the repository's hooks directory. This respects `core.hooksPath`, worktrees and husky (`.husky/post-commit`). An existing hook keeps its content: estimetry adds its own block between `# >>> estimetry >>>` and `# <<< estimetry <<<`. The hook runs estimetry in the background, so commits never wait for it. Colleagues without estimetry see nothing. A personal hook (in `.git`, or a hooks directory outside the repository) runs this installation by its paths, like the Claude Code hooks, so a commit from an IDE started from the Dock is recorded too. A hook the project commits (husky, `core.hooksPath` inside the repository) holds no paths of your machine and needs `estimetry` on `PATH`.
 
 No task data ever goes into the repository. Tasks, estimates and the event journal live in `~/.local/share/estimetry/`, or in `ESTIMETRY_HOME` if set.
 
@@ -89,9 +89,9 @@ A repeated run keeps what is installed: once the git hook or the shared install 
 ### Good to know
 
 - **Your edits to generated skills are kept.** Every generated skill carries `metadata.generatedBy` and a hash of its content. If you edit one, init keeps your version and reports it as `skipped`; `--force` overwrites it. A file of the same name that estimetry did not create is never touched.
-- **A rewritten hook is yours.** estimetry recognises its hooks by the command prefix `estimetry hook claude-code`. If you change that command, init treats the hook as yours and adds its own next to it.
+- **A rewritten hook is yours.** estimetry recognises its hooks by the command it writes: the paths of the installation that fall back to `estimetry hook claude-code`, or that prefix alone. If you change that command, init treats the hook as yours and adds its own next to it.
 - **`settings.local.json` may not be ignored by git.** Claude Code adds `**/.claude/settings.local.json` to your global git excludes only when it writes that file itself. If init creates it and git does not ignore it, init offers to add the same line. With `--no-interactive` it only warns.
-- **Hooks need `estimetry` on `PATH`.** When run through `npx`, the hooks will not find it, and init warns about that.
+- **Hooks run the installation that ran `init`.** `npm install -g` under the same Node.js replaces it in place. After installing estimetry under another Node.js, or removing the one that ran `init`, run `emt upgrade`: until then the hooks run the old installation or fall back to `estimetry` on `PATH`. Run through `npx`, or on Windows, init writes no paths, and the hooks need `estimetry` on `PATH`. The hooks also keep the data directory of that `init` unless `ESTIMETRY_HOME` is set where they run: an `init` with a temporary `ESTIMETRY_HOME` sends the hooks of the project there too.
 
 ## Estimating a task
 
@@ -307,7 +307,7 @@ The journal keeps when things happened, not what was said or done: no prompt tex
 
 Run `emt upgrade` once, from any directory. It sets estimetry up again in every working copy of every registered project on this machine (worktrees included), each with the choices it already has: tools, flow, a personal or shared install, the commit hook. It shows what will change and asks first; without a terminal it needs `--yes`. A copy where estimetry was never set up is skipped, and so is one that is not on this machine. With a shared install the plan warns that the files it changes are committed by the project. To update a single project instead, run `emt init` inside it.
 
-Until then the hooks keep working: they run the new `estimetry` from `PATH`; only what `init` wrote is old — the hook settings in each project, the skills and, with a shared install, the reminder in `CLAUDE.md`. At the start of a session in a project set up by an older version, the agent is told to suggest `emt upgrade`; it never runs it on its own.
+Until then the hooks keep working: an update under the same Node.js replaces the installation they run; only what `init` wrote is old — the hook settings in each project, the skills and, with a shared install, the reminder in `CLAUDE.md`. At the start of a session in a project set up by an older version, the agent is told to suggest `emt upgrade`; it never runs it on its own.
 
 Update every installed copy of estimetry at once. Cards written by an older version are rebuilt from the journals on the next closing, `emt task show` or `emt rebuild`. A newer card stops an older estimetry from rewriting `calibration.json` and is reported instead; versions before this check skip such cards silently, so close no task with them.
 

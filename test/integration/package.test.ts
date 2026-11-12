@@ -69,8 +69,10 @@ describe('the npm package', () => {
     expect((JSON.parse(init.stdout) as { tools: string[] }).tools).toContain('claude-code');
     // The personal commit hook names the node and the entry point of this install, for a commit without PATH.
     const hook = readFileSync(join(repo, '.git', 'hooks', 'post-commit'), 'utf8');
-    const named = (name: string) => new RegExp(`estimetry_${name}='([^']+)'`).exec(hook)?.[1] ?? '';
-    expect(existsSync(named('node')) && existsSync(named('main'))).toBe(true);
-    expect(named('main').startsWith(prefix)).toBe(true);
+    const [, node = '', main = ''] = /if \[ -x '([^']+)' \] && \[ -f '([^']+)' \]/.exec(hook) ?? [];
+    expect(existsSync(node) && existsSync(main)).toBe(true);
+    expect(main.startsWith(prefix)).toBe(true);
+    // The Claude Code hooks run the same installation.
+    expect(readFileSync(join(repo, '.claude', 'settings.local.json'), 'utf8')).toContain(`'${main}' hook claude-code SessionStart`);
   }, 180_000);
 });

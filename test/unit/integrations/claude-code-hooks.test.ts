@@ -112,9 +112,10 @@ describe('Claude Code hooks → activity events', () => {
 
 describe('installed hooks are asynchronous except those the agent waits for', () => {
   it('marks every hook async but SessionStart, UserPromptSubmit and SessionEnd, and upgrades old ones', () => {
-    const old = withHooks(undefined, CLAUDE_CODE_HOOK_EVENTS, 'settings.json', CLAUDE_CODE_HOOK_EVENTS);
+    const command = (event: string) => `estimetry hook claude-code ${event}`;
+    const old = withHooks(undefined, { events: CLAUDE_CODE_HOOK_EVENTS, synchronous: CLAUDE_CODE_HOOK_EVENTS, command }, 'settings.json');
     expect(old).not.toContain('"async"');
-    const settings = JSON.parse(withHooks(old, CLAUDE_CODE_HOOK_EVENTS, 'settings.json', SYNCHRONOUS_HOOK_EVENTS)) as {
+    const settings = JSON.parse(withHooks(old, { events: CLAUDE_CODE_HOOK_EVENTS, synchronous: SYNCHRONOUS_HOOK_EVENTS, command }, 'settings.json')) as {
       hooks: Record<string, { hooks: { async?: boolean }[] }[]>;
     };
     const asyncEvents = Object.entries(settings.hooks).filter(([, groups]) => groups[0]?.hooks[0]?.async === true).map(([event]) => event);

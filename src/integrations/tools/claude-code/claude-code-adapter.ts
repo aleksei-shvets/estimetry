@@ -5,6 +5,7 @@ import type { InstallContext, ToolAdapter, ToolState } from '../../../applicatio
 import type { ProjectFiles } from '../../../application/ports/project-files.js';
 import { COMMANDS, ESTIMETRY_SKILL } from '../content/commands.js';
 import { withBlock, withoutBlock } from './claude-md.js';
+import { estimetryCommand } from '../../../application/contracts/estimetry-command.js';
 import { hasOurHooks, isBrokenJson, withHooks, withoutHooks } from './hook-settings.js';
 import { CLAUDE_CODE_HOOK_EVENTS, SYNCHRONOUS_HOOK_EVENTS } from './hook-events.js';
 import { ownership, renderSkill } from './skill-file.js';
@@ -56,12 +57,18 @@ export class ClaudeCodeAdapter implements ToolAdapter {
     };
   }
 
-  private hooks({ projectRoot, files, shared }: InstallContext): InstallPlan {
+  private hooks({ projectRoot, files, shared, runner }: InstallContext): InstallPlan {
     const [target, previous] = shared ? [SHARED_SETTINGS, LOCAL_SETTINGS] : [LOCAL_SETTINGS, SHARED_SETTINGS];
+    // Personal settings run this installation by its paths; settings the team commits hold no paths of this machine.
+    const command = (event: string) => estimetryCommand(shared ? undefined : runner, `hook claude-code ${event}`);
     const changes: FileChange[] = [
       {
         path: join(projectRoot, target),
-        content: withHooks(files.read(join(projectRoot, target)), this.hookEvents, target, SYNCHRONOUS_HOOK_EVENTS),
+        content: withHooks(
+          files.read(join(projectRoot, target)),
+          { events: this.hookEvents, synchronous: SYNCHRONOUS_HOOK_EVENTS, command },
+          target,
+        ),
       },
     ];
     const warnings: string[] = [];

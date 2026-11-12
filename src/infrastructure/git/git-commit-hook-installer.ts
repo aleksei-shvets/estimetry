@@ -4,6 +4,8 @@ import { isAbsolute, join, normalize, relative, sep } from 'node:path';
 import type { InstallPlan } from '../../application/ports/file-change.js';
 import type { CommitHookInstaller } from '../../application/ports/commit-hook-installer.js';
 import { realPathAhead } from '../fs/worktree.js';
+import { estimetryCommand } from '../../application/contracts/estimetry-command.js';
+import type { EstimetryRunner } from '../../application/ports/estimetry-runner.js';
 
 export const BLOCK_START = '# >>> estimetry >>>';
 export const BLOCK_END = '# <<< estimetry <<<';
@@ -16,26 +18,18 @@ export const BLOCK_COMMAND =
   'if command -v estimetry >/dev/null 2>&1; then estimetry_sha=$(git rev-parse HEAD 2>/dev/null); printf \'%s\' "$estimetry_sha" | estimetry hook git post-commit >/dev/null 2>&1 & fi';
 
 /**
- * The personal hook also runs when the commit comes from a program without the
- * user's PATH (an IDE started from the Dock on macOS): `estimetry` from PATH
- * first, so a terminal always gets the current one, else node and the entry
- * point `init` ran with. A hook the project commits never holds them: they are paths of this machine.
+ * The personal hook runs this installation by its paths first, so neither the
+ * node a version manager picks for the project nor a program without the
+ * user's PATH (an IDE started from the Dock) stops it; else `estimetry` from
+ * PATH. A hook the project commits never holds the paths: they are this machine's.
  */
-const FALLBACK_COMMAND =
-  'estimetry_sha=$(git rev-parse HEAD 2>/dev/null); ' +
-  'if command -v estimetry >/dev/null 2>&1; then printf \'%s\' "$estimetry_sha" | estimetry hook git post-commit >/dev/null 2>&1 & ' +
-  'elif [ -x "$estimetry_node" ] && [ -f "$estimetry_main" ]; then ' +
-  'printf \'%s\' "$estimetry_sha" | ESTIMETRY_HOME="$estimetry_home" "$estimetry_node" "$estimetry_main" hook git post-commit >/dev/null 2>&1 & fi';
-
-/**
- * How this installation of estimetry is started: node, the entry point and its
- * data directory (a program without the shell profile has no ESTIMETRY_HOME).
- */
-export interface EstimetryRunner {
-  readonly node: string;
-  readonly main: string;
-  readonly home: string;
+function personalCommand(runner: EstimetryRunner): string {
+  return (
+    'estimetry_sha=$(git rev-parse HEAD 2>/dev/null); ' +
+    `printf '%s' "$estimetry_sha" | { ${estimetryCommand(runner, 'hook git post-commit')}; } >/dev/null 2>&1 &`
+  );
 }
+
 const HUSKY_LOADER = '. "$(dirname "$0")/_/husky.sh"';
 const SHELLS = /^#!.*\b(sh|bash|zsh|dash|ksh)\b/;
 const MANAGERS: readonly (readonly [RegExp, string])[] = [
@@ -52,24 +46,22 @@ type Layout = { readonly path: string; readonly shown: string; readonly personal
 
 /** `post-commit` next to the hooks the repository already has: `core.hooksPath`, worktrees and husky. */
 export class GitCommitHookInstaller implements CommitHookInstaller {
-  constructor(private readonly runner?: EstimetryRunner) {}
-
   installed(projectRoot: string): boolean {
     const layout = this.layout(projectRoot);
     return layout !== undefined && (read(layout.path) ?? '').includes(BLOCK_START);
   }
 
-  plan(projectRoot: string, enabled: boolean): InstallPlan {
+  plan(projectRoot: string, enabled: boolean, runner?: EstimetryRunner): InstallPlan {
     const layout = this.layout(projectRoot);
     if (layout === undefined) {
       return enabled ? { changes: [], skipped: [], warnings: ['not a git repository, so --track-commits was skipped'] } : EMPTY;
     }
     const current = read(layout.path);
-    return enabled ? this.install(layout, current) : this.uninstall(layout, current);
+    return enabled ? this.install(layout, current, runner) : this.uninstall(layout, current);
   }
 
-  private install(layout: Layout, current: string | undefined): InstallPlan {
-    const block = this.block(layout);
+  private install(layout: Layout, current: string | undefined, runner: EstimetryRunner | undefined): InstallPlan {
+    const block = blockFor(layout, runner);
     const warnings: string[] = [];
     if (layout.husky !== undefined) {
       warnings.push(`${layout.shown} is part of the repository: the hook runs for colleagues who have estimetry installed`);
@@ -99,15 +91,6 @@ export class GitCommitHookInstaller implements CommitHookInstaller {
     return { changes: [{ path: layout.path, content: withBlock(lines, block), executable: true }], skipped: [], warnings };
   }
 
-  /** The lines between the markers: with the paths of this installation only in a personal hook. */
-  private block(layout: Layout): string[] {
-    if (!layout.personal || this.runner === undefined) {
-      return [BLOCK_START, BLOCK_COMMAND, BLOCK_END];
-    }
-    const { node, main, home } = this.runner;
-    const paths = `estimetry_node=${quoted(node)}; estimetry_main=${quoted(main)}; estimetry_home=${quoted(home)}`;
-    return [BLOCK_START, paths, FALLBACK_COMMAND, BLOCK_END];
-  }
 
   private uninstall(layout: Layout, current: string | undefined): InstallPlan {
     if (current === undefined || !current.includes(BLOCK_START)) {
@@ -155,9 +138,9 @@ function located(projectRoot: string, path: string, husky?: 5 | 9): Layout {
   return husky === undefined ? { path, shown, personal } : { path, shown, personal, husky };
 }
 
-/** A path for a POSIX shell in single quotes: spaces and quotes in it stay one word. */
-function quoted(path: string): string {
-  return `'${path.replaceAll("'", `'\\''`)}'`;
+/** The lines between the markers: with the paths of this installation only in a personal hook. */
+function blockFor(layout: Layout, runner: EstimetryRunner | undefined): string[] {
+  return [BLOCK_START, layout.personal && runner !== undefined ? personalCommand(runner) : BLOCK_COMMAND, BLOCK_END];
 }
 
 /** The block right after the shebang (and the husky loader), so an `exit` at the end cannot skip it. */

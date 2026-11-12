@@ -175,6 +175,15 @@ describe('init', () => {
     expect(files.read(`${ROOT}/.estimetry/config.yaml`)).toContain('project: api');
   });
 
+  it('says estimetry is not on PATH only where the hooks need it: shared, or without the paths of this installation', () => {
+    const runner = { node: '/opt/node', main: '/opt/main.js', home: '/data' };
+    build({ commands: new FakeCommandLocator([]), runner });
+    expect(app.project.init({}).warnings.join('\n')).not.toMatch(/not on PATH/);
+    expect(app.project.init({ shared: true }).warnings.join('\n')).toMatch(/not on PATH/);
+    build({ commands: new FakeCommandLocator([]) });
+    expect(app.project.init({}).warnings.join('\n')).toMatch(/not on PATH/);
+  });
+
   it('asks to exclude personal files git does not ignore, and only warns without consent', () => {
     excludes.ignored = false;
     expect(app.project.choices().unignoredPersonalFiles).toEqual(['.fake/settings.local.json']);
