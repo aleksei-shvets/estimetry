@@ -63,6 +63,7 @@ it.runIf(process.platform === 'darwin')('the macOS runner ignores case, so the c
 describe.runIf(ignoresCase())('a file system that ignores case', () => {
   it('a hook in the directory spelled in another case finds the project, with the registered root', () => {
     const { home, repo } = registered('Api-Repo');
+    mkdirSync(join(repo, 'src'));
     const located = new FsProjectLocator(new StorageLayout(home)).locate(join(otherCase(repo), 'src'));
     expect(located?.root).toBe(repo);
   });
