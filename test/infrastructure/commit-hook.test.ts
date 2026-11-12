@@ -197,7 +197,7 @@ describe('NodeProjectFiles', () => {
       const dir = repo();
       execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: dir });
       const { main, out } = fakeMain(tempDir('main-'));
-      apply(new GitCommitHookInstaller({ node: process.execPath, main, home: '/data/estimetry' }).plan(dir, true));
+      apply(installer.plan(dir, true, { node: process.execPath, main, home: '/data/estimetry' }));
       const hook = join(dir, '.git', 'hooks', 'post-commit');
       const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
       // A PATH with git and the shell only: no estimetry, maybe no node.
@@ -209,40 +209,51 @@ describe('NodeProjectFiles', () => {
       expect(readFileSync(out, 'utf8')).toBe(`hook git post-commit ${sha} /data/estimetry`);
     });
 
-    it('prefers estimetry on PATH, so a terminal runs the current one', async () => {
+    it('runs this installation even where PATH has an estimetry that fails, as an asdf shim without the node of the project', async () => {
       const dir = repo();
       execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: dir });
       const bin = tempDir('bin-');
-      const out = join(bin, 'called');
-      writeFileSync(join(bin, 'estimetry'), `#!/bin/sh\necho from-path > ${JSON.stringify(out)}\n`);
+      const fromPath = join(bin, 'called');
+      writeFileSync(join(bin, 'estimetry'), `#!/bin/sh\necho from-path > ${JSON.stringify(fromPath)}\nexit 126\n`);
       chmodSync(join(bin, 'estimetry'), 0o755);
-      apply(new GitCommitHookInstaller({ node: process.execPath, main: '/nowhere/main.js', home: '/data' }).plan(dir, true));
-      spawnSync('/bin/sh', [join(dir, '.git', 'hooks', 'post-commit')], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` } });
-      for (let i = 0; i < 50 && !existsSync(out); i++) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      expect(readFileSync(out, 'utf8')).toBe('from-path\n');
+      const { main, out } = fakeMain(tempDir('main-'));
+      const hook = join(dir, '.git', 'hooks', 'post-commit');
+      const until = async (path: string) => {
+        for (let i = 0; i < 50 && !existsSync(path); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      };
+      apply(installer.plan(dir, true, { node: process.execPath, main, home: '/data' }));
+      spawnSync('/bin/sh', [hook], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` } });
+      await until(out);
+      expect(readFileSync(out, 'utf8')).toMatch(/^hook git post-commit /);
+      expect(existsSync(fromPath)).toBe(false);
+      // Paths gone (that node was removed): estimetry from PATH.
+      apply(installer.plan(dir, true, { node: '/gone/node', main, home: '/data' }));
+      spawnSync('/bin/sh', [hook], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` } });
+      await until(fromPath);
+      expect(readFileSync(fromPath, 'utf8')).toBe('from-path\n');
     });
 
     it('a husky hook and an absolute core.hooksPath into the repository through a symlink hold no paths of this machine', () => {
-      const runner = new GitCommitHookInstaller({ node: '/opt/node', main: '/opt/main.js', home: '/data' });
+      const runner = { node: '/opt/node', main: '/opt/main.js', home: '/data' };
       const husky = repo();
       mkdirSync(join(husky, '.husky', '_'), { recursive: true });
       execFileSync('git', ['config', 'core.hooksPath', '.husky/_'], { cwd: husky });
-      apply(runner.plan(husky, true));
+      apply(installer.plan(husky, true, runner));
       expect(readFileSync(join(husky, '.husky', 'post-commit'), 'utf8')).not.toContain('/opt/');
       const dir = repo();
       const link = join(tempDir('link-'), 'repo');
       symlinkSync(dir, link, 'dir');
       execFileSync('git', ['config', 'core.hooksPath', join(link, '.githooks')], { cwd: dir });
-      apply(runner.plan(dir, true));
+      apply(installer.plan(dir, true, runner));
       expect(readFileSync(join(dir, '.githooks', 'post-commit'), 'utf8')).not.toContain('/opt/');
     });
 
     it('a hook the project commits holds no paths of this machine', () => {
       const dir = repo();
       execFileSync('git', ['config', 'core.hooksPath', 'tools/githooks'], { cwd: dir });
-      apply(new GitCommitHookInstaller({ node: '/opt/node', main: '/opt/main.js', home: '/data' }).plan(dir, true));
+      apply(installer.plan(dir, true, { node: '/opt/node', main: '/opt/main.js', home: '/data' }));
       const text = readFileSync(join(dir, 'tools', 'githooks', 'post-commit'), 'utf8');
       expect(text).not.toContain('/opt/');
       expect(text).toContain(BLOCK_COMMAND);
@@ -253,8 +264,8 @@ describe('NodeProjectFiles', () => {
       execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: dir });
       const worktree = join(tempDir('wt-'), 'feature');
       execFileSync('git', ['worktree', 'add', '-q', worktree], { cwd: dir });
-      apply(new GitCommitHookInstaller({ node: '/opt/node', main: '/opt/main.js', home: '/data' }).plan(worktree, true));
-      expect(readFileSync(join(dir, '.git', 'hooks', 'post-commit'), 'utf8')).toContain("estimetry_node='/opt/node'");
+      apply(installer.plan(worktree, true, { node: '/opt/node', main: '/opt/main.js', home: '/data' }));
+      expect(readFileSync(join(dir, '.git', 'hooks', 'post-commit'), 'utf8')).toContain("'/opt/node' '/opt/main.js' hook git post-commit");
     });
   });
 });

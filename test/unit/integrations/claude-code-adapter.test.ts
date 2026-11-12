@@ -1,3 +1,4 @@
+import type { EstimetryRunner } from '../../../src/application/ports/estimetry-runner.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { InstallPlan } from '../../../src/application/ports/file-change.js';
 import { isRemoval } from '../../../src/application/ports/file-change.js';
@@ -17,8 +18,9 @@ let files: InMemoryProjectFiles;
 const adapter = new ClaudeCodeAdapter(HOME);
 
 /** Plans and applies like init does. */
-function install(options: { shared?: boolean; force?: boolean } = {}): InstallPlan {
-  const plan = adapter.plan({ projectRoot: ROOT, files, shared: options.shared ?? false, force: options.force ?? false, version: '1.0.0' });
+function install(options: { shared?: boolean; force?: boolean; runner?: EstimetryRunner } = {}): InstallPlan {
+  const context = { projectRoot: ROOT, files, shared: options.shared ?? false, force: options.force ?? false, version: '1.0.0' };
+  const plan = adapter.plan(options.runner === undefined ? context : { ...context, runner: options.runner });
   for (const change of plan.changes) {
     if (isRemoval(change)) {
       files.remove(change.path);
@@ -30,8 +32,9 @@ function install(options: { shared?: boolean; force?: boolean } = {}): InstallPl
 }
 
 const json = (path: string) => JSON.parse(files.read(path) ?? 'null') as { hooks: Record<string, { matcher?: string; hooks: { command: string; timeout?: number }[] }[]>; [key: string]: unknown };
-const ours = (path: string) =>
-  Object.values(json(path).hooks).flatMap((groups) => groups.flatMap((g) => g.hooks)).filter((h) => h.command.startsWith('estimetry hook claude-code'));
+const commands = (path: string) => Object.values(json(path).hooks).flatMap((groups) => groups.flatMap((g) => g.hooks));
+const ours = (path: string) => commands(path).filter((h) => h.command.includes('estimetry hook claude-code'));
+const RUNNER: EstimetryRunner = { node: '/opt/node 22/bin/node', main: '/opt/lib/estimetry/main.js', home: '/data/estimetry' };
 
 beforeEach(() => {
   files = new InMemoryProjectFiles();
@@ -104,6 +107,46 @@ describe('Claude Code hooks', () => {
     files.write(LOCAL, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'emt hook claude-code Stop' }] }] } }));
     install();
     expect(json(LOCAL).hooks['Stop']).toHaveLength(2);
+  });
+});
+
+describe('Claude Code hooks of this installation', () => {
+  it('personal settings run this installation by its paths, whatever node the project picks', () => {
+    install({ runner: RUNNER });
+    const stop = json(LOCAL).hooks['Stop']?.[0]?.hooks[0]?.command ?? '';
+    expect(stop).toContain("'/opt/node 22/bin/node' '/opt/lib/estimetry/main.js' hook claude-code Stop");
+    expect(stop).toContain('else estimetry hook claude-code Stop; fi');
+    expect(adapter.state(ROOT, files)).toEqual({ installed: true, shared: false });
+  });
+
+  it('settings the team commits hold no paths of this machine', () => {
+    install({ shared: true, runner: RUNNER });
+    expect(commands(SHARED).every((h) => h.command.startsWith('estimetry hook claude-code '))).toBe(true);
+    expect(files.read(SHARED)).not.toContain('/opt/');
+  });
+
+  it('replaces the hooks of an older version, by command or by paths, without duplicates', () => {
+    install();
+    install({ runner: RUNNER });
+    install({ runner: { ...RUNNER, node: '/other/node' } });
+    expect(ours(LOCAL)).toHaveLength(12);
+    expect(files.read(LOCAL)).toContain("'/other/node'");
+    install({ shared: true, runner: RUNNER });
+    expect(files.read(LOCAL)).toBeUndefined();
+  });
+
+  it('moving to the shared settings takes the hooks with paths out of the personal ones, leaving the rest', () => {
+    files.write(LOCAL, JSON.stringify({ permissions: { allow: [] } }));
+    install({ runner: RUNNER });
+    install({ shared: true, runner: RUNNER });
+    expect(json(LOCAL)).toEqual({ permissions: { allow: [] } });
+    expect(ours(SHARED)).toHaveLength(12);
+  });
+
+  it('keeps a hook of the user that only mentions estimetry', () => {
+    files.write(LOCAL, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'notify; estimetry hook claude-code Stop' }] }] } }));
+    install({ runner: RUNNER });
+    expect(commands(LOCAL).map((h) => h.command)).toContain('notify; estimetry hook claude-code Stop');
   });
 });
 

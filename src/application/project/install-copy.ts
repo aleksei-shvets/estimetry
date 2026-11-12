@@ -58,11 +58,11 @@ export class InstallCopy {
 
   plan(choices: CopyChoices): CopyPlan {
     const { root } = choices;
+    const { version, runner } = this.deps.installation;
+    const context = { projectRoot: root, files: this.deps.files, shared: choices.shared, force: choices.force, version };
     const plan = mergePlans([
-      ...choices.tools.map((tool) =>
-        tool.plan({ projectRoot: root, files: this.deps.files, shared: choices.shared, force: choices.force, version: this.deps.version }),
-      ),
-      this.deps.git.commitHook.plan(root, choices.trackCommits),
+      ...choices.tools.map((tool) => tool.plan(runner === undefined ? context : { ...context, runner })),
+      this.deps.git.commitHook.plan(root, choices.trackCommits, runner),
       { changes: [this.projectConfig.plan(root, { project: choices.project, flow: choices.flow.id })], skipped: [], warnings: [] },
       choices.shared ? EMPTY_PLAN : this.excludePersonalFiles(root, choices.tools, choices.excludePersonalFiles),
     ]);
@@ -95,7 +95,7 @@ export class InstallCopy {
         this.deps.files.write(change.path, change.content, change.executable ? { executable: true } : {});
       }
     }
-    this.versions.record(plan.root, this.deps.version);
+    this.versions.record(plan.root, this.deps.installation.version);
   }
 
   private statusOf(change: FileChange): FileStatus {

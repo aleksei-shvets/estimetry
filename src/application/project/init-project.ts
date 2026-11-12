@@ -97,7 +97,8 @@ export class InitProject {
     if (this.deps.sharing.mode() !== share) {
       this.deps.sharing.save(share);
     }
-    if (!this.deps.commands.has(HOOK_COMMAND)) {
+    // Personal hooks run this installation by its paths; shared ones, and all without paths (npx, Windows), need PATH.
+    if ((shared || this.deps.installation.runner === undefined) && !this.deps.commands.has(HOOK_COMMAND)) {
       warnings.push(
         `${HOOK_COMMAND} is not on PATH, so the hooks will not run until the package is installed globally (npm install -g estimetry)`,
       );

@@ -1,14 +1,14 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir, userInfo } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { basename, dirname, join, sep } from 'node:path';
 import type { Estimetry } from '../application/estimetry.js';
 import type { HookCall } from '../application/hooks/hook-call.js';
 import type { SharingPreference } from '../application/ports/sharing-preference.js';
 import type { InstallDependencies } from '../application/project/install-dependencies.js';
 import type { ErrorReporter } from '../application/ports/error-reporter.js';
 import { StorageLayout } from '../infrastructure/fs/storage-layout.js';
-import type { EstimetryRunner } from '../infrastructure/git/git-commit-hook-installer.js';
+import type { EstimetryRunner } from '../application/ports/estimetry-runner.js';
 import { FileErrorReporter } from '../infrastructure/system/file-error-reporter.js';
 
 export interface Environment {
@@ -40,20 +40,23 @@ import { packageVersion } from './package-version.js';
 export { packageVersion };
 
 /**
- * How this installation is started, for a commit hook run without the user's
- * PATH: the entry point beside this file, the node of its install prefix (a
+ * How hooks start this installation (estimetry-command): the entry point beside
+ * this file, the node of its npm prefix when it is a global npm install (a
  * stable link such as Homebrew's `/opt/homebrew/bin/node`, which survives an
- * upgrade of Node.js) or else the running one, and the data directory. None
- * from the cache of `npx`, which is cleared.
+ * upgrade of Node.js), else the running node, and the data directory. None on
+ * Windows, where Claude Code may run hooks without a POSIX shell, and none from
+ * the cache of `npx`, which is cleared: hooks then call `estimetry` from PATH.
  */
 function estimetryRunner(layout: StorageLayout): EstimetryRunner | undefined {
   const main = fileURLToPath(new URL('./main.js', import.meta.url));
-  if (main.includes(`${sep}_npx${sep}`)) {
+  if (process.platform === 'win32' || main.includes(`${sep}_npx${sep}`)) {
     return undefined;
   }
-  // <prefix>/lib/node_modules/estimetry/dist/bootstrap/main.js → <prefix>/bin/node
-  const prefixed = join(dirname(main), '..', '..', '..', '..', '..', 'bin', 'node');
-  return { node: existsSync(prefixed) ? prefixed : process.execPath, main, home: layout.root };
+  // <prefix>/lib/node_modules/estimetry/dist/bootstrap/main.js → <prefix>/bin/node, only for that layout.
+  const pkg = dirname(dirname(dirname(main)));
+  const globalNpm = basename(pkg) === 'estimetry' && basename(dirname(pkg)) === 'node_modules' && basename(dirname(dirname(pkg))) === 'lib';
+  const prefixed = join(dirname(dirname(dirname(pkg))), 'bin', 'node');
+  return { node: globalNpm && existsSync(prefixed) ? prefixed : process.execPath, main, home: layout.root };
 }
 
 /** Claude Code keeps personal skills in `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
@@ -125,6 +128,7 @@ async function installDependencies(
     import('../infrastructure/git/git-excludes-file.js'),
     import('../infrastructure/system/path-command-locator.js'),
   ]);
+  const runner = estimetryRunner(layout);
   return {
     files: new NodeProjectFiles(),
     registries: {
@@ -137,12 +141,12 @@ async function installDependencies(
       ),
     },
     git: {
-      commitHook: new GitCommitHookInstaller(estimetryRunner(layout)),
+      commitHook: new GitCommitHookInstaller(),
       excludes: new GitExcludesFile(environment.env, environment.homeDir),
     },
     sharing,
     commands: new PathCommandLocator(environment.env),
-    version: packageVersion(),
+    installation: { version: packageVersion(), ...(runner === undefined ? {} : { runner }) },
   };
 }
 

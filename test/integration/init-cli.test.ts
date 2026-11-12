@@ -45,6 +45,18 @@ beforeEach(() => {
 });
 
 describe('estimetry init', () => {
+  it('the hooks it writes run this installation without estimetry or node on PATH, as asdf or an IDE leave them', async () => {
+    const repo = gitRepo('no-path');
+    await init(repo);
+    const settings = JSON.parse(read(join(repo, '.claude', 'settings.local.json'))) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
+    const command = settings.hooks['SessionStart']?.[0]?.hooks[0]?.command ?? '';
+    const env = { HOME: cli.userHome, PATH: '/usr/bin:/bin' };
+    const result = spawnSync('/bin/sh', ['-c', command], { cwd: repo, env, encoding: 'utf8', input: JSON.stringify({ session_id: 's1', cwd: repo, source: 'startup' }) });
+    expect(result.stdout).toContain('"additionalContext":"estimetry: before you name an effort');
+    // The data directory of init: the sandbox, not the default under HOME.
+    expect(existsSync(join(cli.home, 'events'))).toBe(true);
+  });
+
   it('sets up a clean project and changes nothing on a second run', async () => {
     const repo = gitRepo('my-app', { 'package.json': '{"dependencies":{"react":"18"}}', 'tsconfig.json': '{}', 'openspec/project.md': '' });
     const report = await init(repo);
@@ -70,7 +82,10 @@ describe('estimetry init', () => {
     await init(repo);
     const settings = JSON.parse(read(join(repo, '.claude', 'settings.local.json'))) as { permissions: unknown; hooks: Record<string, { hooks: { command: string }[] }[]> };
     expect(settings.permissions).toEqual({ allow: ['Bash(npm test)'] });
-    expect(settings.hooks['PostToolUse']?.map((group) => group.hooks[0]?.command)).toEqual(['npm run lint', 'estimetry hook claude-code PostToolUse']);
+    const [theirs, ours] = settings.hooks['PostToolUse']?.map((group) => group.hooks[0]?.command) ?? [];
+    expect(settings.hooks['PostToolUse']).toHaveLength(2);
+    expect(theirs).toBe('npm run lint');
+    expect(ours).toMatch(/ hook claude-code PostToolUse; else estimetry hook claude-code PostToolUse; fi$/);
   });
 
   it('a shared install goes into committed files and back out with --no-shared-hooks', async () => {
