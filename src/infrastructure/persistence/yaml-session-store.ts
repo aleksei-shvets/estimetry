@@ -1,10 +1,13 @@
 import { readdirSync } from 'node:fs';
 import type { CheckpointState, CheckpointStatus } from '../../application/ports/checkpoint-state.js';
 import { carryOver, type SessionBinding, type SessionBindings } from '../../application/ports/session-bindings.js';
-import type { SessionId } from '../../domain/measurement/session-id.js';
+import { SessionId } from '../../domain/measurement/session-id.js';
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import { withFileLock } from '../fs/file-lock.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
+import { ProjectId } from '../../domain/project/project-id.js';
+import { Timestamp } from '../../domain/shared/timestamp.js';
+import { TaskId } from '../../domain/task/task-id.js';
 
 export const SESSION_SCHEMA_VERSION = 1;
 
@@ -27,12 +30,12 @@ export class YamlSessionStore implements SessionBindings {
         return current;
       }
       const next = carryOver(current, changed);
-      writeYamlAtomic(this.layout.sessionBinding(session.value), { schemaVersion: SESSION_SCHEMA_VERSION, ...next });
+      writeYamlAtomic(this.layout.sessionBinding(session.value), { schemaVersion: SESSION_SCHEMA_VERSION, ...bindingData(next) });
       return next;
     });
   }
 
-  ofProject(project: string): SessionBinding[] {
+  ofProject(project: ProjectId): SessionBinding[] {
     let names: string[];
     try {
       names = readdirSync(this.layout.sessionsDir);
@@ -42,7 +45,7 @@ export class YamlSessionStore implements SessionBindings {
     return names
       .filter((name) => name.endsWith('.yaml') && !name.endsWith('.checkpoint.yaml'))
       .map((name) => parseBinding(safeRead(`${this.layout.sessionsDir}/${name}`)))
-      .filter((binding): binding is SessionBinding => binding?.project === project);
+      .filter((binding): binding is SessionBinding => binding !== undefined && binding.project.equals(project));
   }
 }
 
@@ -78,6 +81,18 @@ function safeRead(file: string): unknown {
   }
 }
 
+/** The binding as the file keeps it: ids and moments as strings, in the order of its fields. */
+function bindingData(binding: SessionBinding): Record<string, unknown> {
+  const plain = (value: unknown): unknown =>
+    value instanceof Timestamp ? value.toISOString() : Array.isArray(value) ? value.map(plain) : isId(value) ? value.toString() : value;
+  return Object.fromEntries(Object.entries(binding).map(([key, value]) => [key, plain(value)]));
+}
+
+function isId(value: unknown): value is TaskId | ProjectId | SessionId {
+  return value instanceof TaskId || value instanceof ProjectId || value instanceof SessionId;
+}
+
+/** A binding with an id or a moment that does not parse counts as missing, as a broken file does. */
 function parseBinding(value: unknown): SessionBinding | undefined {
   if (typeof value !== 'object' || value === null) {
     return undefined;
@@ -86,17 +101,27 @@ function parseBinding(value: unknown): SessionBinding | undefined {
   if (typeof v['session'] !== 'string' || typeof v['project'] !== 'string' || typeof v['root'] !== 'string') {
     return undefined;
   }
-  const optional = (key: string) => (typeof v[key] === 'string' ? { [key]: v[key] as string } : {});
-  return {
-    session: v['session'],
-    project: v['project'],
-    root: v['root'],
-    ...optional('task'),
-    ...optional('since'),
-    ...optional('checkedAt'),
-    ...optional('closedTask'),
-    ...optional('transcript'),
-    ...(Array.isArray(v['tasks']) && v['tasks'].every((task) => typeof task === 'string') ? { tasks: v['tasks'] as string[] } : {}),
-    ...(v['everBound'] === true ? { everBound: true } : {}),
+  const text = (key: string) => (typeof v[key] === 'string' ? (v[key] as string) : undefined);
+  const optional = <T>(key: string, parse: (text: string) => T) => {
+    const found = text(key);
+    return found === undefined ? {} : { [key]: parse(found) };
   };
+  try {
+    return {
+      session: SessionId.parse(v['session']),
+      project: ProjectId.parse(v['project']),
+      root: v['root'],
+      ...optional('task', TaskId.parse),
+      ...optional('since', Timestamp.parse),
+      ...optional('checkedAt', Timestamp.parse),
+      ...optional('closedTask', TaskId.parse),
+      ...optional('transcript', (path) => path),
+      ...(Array.isArray(v['tasks']) && v['tasks'].every((task) => typeof task === 'string')
+        ? { tasks: (v['tasks'] as string[]).map((task) => TaskId.parse(task)) }
+        : {}),
+      ...(v['everBound'] === true ? { everBound: true } : {}),
+    };
+  } catch {
+    return undefined;
+  }
 }

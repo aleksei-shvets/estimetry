@@ -11,6 +11,10 @@ import type { Calibration } from '../../src/domain/calibration/calibration.js';
 import type { Card } from '../../src/domain/card/card.js';
 import type { FileLines } from '../../src/domain/progress/progress-records.js';
 import { RecordingErrorReporter } from './fakes.js';
+import { SessionId } from '../../src/domain/measurement/session-id.js';
+import { ProjectId } from '../../src/domain/project/project-id.js';
+import { Timestamp } from '../../src/domain/shared/timestamp.js';
+import type { TaskId } from '../../src/domain/task/task-id.js';
 
 export class InMemoryCardStore implements CardStore {
   readonly cards = new Map<string, Card>();
@@ -26,14 +30,14 @@ export class InMemoryCardStore implements CardStore {
     this.cards.set(card.task.id, card);
   }
 
-  read(task: string): StoredCard | undefined {
-    const card = this.cards.get(task);
-    return card === undefined ? this.others.get(task) : { schema: 'current', card };
+  read(task: TaskId): StoredCard | undefined {
+    const card = this.cards.get(task.toString());
+    return card === undefined ? this.others.get(task.toString()) : { schema: 'current', card };
   }
 
-  remove(task: string): void {
-    this.cards.delete(task);
-    this.others.delete(task);
+  remove(task: TaskId): void {
+    this.cards.delete(task.toString());
+    this.others.delete(task.toString());
   }
 
   list(): StoredCard[] {
@@ -61,22 +65,45 @@ export class InMemoryCalibrationStore implements CalibrationStore {
 export class InMemoryCloseProposals implements CloseProposals {
   readonly pending = new Map<string, CloseProposal>();
 
-  put(task: string, proposal: CloseProposal): void {
-    this.pending.set(task, proposal);
+  put(task: TaskId, proposal: CloseProposal): void {
+    this.pending.set(task.toString(), proposal);
   }
 
-  peek(task: string): CloseProposal | undefined {
-    return this.pending.get(task);
+  peek(task: TaskId): CloseProposal | undefined {
+    return this.pending.get(task.toString());
   }
 
-  take(task: string): CloseProposal | undefined {
-    const proposal = this.pending.get(task);
-    this.pending.delete(task);
+  take(task: TaskId): CloseProposal | undefined {
+    const proposal = this.pending.get(task.toString());
+    this.pending.delete(task.toString());
     return proposal;
   }
 
-  remove(task: string): void {
-    this.pending.delete(task);
+  remove(task: TaskId): void {
+    this.pending.delete(task.toString());
+  }
+
+  /** The pending proposal of a task in plain values, for assertions. */
+  plain(task: string): { change: string; project?: string; completedAt: string; session: string } | undefined {
+    const proposal = this.pending.get(task);
+    return proposal === undefined
+      ? undefined
+      : {
+          change: proposal.change,
+          ...(proposal.project === undefined ? {} : { project: proposal.project.value }),
+          completedAt: proposal.completedAt.toISOString(),
+          session: proposal.session.value,
+        };
+  }
+
+  /** A proposal from plain values, as a test writes it. */
+  putPlain(task: string, proposal: { change: string; project?: string; completedAt: string; session: string }): void {
+    this.pending.set(task, {
+      change: proposal.change,
+      ...(proposal.project === undefined ? {} : { project: ProjectId.parse(proposal.project) }),
+      completedAt: Timestamp.parse(proposal.completedAt),
+      session: SessionId.parse(proposal.session),
+    });
   }
 }
 
@@ -114,21 +141,21 @@ export class FakeSessionLogs implements SessionLogReader {
   readonly statuses = new Map<string, SessionLogResult>();
   readonly requests: SessionLogRequest[] = [];
 
-  fingerprint(session: string): SessionLogFingerprint | undefined {
-    const status = this.statuses.get(session);
+  fingerprint(session: SessionId): SessionLogFingerprint | undefined {
+    const status = this.statuses.get(session.value);
     if (status !== undefined) {
       return status.status === 'not-found' ? undefined : 'fingerprint' in status ? status.fingerprint : { main: { size: 1, mtimeMs: 1 }, agents: {} };
     }
-    return this.logs.get(session)?.fingerprint;
+    return this.logs.get(session.value)?.fingerprint;
   }
 
   read(request: SessionLogRequest): SessionLogResult {
     this.requests.push(request);
-    const status = this.statuses.get(request.session);
+    const status = this.statuses.get(request.session.value);
     if (status !== undefined) {
       return status;
     }
-    const log = this.logs.get(request.session);
+    const log = this.logs.get(request.session.value);
     if (log === undefined) {
       return { status: 'not-found' };
     }
@@ -138,14 +165,14 @@ export class FakeSessionLogs implements SessionLogReader {
 
 export class InMemoryLogImportState implements LogImportState {
   readonly entries = new Map<string, Record<string, LogImportEntry>>();
-  locked<T>(_session: string, work: () => T): T {
+  locked<T>(_session: SessionId, work: () => T): T {
     return work();
   }
-  read(session: string): Readonly<Record<string, LogImportEntry>> {
-    return { ...(this.entries.get(session) ?? {}) };
+  read(session: SessionId): Readonly<Record<string, LogImportEntry>> {
+    return { ...(this.entries.get(session.value) ?? {}) };
   }
-  write(session: string, task: string, entry: LogImportEntry): void {
-    this.entries.set(session, { ...(this.entries.get(session) ?? {}), [task]: entry });
+  write(session: SessionId, task: TaskId, entry: LogImportEntry): void {
+    this.entries.set(session.value, { ...(this.entries.get(session.value) ?? {}), [task.toString()]: entry });
   }
 }
 

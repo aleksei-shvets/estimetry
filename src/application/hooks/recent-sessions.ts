@@ -1,4 +1,4 @@
-import { SessionId } from '../../domain/measurement/session-id.js';
+import type { SessionId } from '../../domain/measurement/session-id.js';
 import { Timestamp } from '../../domain/shared/timestamp.js';
 import type { CheckpointState } from '../ports/checkpoint-state.js';
 import type { MeasurementSettings } from '../ports/measurement-settings.js';
@@ -11,9 +11,9 @@ export class RecentSessions {
   ) {}
 
   /** Milliseconds; undefined for a session never seen or a state that cannot be read. */
-  lastSeen(session: string): number | undefined {
+  lastSeen(session: SessionId): number | undefined {
     try {
-      const seen = this.state.read(SessionId.parse(session)).lastSeenAt;
+      const seen = this.state.read(session).lastSeenAt;
       return seen === undefined ? undefined : Timestamp.parse(seen).toMillis();
     } catch {
       return undefined;

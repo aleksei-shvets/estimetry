@@ -55,7 +55,7 @@ export class StartTask {
         journalEntry<PlanStarted>(
           'plan.started',
           { source: CORE_SOURCE, projects: this.plans.started(task, task.startedAt ?? meta.at, where) },
-          { id: meta.id, at: meta.at, author: meta.author, project: task.homeProject.value, task: task.id.toString() },
+          { ...meta, project: task.homeProject, task: task.id },
         ),
       );
     } catch {

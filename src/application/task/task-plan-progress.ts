@@ -56,7 +56,7 @@ export class TaskPlanProgress {
       return { untracked: [], completed: [] };
     }
     const near = options.near;
-    const readings = this.plans.plans(task.projects.map((project) => project.value), {
+    const readings = this.plans.plans(task.projects, {
       ...(near === undefined ? {} : { near }),
       // Older archives only name groups `archived before start`: their tasks are not read.
       archivedSince: CalendarDate.of(startedAt).minusDays(1),
@@ -64,7 +64,7 @@ export class TaskPlanProgress {
     const untracked = readings.flatMap((reading) =>
       reading.unavailable === undefined
         ? []
-        : [{ project: reading.project, reason: reading.unavailable, ...(reading.flow === undefined ? {} : { flow: reading.flow }) }],
+        : [{ project: reading.project.value, reason: reading.unavailable, ...(reading.flow === undefined ? {} : { flow: reading.flow }) }],
     );
     const available = readings.filter((reading) => reading.changes !== undefined);
     if (available.length === 0) {
@@ -75,7 +75,7 @@ export class TaskPlanProgress {
     const plan = planProgress(
       task.estimate,
       taskPlan(
-        available.map((reading) => ({ project: reading.project, changes: reading.changes ?? [] })),
+        available.map((reading) => ({ project: reading.project.value, changes: reading.changes ?? [] })),
         startedAt,
         task.planExclusions,
       ),
@@ -130,7 +130,7 @@ export class TaskPlanProgress {
 }
 
 function standing(record: ChangeCompleted, readings: readonly ProjectPlanReading[]): boolean {
-  const reading = readings.find((candidate) => candidate.project === record.data.project);
+  const reading = readings.find((candidate) => candidate.project.value === record.data.project);
   if (reading?.archived === undefined) {
     return false; // the project's archive is not visible here: nothing to confirm it with
   }

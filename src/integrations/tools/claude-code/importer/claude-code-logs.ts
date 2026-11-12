@@ -11,6 +11,7 @@ import {
 import type { FileFingerprint, SessionLogFingerprint } from '../../../../application/ports/log-import-state.js';
 import { AgentLogParser, MainLogParser } from './log-parser.js';
 import { logLines } from './log-lines.js';
+import type { SessionId } from '../../../../domain/measurement/session-id.js';
 
 const AGENT_FILE = /^agent-(.+)\.jsonl$/;
 
@@ -24,7 +25,7 @@ export class ClaudeCodeLogs implements SessionLogReader {
 
   constructor(private readonly configDir: string) {}
 
-  fingerprint(session: string, path?: string): SessionLogFingerprint | undefined {
+  fingerprint(session: SessionId, path?: string): SessionLogFingerprint | undefined {
     try {
       const main = this.locate(session, path);
       return main === undefined ? undefined : fingerprintOf(main);
@@ -86,7 +87,7 @@ export class ClaudeCodeLogs implements SessionLogReader {
     }
   }
 
-  private locate(session: string, path: string | undefined): string | undefined {
+  private locate(session: SessionId, path: string | undefined): string | undefined {
     if (path !== undefined && path !== '' && existsSync(path)) {
       return path;
     }
@@ -95,7 +96,7 @@ export class ClaudeCodeLogs implements SessionLogReader {
       return undefined;
     }
     for (const folder of readdirSync(projects)) {
-      const candidate = join(projects, folder, `${session}.jsonl`);
+      const candidate = join(projects, folder, `${session.value}.jsonl`);
       if (existsSync(candidate)) {
         return candidate;
       }

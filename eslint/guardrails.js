@@ -79,6 +79,21 @@ const DEPENDENCY_OBJECTS = [
   },
 ];
 
+const ID_AS_STRING_MESSAGE =
+  'An id of a task, project or session crosses a port as a value object (TaskId, ProjectId, SessionId): parse it in infrastructure, at the boundary (see CLAUDE.md, "Architecture").';
+
+/** `task`, `project` or `session` typed `string`: a parameter, an optional one, or a field of the data a port takes or gives. */
+const ID_AS_STRING = [
+  {
+    selector: "Identifier[name=/^(task|project|session)$/] > TSTypeAnnotation > TSStringKeyword",
+    message: ID_AS_STRING_MESSAGE,
+  },
+  {
+    selector: "TSPropertySignature[key.name=/^(task|project|session)$/] > TSTypeAnnotation > TSStringKeyword",
+    message: ID_AS_STRING_MESSAGE,
+  },
+];
+
 const NEW_DATE = {
   selector: "NewExpression[callee.name='Date'][arguments.length=0]",
   message: 'Domain gets time from the caller (Clock port).',
@@ -96,6 +111,11 @@ function syntaxRules(debt) {
     { files: ['src/**'], rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST] } },
     { files: ['src/domain/**'], rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST, NEW_DATE] } },
     { files: ['src/application/**'], ignores: debtFiles, rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST, ...status, ...DEPENDENCY_OBJECTS] } },
+    {
+      files: ['src/application/ports/**', 'src/application/contracts/**'],
+      ignores: debtFiles,
+      rules: { 'no-restricted-syntax': ['error', TIMESTAMP_CAST, ...status, ...DEPENDENCY_OBJECTS, ...ID_AS_STRING] },
+    },
   ];
 }
 

@@ -20,6 +20,7 @@ import {
 import { FakeProjectPlans, InMemorySessionBindings, RepositoryTaskStatusReader } from '../../support/hook-fakes.js';
 import { fakeInstallDependencies, InMemoryProjectConfigFile, InMemoryProjectFiles } from '../../support/in-memory-files.js';
 import { InMemoryEventJournal, InMemoryProjectRepository, InMemoryTaskRepository } from '../../support/in-memory-repositories.js';
+import { TaskId } from '../../../src/domain/task/task-id.js';
 
 const ROOT = '/work/api';
 let closing: ReturnType<typeof fakeClosing>;
@@ -82,7 +83,7 @@ describe('emt similar', () => {
 
   it('names cards of a newer estimetry and compares the rest', () => {
     put(syntheticCard({ id: 'T-1' }));
-    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
+    closing.cards.others.set('T-9', { schema: 'newer', task: TaskId.parse('T-9'), version: 4 });
     expect(app.estimates.similar({ type: 'feature' })).toMatchObject({ tasks: [{ id: 'T-1' }], skipped: ['T-9'] });
   });
 });
@@ -111,7 +112,7 @@ describe('emt calibrate', () => {
 
   it('gives no coefficient next to a card of a newer estimetry, without failing', () => {
     put(...six());
-    closing.cards.others.set('T-9', { schema: 'newer', task: 'T-9', version: 4 });
+    closing.cards.others.set('T-9', { schema: 'newer', task: TaskId.parse('T-9'), version: 4 });
     expect(app.estimates.calibration({ type: 'feature' })).toMatchObject({ coefficient: null, skipped: ['T-9'] });
   });
 

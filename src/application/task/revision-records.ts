@@ -24,7 +24,7 @@ export class RevisionRecords {
       journalEntry<PlanRevised>(
         'plan.revised',
         { source: CORE_SOURCE, revision, projects: this.snapshots.started(task, task.startedAt ?? meta.at, where) },
-        { id: meta.id, at: meta.at, author: meta.author, project: task.homeProject.value, task: task.id.toString() },
+        { ...meta, project: task.homeProject, task: task.id },
       ),
     );
   }
@@ -36,12 +36,12 @@ export class RevisionRecords {
 
   /** A proposal to close about a change that was rolled back would ask about work thrown away. */
   dropProposal(task: Task, excluded: readonly ExcludedArchives[]): void {
-    const pending = this.proposals.peek(task.id.toString());
+    const pending = this.proposals.peek(task.id);
     const about = (project: ExcludedArchives) =>
-      (pending?.project === undefined || pending.project === project.project) &&
+      (pending?.project === undefined || pending.project.value === project.project) &&
       project.archives.some((archive) => archive.change === pending?.change);
     if (pending !== undefined && excluded.some(about)) {
-      this.proposals.remove(task.id.toString());
+      this.proposals.remove(task.id);
     }
   }
 }

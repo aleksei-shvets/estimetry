@@ -9,7 +9,9 @@ import { SessionId } from '../../../src/domain/measurement/session-id.js';
 import { Timestamp } from '../../../src/domain/shared/timestamp.js';
 import { InMemoryCloseProposals } from '../../support/closing-fakes.js';
 import { FixedMeasurementSettings } from '../../support/fakes.js';
-import { InMemoryCheckpointState, InMemorySessionBindings } from '../../support/hook-fakes.js';
+import { InMemoryCheckpointState, InMemorySessionBindings, plainImport } from '../../support/hook-fakes.js';
+import { TaskId } from '../../../src/domain/task/task-id.js';
+import { ProjectId } from '../../../src/domain/project/project-id.js';
 
 const at = (hhmm: string) => Timestamp.parse(`2026-10-27T${hhmm}:00.000Z`);
 const s1 = SessionId.parse('s1');
@@ -23,60 +25,65 @@ describe('a pending proposal to close a task', () => {
       loads += 1;
       return { of: plan };
     });
-    proposals.put('T-1', { change: 'add-x', completedAt: at('10:00').toISOString(), session: 's1' });
+    proposals.put(TaskId.parse('T-1'), { change: 'add-x', completedAt: at('10:00'), session: SessionId.parse('s1') });
     return { proposals, state, proposal, loads: () => loads };
   }
 
   it('is taken once by the session that noticed the completion, with the plan in its text', async () => {
     const { proposal } = setup();
-    const text = await proposal.take('T-1', s1, '/work/api', at('10:05'));
+    const text = await proposal.take(TaskId.parse('T-1'), s1, '/work/api', at('10:05'));
     expect(text).toContain('add-x');
     expect(text).toContain('80%');
     expect(text).toContain('release');
-    expect(await proposal.take('T-1', s1, '/work/api', at('10:06'))).toBeUndefined();
+    expect(await proposal.take(TaskId.parse('T-1'), s1, '/work/api', at('10:06'))).toBeUndefined();
   });
 
   it('waits for another session while the one that noticed it is active, and loads no plan meanwhile', async () => {
     const { state, proposal, loads } = setup();
     state.write(s1, { lastSeenAt: at('10:04').toISOString() });
-    expect(await proposal.take('T-1', SessionId.parse('s2'), '/work/api', at('10:05'))).toBeUndefined();
+    expect(await proposal.take(TaskId.parse('T-1'), SessionId.parse('s2'), '/work/api', at('10:05'))).toBeUndefined();
     expect(loads()).toBe(0);
-    expect(await proposal.take('T-1', SessionId.parse('s2'), '/work/api', at('12:00'))).toContain('add-x');
+    expect(await proposal.take(TaskId.parse('T-1'), SessionId.parse('s2'), '/work/api', at('12:00'))).toContain('add-x');
   });
 
   it('goes without the plan when the plan cannot be read', async () => {
     const { proposal } = setup(() => {
       throw new Error('no plan');
     });
-    expect(await proposal.take('T-1', s1, '/work/api', at('10:05'))).toContain('add-x');
+    expect(await proposal.take(TaskId.parse('T-1'), s1, '/work/api', at('10:05'))).toContain('add-x');
   });
 
   it('is nothing when there is no proposal', async () => {
     const { proposal, loads } = setup();
-    expect(await proposal.take('T-2', s1, '/work/api', at('10:05'))).toBeUndefined();
+    expect(await proposal.take(TaskId.parse('T-2'), s1, '/work/api', at('10:05'))).toBeUndefined();
     expect(loads()).toBe(0);
   });
 });
 
 describe('the import of the log at the end of a session', () => {
-  const summary = (id: string, status: TaskSummary['status'], projects: string[] = ['api']): TaskSummary => ({ id, title: id, status, projects });
+  const summary = (id: string, status: TaskSummary['status'], projects: string[] = ['api']): TaskSummary => ({
+    id: TaskId.parse(id),
+    title: id,
+    status,
+    projects: projects.map((project) => ProjectId.parse(project)),
+  });
 
   function setup(binding: SessionBinding | undefined, summaries: TaskSummary[], withLogs = true) {
     const bindings = new InMemorySessionBindings();
     if (binding !== undefined) {
-      bindings.bindings.set(binding.session, binding);
+      bindings.bindings.set(binding.session.value, binding);
     }
-    const tasks: TaskStatusReader = { summary: (id) => summaries.find((s) => s.id === id), inProgress: () => [] };
+    const tasks: TaskStatusReader = { summary: (id) => summaries.find((s) => s.id.equals(id)), inProgress: () => [] };
     const imports: SessionImportRequest[] = [];
     const logs = async () => ({ execute: (request: SessionImportRequest) => (imports.push(request), []) });
     return { imports, end: new SessionEndImport(bindings, tasks, withLogs ? logs : undefined) };
   }
 
   it('imports into every task in progress the session served, with the path it knows and the budget', async () => {
-    const binding: SessionBinding = { session: 's1', project: 'api', root: '/work/api', task: 'T-2', tasks: ['T-1', 'T-3'], transcript: '/logs/kept.jsonl' };
+    const binding: SessionBinding = { session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/work/api', task: TaskId.parse('T-2'), tasks: [TaskId.parse('T-1'), TaskId.parse('T-3')], transcript: '/logs/kept.jsonl' };
     const { imports, end } = setup(binding, [summary('T-1', 'in-progress', ['web']), summary('T-2', 'in-progress', []), summary('T-3', 'closed')]);
     await end.run('claude-code', s1, undefined);
-    expect(imports).toEqual([
+    expect(imports.map(plainImport)).toEqual([
       {
         session: 's1',
         source: 'claude-code',
@@ -91,19 +98,19 @@ describe('the import of the log at the end of a session', () => {
   });
 
   it('prefers the path of the hook to the kept one', async () => {
-    const { imports, end } = setup({ session: 's1', project: 'api', root: '/work/api', task: 'T-1', transcript: '/logs/kept.jsonl' }, [summary('T-1', 'in-progress')]);
+    const { imports, end } = setup({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/work/api', task: TaskId.parse('T-1'), transcript: '/logs/kept.jsonl' }, [summary('T-1', 'in-progress')]);
     await end.run('claude-code', s1, '/logs/now.jsonl');
     expect(imports[0]?.path).toBe('/logs/now.jsonl');
   });
 
   it('does nothing without tasks in progress or without an importer', async () => {
-    const closed = setup({ session: 's1', project: 'api', root: '/work/api', task: 'T-1' }, [summary('T-1', 'closed')]);
+    const closed = setup({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/work/api', task: TaskId.parse('T-1') }, [summary('T-1', 'closed')]);
     await closed.end.run('claude-code', s1, undefined);
     expect(closed.imports).toEqual([]);
     const unbound = setup(undefined, []);
     await unbound.end.run('claude-code', s1, undefined);
     expect(unbound.imports).toEqual([]);
-    const without = setup({ session: 's1', project: 'api', root: '/work/api', task: 'T-1' }, [summary('T-1', 'in-progress')], false);
+    const without = setup({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/work/api', task: TaskId.parse('T-1') }, [summary('T-1', 'in-progress')], false);
     await without.end.run('claude-code', s1, undefined);
     expect(without.imports).toEqual([]);
   });

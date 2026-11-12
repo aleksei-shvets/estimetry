@@ -113,7 +113,7 @@ export class ReviseEstimate {
    * left out: they count from the day of the revision.
    */
   private archives(task: Task, window: LostWindow, where: WorkingCopy): ExcludedArchives[] {
-    return this.archived.read(task.projects.map((project) => project.value), where).flatMap((reading) => {
+    return this.archived.read(task.projects, where).flatMap((reading) => {
       if (reading.archived === undefined) {
         return [];
       }
@@ -123,7 +123,7 @@ export class ReviseEstimate {
           ? [{ change: dir.change, archivedOn: dir.archivedOn.value, ...(changedAt === undefined ? {} : { changedAt }) }]
           : [];
       });
-      return [{ project: reading.project, archives }];
+      return [{ project: reading.project.value, archives }];
     });
   }
 }

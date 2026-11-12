@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ProjectId } from '../../src/domain/project/project-id.js';
 import { describe, expect, it } from 'vitest';
 import { StorageLayout } from '../../src/infrastructure/fs/storage-layout.js';
 import { GitCli } from '../../src/infrastructure/git/git-cli.js';
@@ -29,8 +30,8 @@ describe('YamlProjectConfigFile', () => {
     expect(store.read(root)).toEqual({});
     mkdirSync(join(root, '.estimetry'));
     writeFileSync(join(root, '.estimetry', 'config.yaml'), 'project: my-app\nflow: openspec\nnote: shared with the team\n');
-    expect(store.read(root)).toEqual({ config: { project: 'my-app', flow: 'openspec' } });
-    const change = store.plan(root, { project: 'my-app', flow: 'none' });
+    expect(store.read(root)).toEqual({ config: { project: ProjectId.parse('my-app'), flow: 'openspec' } });
+    const change = store.plan(root, { project: ProjectId.parse('my-app'), flow: 'none' });
     expect(change).toMatchObject({ path: join(root, '.estimetry', 'config.yaml') });
     expect('content' in change ? change.content : '').toBe('project: my-app\nflow: none\nnote: shared with the team\nschemaVersion: 1\n');
     writeFileSync(join(root, '.estimetry', 'config.yaml'), 'project: [\n');

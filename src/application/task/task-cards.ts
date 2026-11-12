@@ -26,7 +26,7 @@ export class TaskCards {
   /** Writes the card of a closed task, removes the card of any other. */
   refresh(task: Task): Card | undefined {
     if (!task.isClosed) {
-      this.cards.remove(task.id.toString());
+      this.cards.remove(task.id);
       return undefined;
     }
     const card = this.builder.build(task);
@@ -36,7 +36,7 @@ export class TaskCards {
 
   /** The card of a closed task for `emt task show`: a card of an older schema is rebuilt and written. */
   cardOf(task: Task): Card {
-    const stored = this.cards.read(task.id.toString());
+    const stored = this.cards.read(task.id);
     if (stored?.schema === 'current') {
       return stored.card;
     }
@@ -51,7 +51,7 @@ export class TaskCards {
   recalculate(): Calibration {
     return this.calibration.recalculate(() => {
       const stored = this.cards.list();
-      const newer = stored.flatMap((card) => (card.schema === 'newer' ? [card.task] : []));
+      const newer = stored.flatMap((card) => (card.schema === 'newer' ? [card.task.toString()] : []));
       if (newer.length > 0) {
         const error = new CardsTooNew(newer);
         this.errors.report('calibration', error);
@@ -78,7 +78,7 @@ export class TaskCards {
     const skipped: string[] = [];
     for (const stored of this.cards.list()) {
       if (stored.schema === 'newer') {
-        skipped.push(stored.task);
+        skipped.push(stored.task.toString());
         continue;
       }
       const card = stored.schema === 'current' ? stored.card : this.upgrade(stored.card, false);

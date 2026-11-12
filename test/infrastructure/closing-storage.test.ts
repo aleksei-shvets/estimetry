@@ -12,6 +12,9 @@ import { JsonCalibrationStore } from '../../src/infrastructure/persistence/json-
 import { YamlCardStore } from '../../src/infrastructure/persistence/yaml-card-store.js';
 import { ROOT, spawnNode } from '../support/cli.js';
 import { tempDir } from '../support/temp-dir.js';
+import { TaskId } from '../../src/domain/task/task-id.js';
+import { Timestamp } from '../../src/domain/shared/timestamp.js';
+import { SessionId } from '../../src/domain/measurement/session-id.js';
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -96,7 +99,7 @@ describe('close proposals', () => {
   it('hands a proposal out exactly once to parallel processes', async () => {
     const home = join(tempDir(), 'home');
     const layout = new StorageLayout(home);
-    new FileCloseProposals(layout).put('T-1', { change: 'a', completedAt: '2026-10-27T10:00:00.000Z', session: 's1' });
+    new FileCloseProposals(layout).put(TaskId.parse('T-1'), { change: 'a', completedAt: Timestamp.parse('2026-10-27T10:00:00.000Z'), session: SessionId.parse('s1') });
     const dist = (p: string) => JSON.stringify(pathToFileURL(join(ROOT, 'dist', p)).href);
     const out = join(home, 'out');
     mkdirSync(out, { recursive: true });
@@ -149,7 +152,7 @@ describe('cards and calibration', () => {
     cards.write(card('T-2'));
     writeFileSync(layout.card('T-3'), 'schemaVersion: [oops');
     expect(cards.list().map((c) => (c.schema === 'current' ? c.card.task.id : undefined))).toEqual(['T-1', 'T-2']);
-    cards.remove('T-2');
+    cards.remove(TaskId.parse('T-2'));
     const store = new JsonCalibrationStore(layout, () => '2026-11-02T00:00:00.000Z');
     store.recalculate(() => calibrate(cards.list().flatMap((c) => (c.schema === 'current' ? [c.card] : []))));
     const written = JSON.parse(readFileSync(layout.calibrationFile, 'utf8')) as { generatedAt: string; authors: Record<string, { tasks: number }> };
@@ -168,10 +171,10 @@ describe('cards and calibration', () => {
     const { usage: _u, ...v2 } = card('T-5') as unknown as Record<string, unknown>;
     cards.write({ ...v2, schemaVersion: 2 } as unknown as Card);
     expect(cards.list().map((c) => c.schema)).toEqual(['v1', 'newer', 'current', 'v2']);
-    expect(cards.read('T-2')).toEqual({ schema: 'newer', task: 'T-2', version: 4 });
+    expect(cards.read(TaskId.parse('T-2'))).toEqual({ schema: 'newer', task: TaskId.parse('T-2'), version: 4 });
     const { parallel: _parallel, ...broken } = old;
     cards.write({ ...broken, schemaVersion: 1, task: { id: 'T-4', type: 'feature', stack: [] } } as unknown as Card);
-    expect(cards.read('T-4')).toBeUndefined();
+    expect(cards.read(TaskId.parse('T-4'))).toBeUndefined();
   });
 
   it('parallel closings leave a calibration built from every card', async () => {

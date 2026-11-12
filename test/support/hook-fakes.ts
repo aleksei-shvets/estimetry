@@ -11,6 +11,10 @@ import type { TaskStatusReader, TaskSummary } from '../../src/application/ports/
 import { SessionId } from '../../src/domain/measurement/session-id.js';
 import type { ChangeProgress, FileLines } from '../../src/domain/progress/progress-records.js';
 import type { TaskRepository } from '../../src/domain/task/task-repository.js';
+import { ProjectId } from '../../src/domain/project/project-id.js';
+import { Timestamp } from '../../src/domain/shared/timestamp.js';
+import { TaskId } from '../../src/domain/task/task-id.js';
+import type { SessionImportRequest } from '../../src/application/task/import-session-logs.js';
 
 /** Payload of the fake tool: the events to write, already normalized. */
 export interface FakePayload {
@@ -62,8 +66,19 @@ export class InMemorySessionBindings implements SessionBindings {
     return next;
   }
 
-  ofProject(project: string): SessionBinding[] {
-    return [...this.bindings.values()].filter((binding) => binding.project === project);
+  ofProject(project: ProjectId): SessionBinding[] {
+    return [...this.bindings.values()].filter((binding) => binding.project.equals(project));
+  }
+
+  /** A binding from plain values, as a test writes it. */
+  setPlain(binding: PlainBinding): void {
+    this.bindings.set(binding.session, bindingOf(binding));
+  }
+
+  /** The binding of a session in plain values, for assertions. */
+  plain(session: string): PlainBinding | undefined {
+    const binding = this.bindings.get(session);
+    return binding === undefined ? undefined : plainOf(binding);
   }
 }
 
@@ -87,7 +102,7 @@ export class FakeProjectLocator implements ProjectLocator {
     const match = Object.keys(this.projects)
       .filter((root) => directory === root || directory.startsWith(`${root}/`))
       .sort((a, b) => b.length - a.length)[0];
-    return match === undefined ? undefined : { id: this.projects[match] as string, root: match };
+    return match === undefined ? undefined : { id: ProjectId.parse(this.projects[match] as string), root: match };
   }
 }
 
@@ -95,27 +110,27 @@ export class FakeProjectLocator implements ProjectLocator {
 export class RepositoryTaskStatusReader implements TaskStatusReader {
   constructor(private readonly tasks: TaskRepository) {}
 
-  summary(task: string): TaskSummary | undefined {
-    const found = this.tasks.listAll().find((t) => t.id.toString() === task);
+  summary(task: TaskId): TaskSummary | undefined {
+    const found = this.tasks.listAll().find((t) => t.id.equals(task));
     return found ? toSummary(found.toSnapshot()) : undefined;
   }
 
-  inProgress(project: string): TaskSummary[] {
+  inProgress(project: ProjectId): TaskSummary[] {
     return this.tasks
       .listAll()
       .map((t) => toSummary(t.toSnapshot()))
-      .filter((t) => t.status === 'in-progress' && t.projects.includes(project));
+      .filter((t) => t.status === 'in-progress' && t.projects.some((known) => known.equals(project)));
   }
 }
 
 function toSummary(s: { id: string; title: string; status: TaskStatus; startedAt?: string; projects: readonly string[]; revisions?: readonly TaskRevisionData[] }): TaskSummary {
   const excluding = (s.revisions ?? []).some((revision) => revision.spent === 'exclude');
   return {
-    id: s.id,
+    id: TaskId.parse(s.id),
     title: s.title,
     status: s.status,
-    projects: s.projects,
-    ...(s.startedAt === undefined ? {} : { startedAt: s.startedAt }),
+    projects: s.projects.map((project) => ProjectId.parse(project)),
+    ...(s.startedAt === undefined ? {} : { startedAt: Timestamp.parse(s.startedAt) }),
     ...(excluding ? { exclusions: exclusionsOf(s.revisions ?? []) } : {}),
   };
 }
@@ -123,7 +138,8 @@ function toSummary(s: { id: string; title: string; status: TaskStatus; startedAt
 export class FakeProjectPlans implements ProjectPlans {
   constructor(public changes: readonly ChangeProgress[] | undefined = [{ change: 'a', archived: false, done: 1, total: 4 }]) {}
 
-  readings: ProjectPlanReading[] = [];
+  /** Readings with the project as plain text, as a test writes them. */
+  readings: PlainReading[] = [];
   /** The working copy of every read, in order: undefined when none was given. */
   readonly nears: (string | undefined)[] = [];
 
@@ -131,12 +147,15 @@ export class FakeProjectPlans implements ProjectPlans {
     return this.changes;
   }
 
-  plans(projects: readonly string[], options: { readonly near?: string } = {}): ProjectPlanReading[] {
+  plans(projects: readonly ProjectId[], options: { readonly near?: string } = {}): ProjectPlanReading[] {
     this.nears.push(options.near);
-    return projects.map((project) => this.readings.find((reading) => reading.project === project) ?? { project, unavailable: 'not-on-this-machine' });
+    return projects.map((project) => {
+      const found = this.readings.find((reading) => reading.project === project.value);
+      return found === undefined ? { project, unavailable: 'not-on-this-machine' } : { ...found, project };
+    });
   }
 
-  archives(projects: readonly string[], options: { readonly near?: string } = {}): ProjectPlanReading[] {
+  archives(projects: readonly ProjectId[], options: { readonly near?: string } = {}): ProjectPlanReading[] {
     return this.plans(projects, options).map(({ changes: _changes, ...rest }) => rest);
   }
 }
@@ -169,4 +188,60 @@ export class FakeGit implements GitHead, GitSnapshots {
     this.commitsAsked.push(sha);
     return this.lastCommit;
   }
+}
+
+/** A reading of a plan with the project as plain text. */
+export type PlainReading = Omit<ProjectPlanReading, 'project'> & { readonly project: string };
+
+/** A session binding in plain values: what a test writes and compares. */
+export interface PlainBinding {
+  readonly session: string;
+  readonly project: string;
+  readonly root: string;
+  readonly task?: string;
+  readonly since?: string;
+  readonly checkedAt?: string;
+  readonly everBound?: boolean;
+  readonly closedTask?: string;
+  readonly tasks?: readonly string[];
+  readonly transcript?: string;
+}
+
+export function bindingOf(p: PlainBinding): SessionBinding {
+  return {
+    session: SessionId.parse(p.session),
+    project: ProjectId.parse(p.project),
+    root: p.root,
+    ...(p.task === undefined ? {} : { task: TaskId.parse(p.task) }),
+    ...(p.since === undefined ? {} : { since: Timestamp.parse(p.since) }),
+    ...(p.checkedAt === undefined ? {} : { checkedAt: Timestamp.parse(p.checkedAt) }),
+    ...(p.everBound === undefined ? {} : { everBound: p.everBound }),
+    ...(p.closedTask === undefined ? {} : { closedTask: TaskId.parse(p.closedTask) }),
+    ...(p.tasks === undefined ? {} : { tasks: p.tasks.map((task) => TaskId.parse(task)) }),
+    ...(p.transcript === undefined ? {} : { transcript: p.transcript }),
+  };
+}
+
+export function plainOf(b: SessionBinding): PlainBinding {
+  return {
+    session: b.session.value,
+    project: b.project.value,
+    root: b.root,
+    ...(b.task === undefined ? {} : { task: b.task.toString() }),
+    ...(b.since === undefined ? {} : { since: b.since.toISOString() }),
+    ...(b.checkedAt === undefined ? {} : { checkedAt: b.checkedAt.toISOString() }),
+    ...(b.everBound === undefined ? {} : { everBound: b.everBound }),
+    ...(b.closedTask === undefined ? {} : { closedTask: b.closedTask.toString() }),
+    ...(b.tasks === undefined ? {} : { tasks: b.tasks.map((task) => task.toString()) }),
+    ...(b.transcript === undefined ? {} : { transcript: b.transcript }),
+  };
+}
+
+/** A request to import a session log in plain values, for assertions. */
+export function plainImport(request: SessionImportRequest) {
+  return {
+    ...request,
+    session: request.session.value,
+    tasks: request.tasks.map((task) => ({ id: task.id.toString(), project: task.project.value })),
+  };
 }

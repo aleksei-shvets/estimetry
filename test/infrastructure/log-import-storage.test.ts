@@ -1,6 +1,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { SessionBinding } from '../../src/application/ports/session-bindings.js';
+import { plainOf } from '../support/hook-fakes.js';
 import { describe, expect, it } from 'vitest';
 import { SessionId } from '../../src/domain/measurement/session-id.js';
 import { StorageLayout } from '../../src/infrastructure/fs/storage-layout.js';
@@ -8,6 +10,8 @@ import { YamlLogImportState } from '../../src/infrastructure/persistence/yaml-lo
 import { YamlSessionStore } from '../../src/infrastructure/persistence/yaml-session-store.js';
 import { ROOT, spawnNode } from '../support/cli.js';
 import { tempDir } from '../support/temp-dir.js';
+import { TaskId } from '../../src/domain/task/task-id.js';
+import { ProjectId } from '../../src/domain/project/project-id.js';
 
 const entry = (next: number) => ({ next, fingerprint: { main: { size: next, mtimeMs: 1 }, agents: { a1: { size: 3, mtimeMs: 2 } } } });
 
@@ -15,14 +19,14 @@ describe('the cache of log imports', () => {
   it('keeps an entry per task of a session; a broken file reads as empty', () => {
     const layout = new StorageLayout(join(tempDir(), 'home'));
     const state = new YamlLogImportState(layout);
-    expect(state.read('s1')).toEqual({});
-    state.locked('s1', () => {
-      state.write('s1', 'T-1', entry(10));
-      state.write('s1', 'T-2', entry(20));
+    expect(state.read(SessionId.parse('s1'))).toEqual({});
+    state.locked(SessionId.parse('s1'), () => {
+      state.write(SessionId.parse('s1'), TaskId.parse('T-1'), entry(10));
+      state.write(SessionId.parse('s1'), TaskId.parse('T-2'), entry(20));
     });
-    expect(state.read('s1')).toEqual({ 'T-1': entry(10), 'T-2': entry(20) });
+    expect(state.read(SessionId.parse('s1'))).toEqual({ 'T-1': entry(10), 'T-2': entry(20) });
     writeFileSync(layout.logImport('s1'), 'tasks: [oops');
-    expect(state.read('s1')).toEqual({});
+    expect(state.read(SessionId.parse('s1'))).toEqual({});
   });
 
   it('two processes importing one session never interleave', async () => {
@@ -56,9 +60,9 @@ describe('a session binding', () => {
   it('keeps every task it served and the path of its log across switches', () => {
     const store = new YamlSessionStore(new StorageLayout(join(tempDir(), 'home')));
     const s1 = SessionId.parse('s1');
-    store.update(s1, () => ({ session: 's1', project: 'api', root: '/r', task: 'T-1', transcript: '/logs/s1.jsonl' }));
-    store.update(s1, () => ({ session: 's1', project: 'api', root: '/r', task: 'T-2' }));
-    store.update(s1, () => ({ session: 's1', project: 'api', root: '/r', closedTask: 'T-2' }));
-    expect(store.get(s1)).toMatchObject({ tasks: ['T-1', 'T-2'], transcript: '/logs/s1.jsonl', closedTask: 'T-2' });
+    store.update(s1, () => ({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/r', task: TaskId.parse('T-1'), transcript: '/logs/s1.jsonl' }));
+    store.update(s1, () => ({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/r', task: TaskId.parse('T-2') }));
+    store.update(s1, () => ({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/r', closedTask: TaskId.parse('T-2') }));
+    expect(plainOf(store.get(s1) as SessionBinding)).toMatchObject({ tasks: ['T-1', 'T-2'], transcript: '/logs/s1.jsonl', closedTask: 'T-2' });
   });
 });

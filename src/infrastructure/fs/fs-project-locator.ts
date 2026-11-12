@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { LocatedProject, ProjectLocator } from '../../application/ports/project-locator.js';
 import { readYaml } from './atomic-yaml.js';
 import type { StorageLayout } from './storage-layout.js';
+import { ProjectId } from '../../domain/project/project-id.js';
 
 /**
  * Finds the registered project of a directory without running git: real
@@ -34,7 +35,7 @@ export class FsProjectLocator implements ProjectLocator {
     }
     return projects.flatMap((p: unknown) => {
       const project = p as { id?: unknown; paths?: unknown };
-      return typeof project.id === 'string' && Array.isArray(project.paths)
+      return typeof project.id === 'string' && isProjectId(project.id) && Array.isArray(project.paths)
         ? project.paths.filter((path): path is string => typeof path === 'string').map((path) => ({ id: project.id as string, path }))
         : [];
     });
@@ -45,7 +46,7 @@ function longestOwner(registered: readonly { id: string; path: string }[], direc
   const owner = registered
     .filter(({ path }) => directory === path || directory.startsWith(path.endsWith(sep) ? path : `${path}${sep}`))
     .sort((a, b) => b.path.length - a.path.length)[0];
-  return owner === undefined ? undefined : { id: owner.id, root: owner.path };
+  return owner === undefined ? undefined : { id: ProjectId.parse(owner.id), root: owner.path };
 }
 
 /** For a directory inside a linked worktree, the root of the main working copy. */
@@ -78,5 +79,14 @@ function realPath(path: string): string | undefined {
     return realpathSync(path);
   } catch {
     return undefined;
+  }
+}
+
+function isProjectId(value: string): boolean {
+  try {
+    ProjectId.parse(value);
+    return true;
+  } catch {
+    return false; // a broken registry entry is skipped, as one without paths is
   }
 }

@@ -5,6 +5,7 @@ import type { IdGenerator } from '../application/ports/id-generator.js';
 import type { MeasurementSettings } from '../application/ports/measurement-settings.js';
 import type { ProjectPlans } from '../application/ports/project-plans.js';
 import type { ProjectRepository } from '../domain/project/project-repository.js';
+import type { TaskId } from '../domain/task/task-id.js';
 import { ActivityRecorder } from '../application/hooks/activity-recorder.js';
 import { ChangeCompletions } from '../application/hooks/change-completions.js';
 import { CheckpointSnapshot } from '../application/hooks/checkpoint-snapshot.js';
@@ -110,17 +111,16 @@ export function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, 
 
 /** The plan of a task for the text of a pending proposal to close it: percent done and unfinished groups. */
 async function hookPlanOf(layout: StorageLayout, plans: ProjectPlans, projects: ProjectRepository) {
-  const [{ PlanSnapshots }, { SnapshotTaskReader }, { FsGitHead: Head }, { TaskId }] = await Promise.all([
+  const [{ PlanSnapshots }, { SnapshotTaskReader }, { FsGitHead: Head }] = await Promise.all([
     import('../application/task/plan-snapshots.js'),
     import('../infrastructure/persistence/snapshot-task-reader.js'),
     import('../infrastructure/git/fs-git-head.js'),
-    import('../domain/task/task-id.js'),
   ]);
   const snapshots = new PlanSnapshots(plans, new Head(), projects);
   const reader = new SnapshotTaskReader(layout);
   return {
-    of: (task: string, near: string) => {
-      const found = reader.find(TaskId.parse(task));
+    of: (task: TaskId, near: string) => {
+      const found = reader.find(task);
       if (found === undefined) {
         return { unfinished: [] };
       }

@@ -6,12 +6,13 @@ import { ClaudeCodeLogs } from '../../../src/integrations/tools/claude-code/impo
 import { at } from '../../support/activity.js';
 import { log, SECRET, text, writeLog } from '../../support/claude-log.js';
 import { tempDir } from '../../support/temp-dir.js';
+import { SessionId } from '../../../src/domain/measurement/session-id.js';
 
 const ms = (time: string) => at(time).toMillis();
 
 function read(lines: Parameters<typeof writeLog>[1], options: Parameters<typeof writeLog>[2] = {}, from = 0): SessionLogRead {
   const written = writeLog(tempDir(), lines, options);
-  const result = new ClaudeCodeLogs(written.configDir).read({ session: options.session ?? 's1', from });
+  const result = new ClaudeCodeLogs(written.configDir).read({ session: SessionId.parse(options.session ?? 's1'), from });
   expect(result.status).toBe('read');
   return result as SessionLogRead;
 }
@@ -140,28 +141,28 @@ describe('reading a Claude Code session log', () => {
 
   it('an empty log is no data; a log of service records only is not recognized', () => {
     const empty = writeLog(tempDir(), []);
-    expect(new ClaudeCodeLogs(empty.configDir).read({ session: 's1', from: 0 }).status).toBe('no-data');
+    expect(new ClaudeCodeLogs(empty.configDir).read({ session: SessionId.parse('s1'), from: 0 }).status).toBe('no-data');
     const service = writeLog(tempDir(), [log.service('mode'), log.service('ai-title')]);
-    const result = new ClaudeCodeLogs(service.configDir).read({ session: 's1', from: 0 });
+    const result = new ClaudeCodeLogs(service.configDir).read({ session: SessionId.parse('s1'), from: 0 });
     expect(result.status).toBe('unrecognized');
     noText(result);
   });
 
   it('finds the log by the path the hook reported, else in every project folder; a missing log is not found', () => {
     const written = writeLog(tempDir(), [log.prompt('10:00'), log.assistant('10:01', { stop: 'end_turn' })], { folder: 'elsewhere' });
-    expect(new ClaudeCodeLogs(tempDir()).read({ session: 's1', path: written.path, from: 0 }).status).toBe('read');
-    expect(new ClaudeCodeLogs(written.configDir).read({ session: 's1', from: 0 }).status).toBe('read');
-    expect(new ClaudeCodeLogs(written.configDir).read({ session: 's2', from: 0 }).status).toBe('not-found');
-    expect(new ClaudeCodeLogs(written.configDir).fingerprint('s2')).toBeUndefined();
+    expect(new ClaudeCodeLogs(tempDir()).read({ session: SessionId.parse('s1'), path: written.path, from: 0 }).status).toBe('read');
+    expect(new ClaudeCodeLogs(written.configDir).read({ session: SessionId.parse('s1'), from: 0 }).status).toBe('read');
+    expect(new ClaudeCodeLogs(written.configDir).read({ session: SessionId.parse('s2'), from: 0 }).status).toBe('not-found');
+    expect(new ClaudeCodeLogs(written.configDir).fingerprint(SessionId.parse('s2'))).toBeUndefined();
   });
 
   it('reads on from the first line of the last turn, so a continued turn is read again in full', () => {
     const written = writeLog(tempDir(), [log.prompt('10:00'), log.assistant('10:02', { stop: 'end_turn' }), log.prompt('10:10'), log.assistant('10:12', { stop: 'end_turn' }), log.stopHook('10:13')]);
     const reader = new ClaudeCodeLogs(written.configDir);
-    const first = reader.read({ session: 's1', from: 0 }) as SessionLogRead;
+    const first = reader.read({ session: SessionId.parse('s1'), from: 0 }) as SessionLogRead;
     expect(first.next).toBe(first.turns[1]?.key);
     appendFileSync(written.path, text([log.assistant('10:15'), log.stopHook('10:19'), log.prompt('11:00'), log.assistant('11:01', { stop: 'end_turn' })]));
-    const second = reader.read({ session: 's1', from: first.next }) as SessionLogRead;
+    const second = reader.read({ session: SessionId.parse('s1'), from: first.next }) as SessionLogRead;
     expect(second.from).toBe(first.next);
     expect(turns(second)).toEqual([
       [ms('10:10'), ms('10:19')],
@@ -178,9 +179,9 @@ describe('reading a Claude Code session log', () => {
       log.assistant('10:12', { id: 'm2', stop: 'end_turn', usage: { output: 2 } }),
     ]);
     const reader = new ClaudeCodeLogs(written.configDir);
-    const first = reader.read({ session: 's1', from: 0 }) as SessionLogRead;
+    const first = reader.read({ session: SessionId.parse('s1'), from: 0 }) as SessionLogRead;
     appendFileSync(written.path, text([log.assistant('10:10', { id: 'm3', usage: { output: 5 } })]));
-    const second = reader.read({ session: 's1', from: first.next }) as SessionLogRead;
+    const second = reader.read({ session: SessionId.parse('s1'), from: first.next }) as SessionLogRead;
     const output = second.turns.flatMap((t) => t.tokens).reduce((sum, bucket) => sum + bucket.output, 0);
     expect(output).toBe(7);
   });
@@ -189,22 +190,22 @@ describe('reading a Claude Code session log', () => {
     const written = writeLog(tempDir(), [log.prompt('10:00'), log.assistant('10:02', { stop: 'end_turn' })]);
     appendFileSync(written.path, JSON.stringify(log.prompt('10:30')).slice(0, 40));
     const reader = new ClaudeCodeLogs(written.configDir);
-    const result = reader.read({ session: 's1', from: 0 }) as SessionLogRead;
+    const result = reader.read({ session: SessionId.parse('s1'), from: 0 }) as SessionLogRead;
     expect(turns(result)).toEqual([[ms('10:00'), ms('10:02')]]);
     expect(result.skipped).toBe(0);
-    expect((reader.read({ session: 's1', from: 10 ** 9 }) as SessionLogRead).from).toBe(0);
+    expect((reader.read({ session: SessionId.parse('s1'), from: 10 ** 9 }) as SessionLogRead).from).toBe(0);
   });
 
   it('stops past its budget', () => {
     const written = writeLog(tempDir(), [log.prompt('10:00'), log.assistant('10:02', { stop: 'end_turn' })]);
-    expect(new ClaudeCodeLogs(written.configDir).read({ session: 's1', from: 0, budgetMs: -1 }).status).toBe('over-budget');
+    expect(new ClaudeCodeLogs(written.configDir).read({ session: SessionId.parse('s1'), from: 0, budgetMs: -1 }).status).toBe('over-budget');
   });
 
   it('a failure carries a code and no path', () => {
     const written = writeLog(tempDir(), [log.prompt('10:00')]);
     const reader = new ClaudeCodeLogs(written.configDir);
     try {
-      reader.read({ session: 's1', path: `${written.configDir}/projects`, from: 0 }); // a directory, not a file
+      reader.read({ session: SessionId.parse('s1'), path: `${written.configDir}/projects`, from: 0 }); // a directory, not a file
       expect.unreachable();
     } catch (error) {
       expect(error).toBeInstanceOf(SessionLogFailure);

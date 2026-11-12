@@ -5,8 +5,10 @@ import type { CardV1 } from '../../domain/card/card-v1.js';
 import type { CardV2 } from '../../domain/card/card-v2.js';
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
+import { TaskId } from '../../domain/task/task-id.js';
 
 const TASK_ID = /^T-\d+$/;
+const TASK_FILE = /^T-\d+\.yaml$/;
 
 /** `cards/<task>.yaml`: written whole and atomically; a broken card reads as missing and is rebuilt. */
 export class YamlCardStore implements CardStore {
@@ -18,21 +20,16 @@ export class YamlCardStore implements CardStore {
     }
   }
 
-  read(task: string): StoredCard | undefined {
-    if (!TASK_ID.test(task)) {
-      return undefined;
-    }
+  read(task: TaskId): StoredCard | undefined {
     try {
-      return stored(task, readYaml(this.layout.card(task)));
+      return stored(task, readYaml(this.layout.card(task.toString())));
     } catch {
       return undefined;
     }
   }
 
-  remove(task: string): void {
-    if (TASK_ID.test(task)) {
-      rmSync(this.layout.card(task), { force: true });
-    }
+  remove(task: TaskId): void {
+    rmSync(this.layout.card(task.toString()), { force: true });
   }
 
   list(): StoredCard[] {
@@ -43,19 +40,19 @@ export class YamlCardStore implements CardStore {
       return [];
     }
     return names
-      .filter((name) => name.endsWith('.yaml'))
-      .map((name) => this.read(name.slice(0, -'.yaml'.length)))
+      .flatMap((name) => (TASK_FILE.test(name) ? [TaskId.parse(name.slice(0, -'.yaml'.length))] : []))
+      .map((task) => this.read(task))
       .filter((card): card is StoredCard => card !== undefined)
       .sort((a, b) => taskOf(a).localeCompare(taskOf(b), undefined, { numeric: true }));
   }
 }
 
 function taskOf(card: StoredCard): string {
-  return card.schema === 'newer' ? card.task : card.card.task.id;
+  return card.schema === 'newer' ? card.task.toString() : card.card.task.id;
 }
 
 /** Sorts a card by its schema; a card of a newer schema is named, never dropped silently. */
-function stored(task: string, value: unknown): StoredCard | undefined {
+function stored(task: TaskId, value: unknown): StoredCard | undefined {
   if (typeof value !== 'object' || value === null) {
     return undefined;
   }

@@ -1,5 +1,5 @@
 import type { ProgressRecord } from '../../domain/progress/progress-records.js';
-import { TaskId } from '../../domain/task/task-id.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 import type { EventJournal } from '../ports/event-journal.js';
 import type { ProgressSeen, ProgressState } from '../ports/progress-state.js';
 
@@ -15,15 +15,15 @@ export class ProgressLog {
   ) {}
 
   /** What was noticed; `cached` is false when it came from the journal and the cache is to be written. */
-  seen(task: string): { readonly seen: ProgressSeen; readonly cached: boolean } {
+  seen(task: TaskId): { readonly seen: ProgressSeen; readonly cached: boolean } {
     const cached = this.state.read(task);
     return cached === undefined
-      ? { seen: fromRecords(this.journal.readRecords(TaskId.parse(task))), cached: false }
+      ? { seen: fromRecords(this.journal.readRecords(task)), cached: false }
       : { seen: cached, cached: true };
   }
 
   /** Journal first, then the cache: a crash in between repeats a record, it never loses one. */
-  record(task: string, records: readonly ProgressRecord[], seen: ProgressSeen | undefined): void {
+  record(task: TaskId, records: readonly ProgressRecord[], seen: ProgressSeen | undefined): void {
     for (const record of records) {
       this.journal.appendRecord(record);
     }

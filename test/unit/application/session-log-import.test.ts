@@ -1,3 +1,4 @@
+import { ProjectId } from '../../../src/domain/project/project-id.js';
 import { EventMetaSource } from '../../../src/application/shared/event-meta-source.js';
 import { describe, expect, it } from 'vitest';
 import type { LogTurnData, SessionLogRead } from '../../../src/application/contracts/session-logs.js';
@@ -10,6 +11,7 @@ import { at } from '../../support/activity.js';
 import { FakeSessionLogs, InMemoryLogImportState } from '../../support/closing-fakes.js';
 import { FakeAuthorProvider, FixedClock, RecordingErrorReporter, SequentialIdGenerator } from '../../support/fakes.js';
 import { InMemoryEventJournal } from '../../support/in-memory-repositories.js';
+import { SessionId } from '../../../src/domain/measurement/session-id.js';
 
 const ms = (time: string) => at(time).toMillis();
 
@@ -27,7 +29,9 @@ function setup() {
   });
   const records = (task = 'T-1') => journal.readRecords(TaskId.parse(task)).filter((r): r is LogSession => r.type === 'log.session');
   const run = (tasks = ['T-1'], session = 's1') =>
-    importer.execute({ session, source: 'claude-code', tasks: tasks.map((id) => ({ id, project: 'api' })) }).map((r) => `${r.task} ${r.outcome}`);
+    importer
+      .execute({ session: SessionId.parse(session), source: 'claude-code', tasks: tasks.map((id) => ({ id: TaskId.parse(id), project: ProjectId.parse('api') })) })
+      .map((r) => `${r.task.toString()} ${r.outcome}`);
   return { logs, state, journal, errors, importer, records, run };
 }
 
@@ -94,7 +98,7 @@ describe('importing a session log', () => {
     expect(logs.requests.map((request) => request.from)).toEqual([0, 0]);
     expect(records('T-1')[1]?.data.turns.map((t) => t.key)).toEqual([100, 300]);
     expect(records('T-2')[0]?.data.turns.map((t) => t.key)).toEqual([0, 100, 300]);
-    expect(Object.keys(state.read('s1'))).toEqual(['T-1', 'T-2']);
+    expect(Object.keys(state.read(SessionId.parse('s1')))).toEqual(['T-1', 'T-2']);
   });
 
   it('splits a large import into parts of one import id, each under the limit', () => {
@@ -122,11 +126,8 @@ describe('importing a session log', () => {
     expect(merged?.turns[0]?.tokens).toHaveLength(2000);
   });
 
-  it('a session id that could name a file outside the store is refused', () => {
-    const { logs, run, records } = setup();
-    logs.logs.set('../x', read([turn(0, '10:00', '10:05')], 10));
-    expect(run(['T-1'], '../x')).toEqual(['T-1 failed']);
-    expect(records()).toHaveLength(0);
+  it('a session id that could name a file outside the store never reaches the import: it is no SessionId', () => {
+    expect(() => SessionId.parse('../x')).toThrow();
   });
 
   it('a missing log, an empty one and one over the budget write nothing; failures leave a code only', () => {

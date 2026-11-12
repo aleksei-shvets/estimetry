@@ -10,6 +10,7 @@ import type { LocatedProject } from '../ports/project-locator.js';
 import type { EventMetaSource } from '../shared/event-meta-source.js';
 import { journalEntry } from '../shared/journal-entry.js';
 import type { CheckpointSnapshot } from './checkpoint-snapshot.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 
 /** Calls that run in the background, so a snapshot that runs git does not hold the agent up. */
 const WRITES_CHECKPOINTS: ReadonlySet<HookKind> = new Set(['tool-done', 'turn-end']);
@@ -30,7 +31,7 @@ export class Checkpoints {
     session: SessionId,
     kind: HookKind,
     now: Timestamp,
-    task?: { readonly id: string; readonly project: LocatedProject },
+    task?: { readonly id: TaskId; readonly project: LocatedProject },
   ): CheckpointStatus {
     let status: CheckpointStatus = { ...this.state.read(session), lastSeenAt: now.toISOString() };
     if (task !== undefined && WRITES_CHECKPOINTS.has(kind)) {
@@ -60,7 +61,7 @@ export class Checkpoints {
   }
 
   /** A part of the snapshot that fails stays empty; the checkpoint is still written. */
-  private write(session: SessionId, now: Timestamp, task: { readonly id: string; readonly project: LocatedProject }): void {
+  private write(session: SessionId, now: Timestamp, task: { readonly id: TaskId; readonly project: LocatedProject }): void {
     this.journal.appendRecord(
       journalEntry<CheckpointRecorded>(
         'checkpoint.recorded',

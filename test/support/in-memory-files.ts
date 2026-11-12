@@ -12,6 +12,7 @@ import type { GitExcludes } from '../../src/application/ports/git-excludes.js';
 import type { ProjectConfig, ProjectConfigFile } from '../../src/application/ports/project-config-file.js';
 import type { ProjectFiles } from '../../src/application/ports/project-files.js';
 import type { ShareMode, SharingPreference } from '../../src/application/ports/sharing-preference.js';
+import { ProjectId } from '../../src/domain/project/project-id.js';
 
 /** Files by absolute POSIX path; directories exist implicitly. */
 export class InMemoryProjectFiles implements ProjectFiles {
@@ -106,7 +107,7 @@ export class InMemoryProjectConfigFile implements ProjectConfigFile {
       const value = parse(text) as Record<string, unknown>;
       return {
         config: {
-          ...(typeof value['project'] === 'string' ? { project: value['project'] } : {}),
+          ...(typeof value['project'] === 'string' ? { project: ProjectId.parse(value['project']) } : {}),
           ...(typeof value['flow'] === 'string' ? { flow: value['flow'] } : {}),
         },
       };
@@ -123,7 +124,7 @@ export class InMemoryProjectConfigFile implements ProjectConfigFile {
     } catch {
       current = {};
     }
-    return { path, content: stringify({ schemaVersion: 1, ...current, ...config }) };
+    return { path, content: stringify({ schemaVersion: 1, ...current, project: config.project.value, flow: config.flow }) };
   }
 }
 

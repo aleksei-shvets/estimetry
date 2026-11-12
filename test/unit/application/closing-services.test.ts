@@ -65,16 +65,16 @@ describe('the steps after the closing', () => {
   });
 
   it('lets go of the sessions bound to the task in each of its projects, at the closing moment', () => {
-    bindings.bindings.set('s1', { session: 's1', project: 'api', root: '/work/api', task: 'T-1', since: time('09:00').toISOString() });
-    bindings.bindings.set('s2', { session: 's2', project: 'web', root: '/work/web', task: 'T-1' });
-    bindings.bindings.set('s3', { session: 's3', project: 'api', root: '/work/api', task: 'T-9' });
+    bindings.setPlain({ session: 's1', project: 'api', root: '/work/api', task: 'T-1', since: time('09:00').toISOString() });
+    bindings.setPlain({ session: 's2', project: 'web', root: '/work/web', task: 'T-1' });
+    bindings.setPlain({ session: 's3', project: 'api', root: '/work/api', task: 'T-9' });
     const calls: string[] = [];
     const warnings = new ClosingFollowUp(journal, bindings, proposals, cards(undefined, calls), meta).finish(task());
     expect(warnings).toEqual([]);
-    expect(bindings.bindings.get('s1')).toMatchObject({ session: 's1', project: 'api', root: '/work/api', everBound: true, closedTask: 'T-1' });
-    expect(bindings.bindings.get('s1')?.task).toBeUndefined();
-    expect(bindings.bindings.get('s2')).toMatchObject({ everBound: true, closedTask: 'T-1' });
-    expect(bindings.bindings.get('s3')?.task).toBe('T-9');
+    expect(bindings.plain('s1')).toMatchObject({ session: 's1', project: 'api', root: '/work/api', everBound: true, closedTask: 'T-1' });
+    expect(bindings.plain('s1')?.task).toBeUndefined();
+    expect(bindings.plain('s2')).toMatchObject({ everBound: true, closedTask: 'T-1' });
+    expect(bindings.plain('s3')?.task).toBe('T-9');
     const unbound = journal.readActivity(TaskId.parse('T-1'));
     expect(unbound.map((e) => [e.type, e.ts, e.project, e.data.session, e.data.source])).toEqual([
       ['session.unbound', time('12:00').toISOString(), 'api', 's1', CORE_SOURCE],
@@ -84,30 +84,30 @@ describe('the steps after the closing', () => {
   });
 
   it('writes nothing for a session another task took meanwhile', () => {
-    bindings.bindings.set('s1', { session: 's1', project: 'api', root: '/work/api', task: 'T-1' });
+    bindings.setPlain({ session: 's1', project: 'api', root: '/work/api', task: 'T-1' });
     const racing = {
-      ofProject: (project: string) => bindings.ofProject(project),
+      ofProject: (project: ProjectId) => bindings.ofProject(project),
       update: bindings.update.bind(bindings),
     };
     // Between the listing and the update another hook binds the session to T-2.
-    racing.ofProject = (project: string) => {
+    racing.ofProject = (project: ProjectId) => {
       const listed = bindings.ofProject(project);
-      bindings.bindings.set('s1', { session: 's1', project: 'api', root: '/work/api', task: 'T-2' });
+      bindings.setPlain({ session: 's1', project: 'api', root: '/work/api', task: 'T-2' });
       return listed;
     };
     new ClosingFollowUp(journal, racing, proposals, cards(undefined, []), meta).finish(task());
-    expect(bindings.bindings.get('s1')?.task).toBe('T-2');
+    expect(bindings.plain('s1')?.task).toBe('T-2');
     expect(journal.readActivity(TaskId.parse('T-1'))).toEqual([]);
   });
 
   it('a failing step is a warning, and the steps after it still run', () => {
-    proposals.put('T-1', { change: 'a', completedAt: time('11:00').toISOString(), session: 's1' });
+    proposals.putPlain('T-1', { change: 'a', completedAt: time('11:00').toISOString(), session: 's1' });
     const calls: string[] = [];
     const warnings = new ClosingFollowUp(journal, bindings, proposals, cards('refresh', calls), meta).finish(task());
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatch(/writing the card/);
     expect(calls).toEqual(['refresh', 'recalculate']);
-    expect(proposals.peek('T-1')).toBeUndefined();
+    expect(proposals.peek(TaskId.parse('T-1'))).toBeUndefined();
   });
 });
 
@@ -119,7 +119,7 @@ describe('the records before the closing', () => {
     const importer = {
       execute: (request: SessionImportRequest): SessionImport[] => {
         requests.push(request);
-        return [{ session: request.session, task: 'T-1', outcome: outcomes[request.session] ?? 'imported' }];
+        return [{ session: request.session, task: TaskId.parse('T-1'), outcome: outcomes[request.session.value] ?? 'imported' }];
       },
     };
     const closing = new ClosingRecords(
@@ -130,7 +130,10 @@ describe('the records before the closing', () => {
       meta,
       withLogs ? () => importer : undefined,
     );
-    return { closing, requests };
+    // Requests in plain values, for comparing.
+    const plain = () =>
+      requests.map((r) => ({ ...r, session: r.session.value, tasks: r.tasks.map((t) => ({ id: t.id.toString(), project: t.project.value })) }));
+    return { closing, requests, plain };
   }
 
   it('imports the log of every session of the task once, by its source, with the path the binding knows', () => {
@@ -142,10 +145,10 @@ describe('the records before the closing', () => {
     ]) {
       journal.append(event);
     }
-    bindings.bindings.set('s2', { session: 's2', project: 'api', root: '/work/api', transcript: '/logs/s2.jsonl' });
-    const { closing, requests } = records({ s1: 'failed', s2: 'unrecognized' });
+    bindings.setPlain({ session: 's2', project: 'api', root: '/work/api', transcript: '/logs/s2.jsonl' });
+    const { closing, plain } = records({ s1: 'failed', s2: 'unrecognized' });
     const warnings = closing.prepare(task(true), time('12:00'));
-    expect(requests).toEqual([
+    expect(plain()).toEqual([
       { session: 's1', source: 'claude-code', at: time('12:00'), tasks: [{ id: 'T-1', project: 'api' }] },
       { session: 's2', source: 'claude-code', at: time('12:00'), path: '/logs/s2.jsonl', tasks: [{ id: 'T-1', project: 'api' }] },
     ]);
@@ -199,17 +202,17 @@ describe('the records of a revision', () => {
     const records = revisions();
     const t = task(true);
     const excluded = [{ project: 'api', archives: [{ change: 'a', archivedOn: '2026-10-27' }] }];
-    proposals.put('T-1', { change: 'b', project: 'api', completedAt: time('11:00').toISOString(), session: 's1' });
+    proposals.putPlain('T-1', { change: 'b', project: 'api', completedAt: time('11:00').toISOString(), session: 's1' });
     records.dropProposal(t, excluded);
-    expect(proposals.peek('T-1')?.change).toBe('b');
-    proposals.put('T-1', { change: 'a', project: 'web', completedAt: time('11:00').toISOString(), session: 's1' });
+    expect(proposals.peek(TaskId.parse('T-1'))?.change).toBe('b');
+    proposals.putPlain('T-1', { change: 'a', project: 'web', completedAt: time('11:00').toISOString(), session: 's1' });
     records.dropProposal(t, excluded);
-    expect(proposals.peek('T-1')?.change).toBe('a');
-    proposals.put('T-1', { change: 'a', completedAt: time('11:00').toISOString(), session: 's1' });
+    expect(proposals.peek(TaskId.parse('T-1'))?.change).toBe('a');
+    proposals.putPlain('T-1', { change: 'a', completedAt: time('11:00').toISOString(), session: 's1' });
     records.dropProposal(t, excluded);
-    expect(proposals.peek('T-1')).toBeUndefined();
+    expect(proposals.peek(TaskId.parse('T-1'))).toBeUndefined();
     records.dropProposal(t, excluded);
-    expect(proposals.peek('T-1')).toBeUndefined();
+    expect(proposals.peek(TaskId.parse('T-1'))).toBeUndefined();
   });
 });
 

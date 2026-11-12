@@ -1,13 +1,16 @@
 import type { PlanExclusions } from '../../domain/progress/plan-exclusions.js';
 import type { TaskStatus } from '../../domain/task/task-status.js';
+import type { TaskId } from '../../domain/task/task-id.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
+import type { Timestamp } from '../../domain/shared/timestamp.js';
 
 /** What the hook receiver needs of a task, read from its snapshot without checking the journal. */
 export interface TaskSummary {
-  readonly id: string;
+  readonly id: TaskId;
   readonly title: string;
   readonly status: TaskStatus;
-  readonly startedAt?: string;
-  readonly projects: readonly string[];
+  readonly startedAt?: Timestamp;
+  readonly projects: readonly ProjectId[];
   /** Groups of the estimate's parts: the changes of the task. */
   readonly groups?: readonly string[];
   /** Archived changes revisions took out of the plan: never a completion. */
@@ -15,6 +18,6 @@ export interface TaskSummary {
 }
 
 export interface TaskStatusReader {
-  summary(task: string): TaskSummary | undefined;
-  inProgress(project: string): TaskSummary[];
+  summary(task: TaskId): TaskSummary | undefined;
+  inProgress(project: ProjectId): TaskSummary[];
 }

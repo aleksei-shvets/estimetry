@@ -3,20 +3,22 @@ import type { LogImportEntry, LogImportState } from '../../application/ports/log
 import { readYaml, writeYamlAtomic } from '../fs/atomic-yaml.js';
 import { withFileLock } from '../fs/file-lock.js';
 import type { StorageLayout } from '../fs/storage-layout.js';
+import type { SessionId } from '../../domain/measurement/session-id.js';
+import type { TaskId } from '../../domain/task/task-id.js';
 
 const SCHEMA_VERSION = 1;
 
 export class YamlLogImportState implements LogImportState {
   constructor(private readonly layout: StorageLayout) {}
 
-  locked<T>(session: string, work: () => T): T {
-    return withFileLock(this.layout.logImportLock(session), work);
+  locked<T>(session: SessionId, work: () => T): T {
+    return withFileLock(this.layout.logImportLock(session.value), work);
   }
 
-  read(session: string): Readonly<Record<string, LogImportEntry>> {
+  read(session: SessionId): Readonly<Record<string, LogImportEntry>> {
     let value: unknown;
     try {
-      value = readYaml(this.layout.logImport(session));
+      value = readYaml(this.layout.logImport(session.value));
     } catch {
       return {}; // a broken cache: the log is read again from the start
     }
@@ -35,8 +37,9 @@ export class YamlLogImportState implements LogImportState {
   }
 
   /** Called under `locked`; the other tasks of the session keep their entries. */
-  write(session: string, task: string, entry: LogImportEntry): void {
-    writeYamlAtomic(this.layout.logImport(session), { schemaVersion: SCHEMA_VERSION, tasks: { ...this.read(session), [task]: entry } });
+  write(session: SessionId, task: TaskId, entry: LogImportEntry): void {
+    const tasks = { ...this.read(session), [task.toString()]: entry };
+    writeYamlAtomic(this.layout.logImport(session.value), { schemaVersion: SCHEMA_VERSION, tasks });
   }
 }
 

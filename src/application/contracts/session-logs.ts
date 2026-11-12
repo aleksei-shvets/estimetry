@@ -5,6 +5,7 @@
  */
 
 import type { SessionLogFingerprint } from '../ports/log-import-state.js';
+import type { SessionId } from '../../domain/measurement/session-id.js';
 
 /** Tokens of one model that started within one five-minute bucket. Times are milliseconds since the epoch. */
 export interface TokenBucketData {
@@ -67,7 +68,7 @@ export type SessionLogResult =
   | { readonly status: 'over-budget' };
 
 export interface SessionLogRequest {
-  readonly session: string;
+  readonly session: SessionId;
   /** The path the hook reported, if any; otherwise the reader searches the tool's own folders. */
   readonly path?: string;
   /** Byte offset in the main file to read from. */
@@ -81,7 +82,7 @@ export interface SessionLogReader {
   /** Tool id, the same as the `source` of the tool's activity events. */
   readonly id: string;
   /** Size and time of the files, without reading them; undefined when there is no log. */
-  fingerprint(session: string, path?: string): SessionLogFingerprint | undefined;
+  fingerprint(session: SessionId, path?: string): SessionLogFingerprint | undefined;
   /** @throws only SessionLogFailure, whose message carries a code and no content of the log. */
   read(request: SessionLogRequest): SessionLogResult;
 }

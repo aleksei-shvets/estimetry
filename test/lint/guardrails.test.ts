@@ -123,6 +123,21 @@ describe('architecture checks', () => {
     expect(await rules(`export function f(${params(6)}): number {\n  return p0 + p1 + p2 + p3 + p4 + p5;\n}\n`)).toEqual([]);
   });
 
+  it('an id of a task, project or session in a port or a contract is no string', async () => {
+    const errors = async (code: string, file: string) =>
+      (await messages(code, file)).filter((m) => m.ruleId === 'no-restricted-syntax').map((m) => m.message);
+    const port = 'src/application/ports/x.ts';
+    expect((await errors('export interface P {\n  read(task: string): void;\n}\n', port)).join('\n')).toMatch(/value object/);
+    expect(await errors('export interface P {\n  read(project?: string): void;\n}\n', port)).toHaveLength(1);
+    expect(await errors('export interface D {\n  readonly session: string;\n}\n', 'src/application/contracts/x.ts')).toHaveLength(1);
+    expect(await errors('export interface D {\n  readonly task?: string;\n}\n', port)).toHaveLength(1);
+    const typed = "import type { TaskId } from '../../domain/task/task-id.js';\nexport interface P {\n  read(task: TaskId): void;\n}\n";
+    expect(await errors(typed, port)).toEqual([]);
+    expect(await errors('export interface P {\n  read(change: string, root: string): void;\n}\n', port)).toEqual([]);
+    // Outside ports and contracts, a DTO of a use case may carry ids as text for its output.
+    expect(await errors('export interface View {\n  readonly task: string;\n}\n', 'src/application/task/x.ts')).toEqual([]);
+  });
+
   it('the inside of the Task aggregate is imported only from src/domain/task', async () => {
     const restricted = async (code: string, file: string) => (await messages(code, file)).filter((m) => m.ruleId === 'no-restricted-imports').map((m) => m.message);
     const state = "import type { TaskState } from '../task/task-state.js';\nexport type S = TaskState;\n";

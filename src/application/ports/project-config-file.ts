@@ -1,8 +1,10 @@
 import type { FileChange } from './file-change.js';
+import type { ProjectId } from '../../domain/project/project-id.js';
 
 /** Team settings of the project: `.estimetry/config.yaml`, meant to be committed. */
 export interface ProjectConfig {
-  readonly project?: string;
+  /** Absent too when the file names an id that does not parse: the id then comes from the directory name. */
+  readonly project?: ProjectId;
   readonly flow?: string;
 }
 
