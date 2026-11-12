@@ -4,6 +4,7 @@ import { EstimatePart, type EstimatePartData } from './estimate-part.js';
 import { InvalidEstimate, type EstimateIssue } from './invalid-estimate.js';
 import type { PartKind } from './part-kind.js';
 import { ThreePointEstimate } from './three-point-estimate.js';
+import { groupsOf } from './plan-changes.js';
 
 export const ESTIMATE_SCHEMA_VERSION = 1;
 
@@ -121,7 +122,7 @@ export class Estimate {
 
   /** The groups of the parts, each once in the order of the parts: the changes of the plan. */
   get groups(): readonly string[] {
-    return [...new Set(this.parts.flatMap((part) => (part.group === undefined ? [] : [part.group])))];
+    return groupsOf(this.parts);
   }
 
   toData(): EstimateData {

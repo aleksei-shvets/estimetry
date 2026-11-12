@@ -100,10 +100,6 @@ export class Task {
     return home;
   }
 
-  get version(): number {
-    return this.log.count;
-  }
-
   get title(): string {
     return this.state.title;
   }
@@ -153,6 +149,11 @@ export class Task {
 
   get estimatedAfterStart(): boolean {
     return this.state.estimatedAfterStart;
+  }
+
+  /** The changes of the task: they pick its working copy (plan-progress spec). */
+  get changes(): readonly string[] {
+    return this.state.changes;
   }
 
   /** Task type of the first estimate: what the first number given to the PM was estimated as. */

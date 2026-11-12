@@ -137,5 +137,32 @@ describe('tasks in git worktrees, sessions in the main working copy', () => {
     expect(events('T-1').some((e) => e.type === 'change.completed' && e.data['change'] === 'feature-c')).toBe(true);
     expect(JSON.parse((await emt(main, 'status', 'T-1', '--json')).stdout)).toMatchObject({ plan: { done: 100 } });
   });
+
+  it('after a revision dropped a change kept in the worktree, the hook and the CLI read the same copy', async () => {
+    git(main, 'config', 'user.email', 'dev@example.com');
+    git(main, 'config', 'user.name', 'Dev');
+    expect((await emt(main, 'init', '--no-interactive', '--flow', 'openspec')).code).toBe(0);
+    const archive = join(worktrees.a, 'openspec', 'changes', 'archive');
+    mkdirSync(join(archive, `${new Date().toISOString().slice(0, 10)}-drop-b`), { recursive: true });
+    writeFileSync(join(archive, `${new Date().toISOString().slice(0, 10)}-drop-b`, 'tasks.md'), '- [x] b\n');
+    const part = (group: string) => `  - { name: ${group}, group: ${group}, hours: { optimistic: 1, likely: 2, pessimistic: 3 } }\n`;
+    writeFileSync(join(worktrees.a, 'plan.yaml'), `schemaVersion: 1\ntype: feature\nparts:\n${part('keep-a')}${part('drop-b')}`);
+    writeFileSync(join(worktrees.a, 'plan2.yaml'), `schemaVersion: 1\ntype: feature\nparts:\n${part('keep-a')}`);
+    await emt(worktrees.a, 'task', 'new', 'Feature A');
+    await emt(worktrees.a, 'estimate', 'save', 'plan.yaml');
+    expect((await emt(worktrees.a, 'start', '--at', ago(60))).code).toBe(0);
+    const revised = await emt(main, 'estimate', 'revise', join(worktrees.a, 'plan2.yaml'), '--reason', 'b dropped', '--category', 'missed-analysis', '--spent', 'exclude', '--lost-from', ago(30));
+    expect(revised.code).toBe(0);
+
+    hook('s1', 'SessionStart', { source: 'startup' });
+    hook('s1', 'PostToolUse', { tool_name: 'Bash', tool_use_id: 'tu-1', duration_ms: 5 });
+    const changesOfRecord = (type: string) => {
+      const record = events('T-1').find((e) => e.type === type) as { data: { plan?: { change: string }[]; projects?: { changes?: { change: string }[] }[] } } | undefined;
+      return (record?.data.plan ?? record?.data.projects?.[0]?.changes ?? []).map((c) => c.change).sort();
+    };
+    // The CLI (the plan snapshot of the revision) and the hook (the checkpoint) both read the worktree.
+    expect(changesOfRecord('plan.revised')).toContain('drop-b');
+    expect(changesOfRecord('checkpoint.recorded')).toEqual(changesOfRecord('plan.revised'));
+  });
 });
 

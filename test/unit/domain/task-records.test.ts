@@ -142,6 +142,6 @@ describe('Task records', () => {
     const events = task.pullEvents();
     expect(Task.fromEvents(events).toSnapshot()).toEqual(task.toSnapshot());
     expect(Task.rehydrate(task.toSnapshot()).toSnapshot()).toEqual(task.toSnapshot());
-    expect(task.version).toBe(7);
+    expect(task.toSnapshot().version).toBe(7);
   });
 });

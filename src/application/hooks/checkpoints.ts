@@ -19,7 +19,7 @@ const WRITES_CHECKPOINTS: ReadonlySet<HookKind> = new Set(['tool-done', 'turn-en
 export interface CheckpointTask {
   readonly id: TaskId;
   readonly project: LocatedProject;
-  /** The groups of the estimate: they pick the working copy of the task. */
+  /** The changes of the task (`Task.changes`): they pick its working copy. */
   readonly changes?: readonly string[];
 }
 

@@ -11,8 +11,10 @@ export interface TaskSummary {
   readonly status: TaskStatus;
   readonly startedAt?: Timestamp;
   readonly projects: readonly ProjectId[];
-  /** Groups of the estimate's parts: the changes of the task. */
+  /** Groups of the current estimate's parts: an archived change of one of them is a completion of the task. */
   readonly groups?: readonly string[];
+  /** The changes of the task as its snapshot keeps them (`Task.changes`): they pick its working copy. */
+  readonly changes?: readonly string[];
   /** Archived changes revisions took out of the plan: never a completion. */
   readonly exclusions?: PlanExclusions;
 }

@@ -150,6 +150,7 @@ export function parseTaskSnapshot(value: unknown): TaskSnapshot | undefined {
     !optional(value['revisions'], (v) => Array.isArray(v) && v.every(isRevision)) ||
     !optional(value['extraRecords'], (v) => Array.isArray(v) && v.every((r) => isObject(r) && isString(r['id']) && isTime(r['at']))) ||
     !optional(value['lastPartRecordAt'], isTime) ||
+    !optional(value['changes'], isStringArray) ||
     !optional(value['manualRecordedAt'], (v) => Array.isArray(v) && v.every(isTime)) ||
     typeof value['version'] !== 'number' ||
     !isString(value['lastEventId'])

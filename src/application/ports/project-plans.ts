@@ -32,7 +32,7 @@ export interface PlanReadOptions {
    */
   readonly near?: string;
   /**
-   * Changes of the task (the groups of its estimate): of several working copies
+   * Changes of the task (`Task.changes`: groups of every estimate since its start): of several working copies
    * the one that holds one of them is the task's, wherever the work is asked from.
    */
   readonly changes?: readonly string[];
@@ -44,7 +44,13 @@ export interface ProjectPlans {
   plan(projectRoot: string, project?: ProjectId): readonly ChangeProgress[] | undefined;
   /** Plans of the projects of a task, with their archives; archives before `archivedSince` are not read. */
   plans(projects: readonly ProjectId[], options?: PlanReadOptions & { readonly archivedSince?: CalendarDate }): ProjectPlanReading[];
-  /** Only the archives: the hot path of a hook, one directory listing per project. */
+  /**
+   * Only the archives: the hot path of a hook. A project with one copy costs one
+   * config and one listing of its archive. With several copies and the `changes`
+   * of a task, every copy costs a config, a listing of its archive and the
+   * `tasks.md` of those changes (to find the working copy of the task), then the
+   * archive of that copy is listed once more (`hook-budget` measures four copies).
+   */
   archives(projects: readonly ProjectId[], options?: PlanReadOptions): ProjectPlanReading[];
   /** The working copy of a task in a project, as plans and archives are read in it; undefined when none is on this machine. */
   workingCopy(project: ProjectId, options?: PlanReadOptions): string | undefined;

@@ -36,7 +36,7 @@ export class ActivityRecorder {
       session,
       kind,
       now,
-      resolved.task === undefined ? undefined : { id: resolved.task.id, project: resolved.project, changes: resolved.task.groups ?? [] },
+      resolved.task === undefined ? undefined : { id: resolved.task.id, project: resolved.project, changes: resolved.task.changes ?? [] },
     );
     if (resolved.task !== undefined) {
       this.completions.check(resolved.task, now, resolved.project.root, session);

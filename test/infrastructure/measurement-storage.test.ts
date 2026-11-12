@@ -40,15 +40,15 @@ function setup() {
 describe('JsonlEventJournal', () => {
   it('appends activity without changing the version of the task', () => {
     const { repo, journal } = setup();
-    expect(repo.get(TaskId.parse('T-1')).version).toBe(2);
+    expect(repo.get(TaskId.parse('T-1')).toSnapshot().version).toBe(2);
     for (let i = 0; i < 100; i++) {
       journal.append(activity('tool.used', `10:${String(10 + (i % 50)).padStart(2, '0')}`));
     }
     const task = repo.get(TaskId.parse('T-1'));
-    expect(task.version).toBe(2);
+    expect(task.toSnapshot().version).toBe(2);
     task.recordManualTime(ManualTime.of({ kind: 'user', duration: Duration.ofMinutes(10), description: 'x' }), meta());
     repo.save(task);
-    expect(repo.get(TaskId.parse('T-1')).version).toBe(3);
+    expect(repo.get(TaskId.parse('T-1')).toSnapshot().version).toBe(3);
     expect(journal.readActivity(TaskId.parse('T-1'))).toHaveLength(100);
   });
 
