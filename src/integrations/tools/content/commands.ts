@@ -1,6 +1,10 @@
 import type { CommandContent } from '../../../application/contracts/command-content.js';
 
-/** Texts of the estimetry skill and its commands, independent of the AI tool. */
+/**
+ * Texts of the estimetry skill and its commands, independent of the AI tool. A body names another skill with
+ * `{{skill:<id>}}` (see `skillMention`) and the arguments the user gave with `{{arguments}}`; the tool's renderer
+ * turns both into its own form.
+ */
 export const ESTIMETRY_SKILL: CommandContent = {
   id: 'estimetry',
   description:
@@ -11,7 +15,7 @@ estimetry compares estimates with the actual effort of AI-agent development and 
 
 ## Estimating
 
-Never name an effort or a deadline for a task before \`/emt-estimate\` is done, even when asked casually. The estimate rests on the user's own past tasks, not on a general sense of how long things take:
+Never name an effort or a deadline for a task before \`{{skill:emt-estimate}}\` is done, even when asked casually. The estimate rests on the user's own past tasks, not on a general sense of how long things take:
 - agree with the user on the task type and the technologies the task really touches;
 - \`emt similar\` shows closed tasks like it, \`emt calibrate\` the user's coefficients and the one the estimate may apply;
 - with a coefficient, multiply the hours of every part by it; without one, say plainly that the estimate is without calibration;
@@ -19,10 +23,10 @@ Never name an effort or a deadline for a task before \`/emt-estimate\` is done, 
 
 ## Measuring
 
-- \`emt start\` starts the measurement of a task (\`/emt-start\`).
-- Work outside the plan is recorded with \`emt extra\` (\`/emt-extra\`).
-- Several agents on one task: \`emt parallel on\` and \`emt parallel off\` (\`/emt-parallel\`).
-- Time outside agent sessions, such as manual testing: \`emt manual\` (\`/emt-manual\`).
+- \`emt start\` starts the measurement of a task (\`{{skill:emt-start}}\`).
+- Work outside the plan is recorded with \`emt extra\` (\`{{skill:emt-extra}}\`).
+- Several agents on one task: \`emt parallel on\` and \`emt parallel off\` (\`{{skill:emt-parallel}}\`).
+- Time outside agent sessions, such as manual testing: \`emt manual\` (\`{{skill:emt-manual}}\`).
 - \`emt status\` shows the fact so far against the estimate.
 
 ## Revising the estimate
@@ -39,8 +43,8 @@ Write the reason as a short summary agreed with the user, never a quote of the c
 ## Closing and retro
 
 - When estimetry says a change of the task was completed, ask the user whether it was the last one and whether to close the task. Never close a task on your own.
-- Close only after the user agrees in the conversation: \`emt close --yes\` (\`/emt-close\`). If the task was dropped, add \`--abandoned\`.
-- Right after closing, hold the retro with the user (\`/emt-retro\`): compare the estimate with the fact by parts, agree on the reasons and on one lesson. Write down what the user agrees with, not your own guesses.
+- Close only after the user agrees in the conversation: \`emt close --yes\` (\`{{skill:emt-close}}\`). If the task was dropped, add \`--abandoned\`.
+- Right after closing, hold the retro with the user (\`{{skill:emt-retro}}\`): compare the estimate with the fact by parts, agree on the reasons and on one lesson. Write down what the user agrees with, not your own guesses.
 - When the customer agrees to more work than estimated, the task closes as it is and the rest becomes a new task: \`emt renegotiate "<new title>" --yes\`, again only after the user agrees.
 - A task closed by mistake: \`emt reopen <task>\`.
 
@@ -57,7 +61,7 @@ export const COMMANDS: readonly CommandContent[] = [
     id: 'emt-estimate',
     description: 'Estimate a task by parts of the plan from past tasks and calibration, and save the approved estimate as its plan',
     argumentHint: '[task title]',
-    body: `Estimate the task the user describes ($ARGUMENTS) from the user's own past tasks, and save the approved estimate with estimetry. Do not name an effort or a deadline before step 7.
+    body: `Estimate the task the user describes ({{arguments}}) from the user's own past tasks, and save the approved estimate with estimetry. Do not name an effort or a deadline before step 7.
 
 1. **Type and stack.** Agree with the user on the task type (feature, integration, bugfix, refactor, infra, migration, research) and on the technologies the task really touches — not every technology of the project. They go into the estimate as \`type\` and \`stack\`.
 2. **The task.** \`emt task list\` shows existing tasks. A new one: \`emt task new "<title>" --type <type>\`, after the type is agreed. A task already in progress is a revision: \`emt task show <task>\` gives the parts of the estimate in force — start from them, keep the parts that stay and add or change the rest; use \`--revise\` in step 5 and \`emt estimate revise\` in step 8.
@@ -90,18 +94,18 @@ export const COMMANDS: readonly CommandContent[] = [
        hours: { optimistic: 2.6, likely: 3.9, pessimistic: 6.5 }
    \`\`\`
 
-9. Tell the user that time is not measured until the task starts, and offer to start it now with \`/emt-start\` (\`emt start\`; \`--at "YYYY-MM-DD HH:MM"\` if work already began).
+9. Tell the user that time is not measured until the task starts, and offer to start it now with \`{{skill:emt-start}}\` (\`emt start\`; \`--at "YYYY-MM-DD HH:MM"\` if work already began).
 `,
   },
   {
     id: 'emt-start',
     description: 'Start measuring the effort of a task',
     argumentHint: '[task id] [--at <time>]',
-    body: `Start the measurement of a task with \`emt start $ARGUMENTS\`.
+    body: `Start the measurement of a task with \`emt start {{arguments}}\`.
 
 - Without a task id it starts the only task of this project that can be started; if there are several, ask the user which one and pass its id.
 - \`--at "YYYY-MM-DD HH:MM"\` backdates the start when work began before it was recorded.
-- If the task has no estimate, estimetry warns that it will not be used for calibration; offer \`/emt-estimate\` first.
+- If the task has no estimate, estimetry warns that it will not be used for calibration; offer \`{{skill:emt-estimate}}\` first.
 
 Show the user the command output.
 `,
@@ -120,14 +124,14 @@ Categories:
 
 Optional: \`--time <duration>\` (a guess, e.g. \`30m\`; it does not change the measured fact), \`--lines <n>\`, \`--change <name>\`, \`--task <id>\`.
 
-Use the user's words for the description: $ARGUMENTS
+Use the user's words for the description: {{arguments}}
 `,
   },
   {
     id: 'emt-parallel',
     description: 'Switch parallel mode of a task on or off',
     argumentHint: 'on|off [--agents <n>] [--reason <text>]',
-    body: `Switch parallel mode, when several agents work on one task at once: \`emt parallel $ARGUMENTS\`.
+    body: `Switch parallel mode, when several agents work on one task at once: \`emt parallel {{arguments}}\`.
 
 - \`emt parallel on --reason "<why>" --agents <n> --parts <ids>\` — \`--parts\` are comma-separated ids of the estimate parts done in parallel.
 - \`emt parallel off\` when the work is sequential again.
@@ -139,7 +143,7 @@ estimetry records which share of the budget was spent when the mode was switched
     id: 'emt-manual',
     description: 'Record time spent outside agent sessions',
     argumentHint: '<duration> "<description>" [--at <time>] [--agent]',
-    body: `Record time the hooks could not see: \`emt manual $ARGUMENTS\`.
+    body: `Record time the hooks could not see: \`emt manual {{arguments}}\`.
 
 - Duration: \`40m\`, \`1h30m\` or \`1.5h\`.
 - \`--at "YYYY-MM-DD HH:MM"\` is when the work ended; with it the record merges with measured time instead of adding to it.
@@ -156,10 +160,10 @@ If estimetry warns that the time is already partly measured, ask the user whethe
     argumentHint: '[task id] [--at <time>] [--abandoned]',
     body: `Close a task only with the user's consent.
 
-1. Run \`emt status $ARGUMENTS\` and show the user the fact, the share of the estimate and the plan.
+1. Run \`emt status {{arguments}}\` and show the user the fact, the share of the estimate and the plan.
 2. Ask the user whether to close the task now. If the work ended earlier, ask when and use \`--at "YYYY-MM-DD HH:MM"\`. If the task was dropped, use \`--abandoned\`.
-3. Only after the user says yes, run \`emt close $ARGUMENTS --yes\`. If they say no, the task stays open and nothing is recorded.
-4. Then go on with \`/emt-retro\`.
+3. Only after the user says yes, run \`emt close {{arguments}} --yes\`. If they say no, the task stays open and nothing is recorded.
+4. Then go on with \`{{skill:emt-retro}}\`.
 
 Never pass \`--yes\` without the user's explicit agreement in this conversation.
 `,
@@ -170,10 +174,10 @@ Never pass \`--yes\` without the user's explicit agreement in this conversation.
     argumentHint: '[task id]',
     body: `Hold the retro of a closed task with the user.
 
-1. Run \`emt task show <task>\` (the task closed last if $ARGUMENTS is empty: \`emt task list --closed\`) and compare the estimate with the fact, part by part, and the extra work.
+1. Run \`emt task show <task>\` (the task closed last if {{arguments}} is empty: \`emt task list --closed\`) and compare the estimate with the fact, part by part, and the extra work.
 2. Suggest the main reasons for the differences and ask the user to confirm or correct them. A reason about one part starts with its id: \`"manual-testing: two devices instead of one"\`.
 3. Agree with the user on one lesson for the next estimate.
-4. Record what the user agreed with: \`emt retro $ARGUMENTS --reason "<reason>" --reason "<reason>" --lesson "<lesson>"\`.
+4. Record what the user agreed with: \`emt retro {{arguments}} --reason "<reason>" --reason "<reason>" --lesson "<lesson>"\`.
 
 Running it again replaces the retro.
 `,

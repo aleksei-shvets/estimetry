@@ -32,9 +32,18 @@ export interface HookAdapter {
   readonly id: string;
   readonly aliases: readonly string[];
   readonly hookEvents: readonly string[];
+  /**
+   * The environment variable in which the tool names the project root of a hook (`CLAUDE_PROJECT_DIR`); omitted when
+   * the tool has none and the `cwd` of the payload decides. Another tool's variable is never read.
+   */
+  readonly projectDirVariable?: string;
+  /** How long the session end hook may import the log: the tool waits for it only so long. */
+  readonly sessionEndBudgetMs: number;
   /** @throws InvalidValue if the payload is not what the tool sends. Prompt and tool texts never leave this call. */
   translate(event: string, payload: unknown): HookTranslation;
-  /** The text for the agent in the tool's own output format. */
+  /** How the agent of this tool calls a skill of estimetry: `/emt-extra`, `$emt-extra`. */
+  skillRef(id: string): string;
+  /** The text for the agent in the tool's own output format; its skills are already named by `skillRef`. */
   renderContext(event: string, text: string): string;
 }
 

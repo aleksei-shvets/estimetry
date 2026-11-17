@@ -192,16 +192,24 @@ export class FakeToolAdapter implements ToolAdapter {
   readonly title = 'Fake Tool';
   readonly hookEvents: readonly string[] = ['Stop'];
   blocked: string | undefined;
+  /** Whether the tool is found on this machine; a test switches it off. */
+  present: () => boolean = () => true;
 
   constructor(readonly id = 'fake-tool') {}
 
   private settings(root: string, shared: boolean): string {
-    return `${root}/.fake/${shared ? 'settings.json' : 'settings.local.json'}`;
+    // Each fake tool has its own settings, so two of them are installed apart.
+    const dir = this.id === 'fake-tool' ? '.fake' : `.${this.id}`;
+    return `${root}/${dir}/${shared ? 'settings.json' : 'settings.local.json'}`;
   }
+
+  /** What the tool still needs from the user once installed; a test sets it. */
+  notice: string | undefined;
 
   state(root: string, files: ProjectFiles): ToolState {
     const shared = files.read(this.settings(root, true)) !== undefined;
-    return { installed: shared || files.read(this.settings(root, false)) !== undefined, shared };
+    const installed = shared || files.read(this.settings(root, false)) !== undefined;
+    return { installed, shared, ...(installed && this.notice !== undefined ? { notice: this.notice } : {}) };
   }
 
   personalFiles(): readonly string[] {

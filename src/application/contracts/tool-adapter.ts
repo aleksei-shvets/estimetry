@@ -21,6 +21,8 @@ export interface ToolState {
   readonly shared: boolean;
   /** A settings file of the tool that cannot be read: whether the tool is installed is unknown. */
   readonly unreadable?: string;
+  /** What the user still has to do in the tool for the hooks to run (trust them in Codex), shown by `emt status`. */
+  readonly notice?: string;
 }
 
 /** One AI tool: what `init` installs for it and which hook events it sends. */
@@ -32,6 +34,8 @@ export interface ToolAdapter {
   /** Events the installed hooks report; the hook receiver accepts only these. */
   readonly hookEvents: readonly string[];
   state(projectRoot: string, files: ProjectFiles): ToolState;
+  /** Whether the tool is found on this machine (its user directory exists): `init` installs found tools by default. */
+  present(files: ProjectFiles): boolean;
   /**
    * Files inside the project that this tool writes for this user only (when the
    * install is not shared); they must stay out of git. Relative to the project root.

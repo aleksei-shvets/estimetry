@@ -29,6 +29,32 @@ const boundary = (files, patterns, paths = []) => ({
   },
 });
 
+/** Directories of AI tools and commit sources under integrations/tools; a test keeps the list equal to the disk. */
+export const TOOL_DIRS = ['claude-code', 'codex', 'git'];
+
+/** @param {string[]} dirs */
+const toolImports = (dirs) => ({
+  regex: `(^|/)(${dirs.join('|')})/`,
+  message: `Tools boundary: an adapter imports no other tool (${dirs.join(', ')}); share code through tools/shared (see CLAUDE.md, "Architecture").`,
+});
+
+/** The patterns every file of integrations/tools obeys. */
+const toolsBase = [
+  layerImports(['infrastructure', 'interface', 'bootstrap']),
+  {
+    regex: '(^|/)(flows|stack)/',
+    message: 'Integrations boundary: integrations/tools must not import flows, stack (see CLAUDE.md, "Architecture").',
+  },
+];
+
+/** Each tool directory may not import the others; the registries at the top import none: bootstrap registers adapters. */
+const toolBoundaries = () => [
+  ...TOOL_DIRS.map((own) =>
+    boundary(`src/integrations/tools/${own}/**`, [...toolsBase, toolImports(TOOL_DIRS.filter((dir) => dir !== own))]),
+  ),
+  boundary('src/integrations/tools/*.ts', [...toolsBase, toolImports(TOOL_DIRS)]),
+];
+
 const nodeIo = ['node:fs', 'node:fs/promises', 'node:child_process', 'fs', 'fs/promises', 'child_process'];
 
 /**
@@ -79,6 +105,7 @@ export const config = (debt) =>
         },
       ]),
     ),
+    ...toolBoundaries(),
     boundary('src/integrations/*.ts', [layerImports(['infrastructure', 'interface', 'bootstrap'])]),
     boundary('src/interface/**', [layerImports(['infrastructure', 'integrations', 'bootstrap'])]),
     // The composition root may import every layer, but not the inside of the aggregate.

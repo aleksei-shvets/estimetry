@@ -7,10 +7,15 @@ export function installedTools(deps: Pick<InstallDependencies, 'registries' | 'f
   return deps.registries.tools.all().filter((tool) => tool.state(root, deps.files).installed);
 }
 
-/** The tools already installed in the project, else every tool. */
+/** The tools already installed in the project, else the tools found on this machine, else every tool. */
 export function defaultTools(deps: Pick<InstallDependencies, 'registries' | 'files'>, root: string): ToolAdapter[] {
   const installed = installedTools(deps, root);
-  return installed.length > 0 ? installed : [...deps.registries.tools.all()];
+  if (installed.length > 0) {
+    return installed;
+  }
+  const all = deps.registries.tools.all();
+  const found = all.filter((tool) => tool.present(deps.files));
+  return found.length > 0 ? found : [...all];
 }
 
 /** Whether these tools have a shared install in the copy: then it stays shared. */

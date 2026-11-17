@@ -18,10 +18,7 @@ interface InitOptions {
 
 /** Shown in the questions so users see where estimetry is going; not registered until they work. */
 const COMING_SOON = {
-  tools: [
-    { value: 'codex', label: 'Codex' },
-    { value: 'cursor', label: 'Cursor' },
-  ],
+  tools: [{ value: 'cursor', label: 'Cursor' }],
   flows: [
     { value: 'spec-kit', label: 'GitHub Spec Kit' },
     { value: 'custom', label: 'Your own, from .estimetry/flow.yaml' },
@@ -40,7 +37,7 @@ export function registerInitCommand(program: Command, ctx: CliContext): void {
     .command('init')
     .helpGroup('Setup')
     .description('set up estimetry in this project: hooks, skills and commands of the AI tool, project config')
-    .option('--tools <ids>', 'AI tools, comma-separated (claude-code)')
+    .option('--tools <ids>', 'AI tools, comma-separated: claude-code, codex (default: installed, else found on this machine)')
     .option('--flow <id>', 'development process: openspec or none (default: detected)')
     .option('--share <mode>', `sharing with the team: ${SHARE_MODES.join(', ')}`)
     .option('--track-commits', 'install a git post-commit hook')
@@ -81,7 +78,10 @@ async function ask(ctx: CliContext, choices: InitChoices, options: InitOptions):
         'AI tools',
         [
           ...choices.tools.map((tool) => ({ value: tool.id, label: tool.title })),
-          ...COMING_SOON.tools.map((tool) => ({ ...tool, disabled: true })),
+          // A tool that is registered is never "coming soon", even if this list lags behind.
+          ...COMING_SOON.tools
+            .filter((soon) => !choices.tools.some((tool) => tool.id === soon.value))
+            .map((tool) => ({ ...tool, disabled: true })),
         ],
         defaults.tools,
       );
@@ -109,7 +109,7 @@ async function ask(ctx: CliContext, choices: InitChoices, options: InitOptions):
     const shared = input.shared ?? defaults.shared;
     if (!shared && choices.unignoredPersonalFiles.length > 0) {
       input.excludePersonalFiles = await prompts.confirm(
-        `${choices.unignoredPersonalFiles.join(', ')} is not ignored by git. Add it to your global git excludes, as Claude Code does?`,
+        `${choices.unignoredPersonalFiles.join(', ')} is not ignored by git. Add it to your global git excludes?`,
         true,
       );
     }

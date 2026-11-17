@@ -49,6 +49,8 @@ describe('the npm package', () => {
       HOME: user,
       ESTIMETRY_HOME: join(user, 'estimetry'),
       CLAUDE_CONFIG_DIR: join(user, '.claude'),
+      // Never the real ~/.codex; created below, so init finds Codex on this machine.
+      CODEX_HOME: join(user, '.codex'),
       XDG_CONFIG_HOME: join(user, '.config'),
       GIT_CONFIG_GLOBAL: join(user, '.gitconfig'),
     };
@@ -61,12 +63,14 @@ describe('the npm package', () => {
     }
     expect(run('emt', ['--help']).stdout).toContain('Usage: emt');
 
+    mkdirSync(join(user, '.claude'));
+    mkdirSync(join(user, '.codex'));
     const repo = join(user, 'app');
     mkdirSync(repo);
     execFileSync('git', ['init', '-q'], { cwd: repo, env });
     const init = run('estimetry', ['init', '--no-interactive', '--json', '--track-commits'], repo);
     expect(init.status, init.stderr).toBe(0);
-    expect((JSON.parse(init.stdout) as { tools: string[] }).tools).toContain('claude-code');
+    expect((JSON.parse(init.stdout) as { tools: string[] }).tools).toEqual(['claude-code', 'codex']);
     // The personal commit hook names the node and the entry point of this install, for a commit without PATH.
     const hook = readFileSync(join(repo, '.git', 'hooks', 'post-commit'), 'utf8');
     const [, node = '', main = ''] = /if \[ -x '([^']+)' \] && \[ -f '([^']+)' \]/.exec(hook) ?? [];
@@ -74,5 +78,8 @@ describe('the npm package', () => {
     expect(main.startsWith(prefix)).toBe(true);
     // The Claude Code hooks run the same installation.
     expect(readFileSync(join(repo, '.claude', 'settings.local.json'), 'utf8')).toContain(`'${main}' hook claude-code SessionStart`);
+    // And so do the hooks of Codex, which live with the user, and its skills.
+    expect(readFileSync(join(user, '.codex', 'hooks.json'), 'utf8')).toContain(`'${main}' hook codex SessionStart`);
+    expect(existsSync(join(user, '.agents', 'skills', 'emt-start', 'SKILL.md'))).toBe(true);
   }, 180_000);
 });

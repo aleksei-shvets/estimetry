@@ -1,11 +1,20 @@
 import type { SessionId } from '../../domain/measurement/session-id.js';
 import type { TaskSummary } from '../ports/task-status-reader.js';
+import { skillMention } from '../contracts/skill-mention.js';
 import { cut, MAX_CONTEXT_LENGTH } from './context-limit.js';
 
-export const EXTRA_REMINDER = 'estimetry: if the work has gone beyond the plan, record it with /emt-extra.';
+/**
+ * Texts for the agent name skills with `skillMention`: the receiver names them the way the tool calls them.
+ * A mention is longer than any name it becomes, so a text cut to the limit stays within it.
+ */
+export const EXTRA_REMINDER = `estimetry: if the work has gone beyond the plan, record it with ${skillMention('emt-extra')}.`;
 
 /** First line of every session start: estimates go through the protocol, never a guess (estimate mode, design §5.1). */
-export const ESTIMATE_REMINDER = 'estimetry: before you name an effort or a deadline for a task, run /emt-estimate.';
+export const ESTIMATE_REMINDER = `estimetry: before you name an effort or a deadline for a task, run ${skillMention('emt-estimate')}.`;
+
+const START = skillMention('emt-start');
+const CLOSE = skillMention('emt-close');
+const NO_TASK = `estimetry: no task is in progress in this project, so the time of this session is not counted. Start one with ${START}.`;
 
 /** The copy of the session was set up by an older estimetry (claude-code-hooks spec): the agent suggests, never runs, `emt upgrade`. */
 export function upgradeText(current: string, installed: string | undefined): string {
@@ -54,7 +63,7 @@ export function sessionStartContext(input: {
     }
     return cut(`${head}${list()}${ask}`, budget);
   }
-  return 'estimetry: no task is in progress in this project, so the time of this session is not counted. Start one with /emt-start.';
+  return NO_TASK;
 }
 
 /**
@@ -76,7 +85,7 @@ export function closeProposalText(input: {
   return cut(
     `estimetry: change ${input.change} of task ${input.task} was completed at ${when}` +
       (plan.length === 0 ? '' : `; ${plan.join(', ')}`) +
-      `. If it was the last change of the task, ask the user whether to close it (/emt-close); close only after they agree.`,
+      `. If it was the last change of the task, ask the user whether to close it (${CLOSE}); close only after they agree.`,
   );
 }
 

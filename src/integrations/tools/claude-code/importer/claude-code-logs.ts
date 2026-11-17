@@ -10,7 +10,7 @@ import {
 } from '../../../../application/contracts/session-logs.js';
 import type { FileFingerprint, SessionLogFingerprint } from '../../../../application/ports/log-import-state.js';
 import { AgentLogParser, MainLogParser } from './log-parser.js';
-import { logLines } from './log-lines.js';
+import { logLines } from '../../shared/log-lines.js';
 import type { SessionId } from '../../../../domain/measurement/session-id.js';
 
 const AGENT_FILE = /^agent-(.+)\.jsonl$/;

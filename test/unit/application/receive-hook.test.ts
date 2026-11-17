@@ -13,7 +13,7 @@ import { PendingProposal } from '../../../src/application/hooks/pending-proposal
 import { PromptContext } from '../../../src/application/hooks/prompt-context.js';
 import { ReceiveHook } from '../../../src/application/hooks/receive-hook.js';
 import { ReceiveSessionHook } from '../../../src/application/hooks/receive-session-hook.js';
-import { SESSION_END_IMPORT_BUDGET_MS, SessionEndImport } from '../../../src/application/hooks/session-end-import.js';
+import { SessionEndImport } from '../../../src/application/hooks/session-end-import.js';
 import { SessionStartContext } from '../../../src/application/hooks/session-start-context.js';
 import type { SessionImportRequest } from '../../../src/application/task/import-session-logs.js';
 import { SessionTask } from '../../../src/application/hooks/session-task.js';
@@ -54,6 +54,14 @@ let settings: FixedMeasurementSettings;
 let errors: RecordingErrorReporter;
 let git: FakeGit;
 let receive: ReceiveHook;
+/** Another AI tool that calls skills with `$`: the core texts differ only in the names of skills. */
+class DollarHookAdapter extends FakeHookAdapter {
+  override readonly id = 'dollar-tool';
+  override readonly aliases: readonly string[] = [];
+  override skillRef(id: string): string {
+    return `$${id}`;
+  }
+}
 /** Another source of commits: the receiver takes it with no change of its own. */
 const hgHooks: CommitHookAdapter = { kind: 'commit', id: 'hg', aliases: [], hookEvents: ['commit'], commitOf: () => ({}) };
 let bind: BindSession;
@@ -68,12 +76,20 @@ function startedTask(id: string, title: string, startedAt = day('09:00')): void 
 
 const tool = (toolUseId: string): ActivityDraft => ({ type: 'tool.used', data: { toolUseId } });
 
-function call(event: string, kind: HookKind, events: readonly ActivityDraft[] = [], options: { session?: string; cwd?: string; transcript?: string } = {}) {
+interface CallOptions {
+  session?: string;
+  cwd?: string;
+  transcript?: string;
+  environment?: Record<string, string>;
+}
+
+function call(event: string, kind: HookKind, events: readonly ActivityDraft[] = [], options: CallOptions = {}) {
   return receive.execute({
     source: 'fake-tool',
     event,
     payload: JSON.stringify({ session: options.session ?? 's1', kind, events, ...(options.transcript === undefined ? {} : { transcript: options.transcript }) }),
     cwd: options.cwd ?? API,
+    environment: (name) => options.environment?.[name],
   });
 }
 
@@ -126,7 +142,7 @@ beforeEach(() => {
     })),
   );
   const commits = new CommitRecords(new FakeProjectLocator(), git, new CommitTask(bindings, status, recent), journal, new EventMetaSource(clock, ids, authors));
-  receive = new ReceiveHook(new ListRegistry<HookSource>([new FakeHookAdapter(), gitHooks, hgHooks]), clock, commits, sessions);
+  receive = new ReceiveHook(new ListRegistry<HookSource>([new FakeHookAdapter(), new DollarHookAdapter(), gitHooks, hgHooks]), clock, commits, sessions);
   bind = new BindSession(bindings, status, new SessionWindow(journal, new EventMetaSource(clock, ids, authors)));
 });
 
@@ -251,6 +267,17 @@ describe('which task a session serves', () => {
     expect(journal.readActivity(TaskId.parse('T-1'))[0]).toMatchObject({ type: 'session.bound', ts: day('10:00') });
   });
 
+  it('takes the project from the variable its adapter names, and from no other tool', async () => {
+    startedTask('T-1', 'Payments');
+    await call('ToolDone', 'tool-done', [tool('t1')], { cwd: '/elsewhere', environment: { FAKE_PROJECT_DIR: API } });
+    expect(types('T-1')).toContain('tool.used');
+    await call('ToolDone', 'tool-done', [tool('t2')], { session: 's2', cwd: '/elsewhere', environment: { CLAUDE_PROJECT_DIR: API } });
+    expect(journal.readActivity(TaskId.parse('T-1')).filter((e) => e.data.session === 's2')).toEqual([]);
+    // An empty variable is no directory: the payload decides.
+    await call('ToolDone', 'tool-done', [tool('t3')], { session: 's3', environment: { FAKE_PROJECT_DIR: '' } });
+    expect(journal.readActivity(TaskId.parse('T-1')).some((e) => e.data.session === 's3')).toBe(true);
+  });
+
   it('stays silent outside registered projects', async () => {
     startedTask('T-1', 'Payments');
     expect(await call('ToolDone', 'tool-done', [tool('t1')], { cwd: '/elsewhere' })).toBeUndefined();
@@ -322,6 +349,20 @@ describe('checkpoints and context', () => {
       'estimetry: before you name an effort or a deadline for a task, run /emt-estimate.\n' +
         'estimetry: task T-1 "estimetry v1" — 3h 30m of 58h 30m (6%), plan 51% done. If the work has gone beyond the plan, record it with /emt-extra.',
     );
+  });
+
+  it('names the skills as the tool calls them, and the text is the same for every tool otherwise', async () => {
+    startedTask('T-1', 'estimetry v1');
+    const start = async (source: string, session: string) =>
+      JSON.parse(
+        (await receive.execute({ source, event: 'Start', payload: JSON.stringify({ session, kind: 'session-start' }), cwd: API })) ?? '{}',
+      ).text as string;
+    const slash = await start('fake-tool', 's1');
+    const dollar = await start('dollar-tool', 's2');
+    expect(dollar).toContain('run $emt-estimate.');
+    expect(dollar).toContain('record it with $emt-extra.');
+    expect(dollar).not.toContain('{{');
+    expect(dollar.replaceAll('$emt-', '/emt-')).toBe(slash);
   });
 
   it('says that nothing is counted when no task is in progress', async () => {
@@ -471,7 +512,7 @@ describe('after closing and proposals', () => {
 
 
 describe('the log of a session', () => {
-  it('keeps the path of the log, and imports it into the tasks in progress of the session at its end, within the budget', async () => {
+  it('keeps the path of the log, and imports it into the tasks in progress of the session at its end, within the budget of the tool', async () => {
     startedTask('T-1', 'estimetry v1');
     await call('Start', 'session-start', [{ type: 'session.started', data: {} }], { transcript: '/logs/s1.jsonl' });
     expect(bindings.plain('s1')).toMatchObject({ task: 'T-1', tasks: ['T-1'], transcript: '/logs/s1.jsonl' });
@@ -479,7 +520,7 @@ describe('the log of a session', () => {
     expect(imports).toEqual([]);
     await call('End', 'session-end', [{ type: 'session.ended', data: {} }]);
     expect(imports.map(plainImport)).toEqual([
-      { session: 's1', source: 'fake-tool', path: '/logs/s1.jsonl', tasks: [{ id: 'T-1', project: 'api' }], budgetMs: SESSION_END_IMPORT_BUDGET_MS },
+      { session: 's1', source: 'fake-tool', path: '/logs/s1.jsonl', tasks: [{ id: 'T-1', project: 'api' }], budgetMs: 1_234 },
     ]);
   });
 

@@ -4,6 +4,12 @@ All notable changes to estimetry. Versions follow [semantic versioning](https://
 
 ## Unreleased
 
+- **Codex.** `estimetry init --tools codex`, or picking Codex in `init`, sets up the hooks of Codex (in `~/.codex/hooks.json`, or `.codex/hooks.json` of the project with `--shared-hooks`) and the `emt-…` skills (in `~/.agents/skills`, or `.agents/skills`), called as `$emt-…`. Sessions of Codex are measured like those of Claude Code, and both tools may serve one task. Codex runs new or changed hooks only once you trust them in `/hooks`: `init` and `emt upgrade` remind you, `emt status` warns until then. Requires Codex 0.145 or newer.
+- The rollouts of Codex sessions are imported at the session end and before a task closes: turns, subagents and tokens by model. Codex records no cost, so its sessions count in tokens only, and the cost of a task says by how many sessions it is counted (`cost from 1 of 2 sessions`, or `not reported`). Cards get `usage.withCost`.
+- `init` without `--tools` now sets up the tools found on this machine (`~/.claude`, `~/.codex`) when none is installed in the project yet, instead of every tool.
+- The texts outside an agent name the skills without the slash of Claude Code (`skill emt-retro`); the context the hooks give an agent names them as its tool calls them.
+- Run `emt upgrade` once: the skills are written again, and with Codex installed, trust its hooks in `/hooks` afterwards.
+
 ## 0.1.2 — 2026-11-12
 
 - The hooks `init` writes run the installation of estimetry that ran it, by the paths of its Node.js and entry point, and fall back to `estimetry` on `PATH`. A version manager (asdf, nvm) that picks another Node.js for a project, or one without estimetry, no longer stops the Claude Code hooks or the `post-commit` hook. Settings and hooks the project commits keep the plain `estimetry hook …`. Run `emt upgrade` once to rewrite the hooks.

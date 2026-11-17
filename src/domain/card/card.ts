@@ -65,6 +65,8 @@ export interface CardUsage {
   /** Sessions with activity in the task, and how many of them have a log. */
   readonly sessions: number;
   readonly withLogs: number;
+  /** How many sessions with a log have a cost (Codex reports none); absent in cards written before it: all of them. */
+  readonly withCost?: number;
 }
 
 export interface CardRevision {

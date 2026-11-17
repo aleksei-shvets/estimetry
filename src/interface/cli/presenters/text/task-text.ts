@@ -140,7 +140,7 @@ export function initText(report: InitReport): string {
     `stack: ${report.stack.length === 0 ? '(nothing detected)' : report.stack.join(', ')}`,
     table(report.files.map((file) => [`  ${file.status}`, file.reason === undefined ? file.path : `${file.path}: ${file.reason}`])),
     ...report.warnings.map((warning) => `warning: ${warning}`),
-    'Next: ask the agent for an estimate (/emt-estimate) or create a task with `emt task new "<title>"`.',
+    'Next: ask the agent for an estimate (skill emt-estimate) or create a task with `emt task new "<title>"`.',
   ];
   return lines.filter((line) => line !== '').join('\n');
 }

@@ -151,3 +151,63 @@ describe('hooks write the journal of the session’s task', () => {
     expect(log).not.toContain('hunter2');
   });
 });
+
+/** A hook call the way Codex makes it: its own payload, no CLAUDE_PROJECT_DIR of its own. */
+function codexHook(event: string, payload: Record<string, unknown> = {}, env: Record<string, string> = {}) {
+  const result = spawnSync(process.execPath, [join(cli.bin, 'estimetry'), 'hook', 'codex', event], {
+    cwd: repo,
+    env: { ...cli.env, ...env },
+    input: JSON.stringify({ session_id: 'cx-1', cwd: repo, transcript_path: null, model: 'gpt-x', hook_event_name: event, ...payload }),
+    encoding: 'utf8',
+  });
+  expect(result.status).toBe(0);
+  expect(result.stderr).toBe('');
+  return result.stdout;
+}
+
+describe('Codex hooks write the journal of the session’s task', () => {
+  it('a turn with a tool, context in the format of Codex with its skills, nothing printed on Stop', async () => {
+    await emt('task', 'new', 'Payments');
+    await emt('start');
+    const start = JSON.parse(codexHook('SessionStart', { source: 'startup' })) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+    expect(start.hookSpecificOutput.hookEventName).toBe('SessionStart');
+    expect(start.hookSpecificOutput.additionalContext).toMatch(/^estimetry: before you name an effort or a deadline for a task, run \$emt-estimate\.\n/);
+    expect(start.hookSpecificOutput.additionalContext).toContain('record it with $emt-extra.');
+    codexHook('UserPromptSubmit', { turn_id: 't1', prompt: 'deploy with password hunter2' });
+    codexHook('PreToolUse', { turn_id: 't1', tool_name: 'Bash', tool_use_id: 'c1', tool_input: { command: 'echo hunter2' } });
+    codexHook('PostToolUse', { turn_id: 't1', tool_name: 'Bash', tool_use_id: 'c1', tool_response: 'hunter2' });
+    expect(codexHook('Stop', { turn_id: 't1', last_assistant_message: 'hunter2' })).toBe('');
+    const events = activity('T-1');
+    expect(events.map((e) => e.type)).toEqual(['session.bound', 'session.started', 'turn.started', 'tool.started', 'tool.used', 'turn.ended']);
+    expect(events.slice(1).every((e) => e.data['source'] === 'codex')).toBe(true);
+    expect(readFileSync(join(cli.home, 'events', 'T-1.jsonl'), 'utf8')).not.toContain('hunter2');
+  });
+
+  it('a session of Claude Code and one of Codex count in the same task', async () => {
+    await emt('task', 'new', 'Payments');
+    await emt('start');
+    hook('UserPromptSubmit', { prompt: 'go' });
+    codexHook('UserPromptSubmit', { turn_id: 't1', prompt: 'go' });
+    const sessions = new Set(activity('T-1').filter((e) => e.type === 'turn.started').map((e) => `${String(e.data['source'])} ${String(e.data['session'])}`));
+    expect(sessions).toEqual(new Set(['claude-code s1', 'codex cx-1']));
+  });
+
+  it('takes the project from the cwd of the payload, not from the CLAUDE_PROJECT_DIR of a Claude Code terminal', async () => {
+    await emt('task', 'new', 'Payments');
+    await emt('start');
+    codexHook('UserPromptSubmit', { turn_id: 't1' }, { CLAUDE_PROJECT_DIR: cli.repo('other') });
+    expect(activity('T-1').map((e) => e.type)).toContain('turn.started');
+  });
+
+  it('stays silent outside estimetry projects, where the hooks of the user also run', () => {
+    const elsewhere = cli.repo('not-registered');
+    const result = spawnSync(process.execPath, [join(cli.bin, 'estimetry'), 'hook', 'codex', 'PostToolUse'], {
+      cwd: elsewhere,
+      env: cli.env,
+      input: JSON.stringify({ session_id: 'cx-2', cwd: elsewhere, tool_name: 'Bash', hook_event_name: 'PostToolUse' }),
+      encoding: 'utf8',
+    });
+    expect(result).toMatchObject({ status: 0, stdout: '', stderr: '' });
+    expect(existsSync(join(cli.home, 'errors.log'))).toBe(false);
+  });
+});

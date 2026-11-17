@@ -6,6 +6,6 @@ export interface HookCall {
   readonly payload: string;
   /** Directory the hook process runs in. */
   readonly cwd: string;
-  /** Project root the tool reports in its environment (`CLAUDE_PROJECT_DIR`), if any. */
-  readonly projectDir?: string;
+  /** The environment of the hook process: the adapter names the variable of its project root, if it has one. */
+  readonly environment?: (name: string) => string | undefined;
 }

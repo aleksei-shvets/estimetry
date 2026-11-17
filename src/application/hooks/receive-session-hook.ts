@@ -1,6 +1,7 @@
 import type { Timestamp } from '../../domain/shared/timestamp.js';
 import { InvalidValue } from '../../domain/shared/domain-error.js';
 import type { HookAdapter } from '../contracts/hook-adapter.js';
+import { nameSkills } from '../contracts/skill-mention.js';
 import type { ProjectLocator } from '../ports/project-locator.js';
 import type { ActivityRecorder } from './activity-recorder.js';
 import type { HookCall } from './hook-call.js';
@@ -33,7 +34,7 @@ export class ReceiveSessionHook {
       throw new InvalidValue(`${adapter.id} ${event}: stdin is not JSON`); // its content is never repeated
     }
     const translation = adapter.translate(event, payload);
-    const located = this.locator.locate(call.projectDir ?? translation.cwd ?? call.cwd);
+    const located = this.locator.locate(projectDirOf(adapter, call) ?? translation.cwd ?? call.cwd);
     const resolved = this.sessionTask.resolve(translation.session, located, translation.kind, now);
     if (resolved === undefined) {
       return undefined; // not an estimetry project
@@ -41,16 +42,28 @@ export class ReceiveSessionHook {
     this.recorder.record(adapter.id, translation, resolved, now);
     switch (translation.kind) {
       case 'session-start':
-        return adapter.renderContext(event, await this.start.text(translation.session, resolved, now));
+        return render(adapter, event, await this.start.text(translation.session, resolved, now));
       case 'session-end':
-        await this.end.run(adapter.id, translation.session, translation.transcript);
+        await this.end.run(adapter, translation.session, translation.transcript);
         return undefined;
       case 'prompt': {
         const text = await this.prompt.text(translation.session, resolved, now);
-        return text === undefined ? undefined : adapter.renderContext(event, text);
+        return text === undefined ? undefined : render(adapter, event, text);
       }
       default:
         return undefined;
     }
   }
+}
+
+/** The project root the tool names in its own environment variable; an empty one names none. */
+function projectDirOf(adapter: HookAdapter, call: HookCall): string | undefined {
+  const variable = adapter.projectDirVariable;
+  const value = variable === undefined ? undefined : call.environment?.(variable);
+  return value === '' ? undefined : value;
+}
+
+/** The context in the tool's format, with the skills named the way its agent calls them. */
+function render(adapter: HookAdapter, event: string, text: string): string {
+  return adapter.renderContext(event, nameSkills(text, (id) => adapter.skillRef(id)));
 }

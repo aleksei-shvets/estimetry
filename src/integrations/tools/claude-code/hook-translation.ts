@@ -1,7 +1,7 @@
 import type { ActivityDraft, HookAdapter, HookKind, HookTranslation } from '../../../application/contracts/hook-adapter.js';
 import { SessionId } from '../../../domain/measurement/session-id.js';
 import { InvalidValue } from '../../../domain/shared/domain-error.js';
-import { CLAUDE_CODE_HOOK_EVENTS } from './hook-events.js';
+import { CLAUDE_CODE_HOOK_EVENTS, claudeCodeSkillRef } from './hook-events.js';
 
 /*
  * Claude Code hook payloads → activity events (claude-code-hooks spec). Prompt
@@ -35,6 +35,9 @@ export const claudeCodeHooks: HookAdapter = {
   id: 'claude-code',
   aliases: ['claude'],
   hookEvents: CLAUDE_CODE_HOOK_EVENTS,
+  projectDirVariable: 'CLAUDE_PROJECT_DIR',
+  // Claude Code waits for the synchronous SessionEnd within the timeout of the hook (10 s); the spec gives the import 5 s.
+  sessionEndBudgetMs: 5_000,
 
   translate(event: string, payload: unknown): HookTranslation {
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
@@ -56,6 +59,7 @@ export const claudeCodeHooks: HookAdapter = {
     };
   },
 
+  skillRef: claudeCodeSkillRef,
   renderContext(event: string, text: string): string {
     return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: text } });
   },

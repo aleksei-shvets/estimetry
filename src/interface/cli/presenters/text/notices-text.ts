@@ -16,6 +16,8 @@ export const textNotices: Notices = {
         ]
       : [],
 
+  tools: (notices: readonly string[]) => notices.map((notice) => `warning: ${notice}`),
+
   /** Extra work the revision covers or leaves counted, and untimed manual time that stays. */
   revisionCandidates: (candidates: RevisionCandidates, covers: readonly string[]) => [
     ...candidates.extras.map((extra) => {

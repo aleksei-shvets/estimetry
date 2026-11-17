@@ -83,6 +83,20 @@ describe('emt upgrade', () => {
     expect((JSON.parse(again.stdout) as { files: { status: string }[] }).files.every((file) => file.status === 'unchanged')).toBe(true);
   });
 
+  it('sets up Codex again where it is installed, and reminds to trust the changed hooks', async () => {
+    expect((await cli.run(['init', '--no-interactive', '--tools', 'codex'], web)).code).toBe(0);
+    const path = join(cli.codexDir, 'hooks.json');
+    const hooks = JSON.parse(readFileSync(path, 'utf8')) as { hooks: Record<string, unknown> };
+    delete hooks.hooks['Stop'];
+    writeFileSync(path, JSON.stringify(hooks, null, 2));
+    const plan = await cli.run(['upgrade'], cli.repo('elsewhere'));
+    expect(plan.stdout).toContain('hooks.json');
+    const result = await cli.run(['upgrade', '--yes'], cli.repo('elsewhere'));
+    expect(result, result.stderr).toMatchObject({ code: 0 });
+    expect(`${result.stdout}${result.stderr}`).toContain('open /hooks in Codex and trust the estimetry hooks');
+    expect('Stop' in (JSON.parse(readFileSync(path, 'utf8')) as { hooks: object }).hooks).toBe(true);
+  });
+
   it('prints the plan as JSON without --yes', async () => {
     const result = await cli.run(['upgrade', '--json'], api);
     expect(result.code).toBe(2);

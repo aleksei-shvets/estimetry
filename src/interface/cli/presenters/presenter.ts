@@ -26,6 +26,8 @@ export interface Notices {
   taskStarted(task: TaskView): readonly string[];
   manualTimeRecorded(result: ManualTimeRecorded): readonly string[];
   revisionCandidates(candidates: RevisionCandidates, covers: readonly string[]): readonly string[];
+  /** What an installed AI tool still needs from the user, such as a trust of its hooks. */
+  tools(notices: readonly string[]): readonly string[];
 }
 
 /** Renders use case results; `--json` picks the JSON presenter instead of branching in commands. */

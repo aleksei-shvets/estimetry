@@ -7,7 +7,7 @@ export const CODE_CLASSES = ['generated', 'tests', 'docs', 'config', 'production
 export type CodeClass = (typeof CODE_CLASSES)[number];
 
 const GENERATED_FILES = /(^|\/)(package-lock\.json|pnpm-lock\.yaml|go\.sum)$|\.lock$|\.lockb$|\.g\.dart$|\.freezed\.dart$|\.pb\.go$|_pb2\.py$|\.min\.js$|\.map$|\.snap$/;
-const GENERATED_DIRS = /(^|\/)(node_modules|__snapshots__|generated)\/|^\.(estimetry|claude)\//;
+const GENERATED_DIRS = /(^|\/)(node_modules|__snapshots__|generated)\/|^\.(estimetry|claude|codex|agents)\//;
 const GENERATED_ROOT_DIRS = /^(dist|build)\//;
 
 const TEST_DIRS = /(^|\/)(test|tests|__tests__|spec|integration_test)\/|(^|\/)src\/test\//;

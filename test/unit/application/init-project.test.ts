@@ -90,6 +90,32 @@ describe('init', () => {
     expect(versions.read(ROOT)).toBe('1.2.3');
   });
 
+  it('installs by default the tools found on this machine, and every tool when none is found', () => {
+    const other = new FakeToolAdapter('other-tool');
+    other.present = () => false;
+    build({ tools: new ListRegistry([tool, other]) });
+    expect(app.project.choices().defaults.tools).toEqual(['fake-tool']);
+    expect(app.project.init({}).tools).toEqual(['fake-tool']);
+  });
+
+  it('every tool is the default when none is installed or found', () => {
+    const other = new FakeToolAdapter('other-tool');
+    tool.present = () => false;
+    other.present = () => false;
+    build({ tools: new ListRegistry([tool, other]) });
+    expect(app.project.choices().defaults.tools).toEqual(['fake-tool', 'other-tool']);
+  });
+
+  it('passes on what an installed tool still needs from the user, and nothing for a tool not installed', () => {
+    const other = new FakeToolAdapter('other-tool');
+    tool.notice = 'trust the hooks in the tool';
+    other.notice = 'never shown: not installed';
+    build({ tools: new ListRegistry([tool, other]) });
+    expect(app.project.notices()).toEqual([]);
+    app.project.init({ tools: ['fake-tool'] });
+    expect(app.project.notices()).toEqual(['trust the hooks in the tool']);
+  });
+
   it('is idempotent', () => {
     app.project.init({});
     const second = app.project.init({});

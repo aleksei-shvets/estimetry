@@ -1,20 +1,26 @@
 import { join } from 'node:path';
 import type { CommandContent } from '../../../application/contracts/command-content.js';
-import type { FileChange, InstallPlan, SkippedFile } from '../../../application/ports/file-change.js';
+import type { FileChange, InstallPlan } from '../../../application/ports/file-change.js';
 import type { InstallContext, ToolAdapter, ToolState } from '../../../application/contracts/tool-adapter.js';
 import type { ProjectFiles } from '../../../application/ports/project-files.js';
 import { COMMANDS, ESTIMETRY_SKILL } from '../content/commands.js';
-import { withBlock, withoutBlock } from './claude-md.js';
 import { estimetryCommand } from '../../../application/contracts/estimetry-command.js';
-import { hasOurHooks, isBrokenJson, withHooks, withoutHooks } from './hook-settings.js';
+import { hasOurHooks, isBrokenJson, withHooks, withoutHooks } from '../shared/hook-settings.js';
+import { withBlock, withoutBlock } from '../shared/instructions-block.js';
+import { skillsPlan } from '../shared/skills-plan.js';
 import { CLAUDE_CODE_HOOK_EVENTS, SYNCHRONOUS_HOOK_EVENTS } from './hook-events.js';
-import { ownership, renderSkill } from './skill-file.js';
+import { renderSkill } from './skill-file.js';
 
 export { CLAUDE_CODE_HOOK_EVENTS } from './hook-events.js';
 
 const SHARED_SETTINGS = join('.claude', 'settings.json');
 const LOCAL_SETTINGS = join('.claude', 'settings.local.json');
 const SKILLS: readonly CommandContent[] = [ESTIMETRY_SKILL, ...COMMANDS];
+/** Our hooks in the settings: `estimetry hook claude-code …`, in any form `estimetryCommand` gives. */
+const OURS = 'hook claude-code';
+const CLAUDE_MD_BLOCK =
+  'Before you name a deadline or an effort for a task, run `/emt-estimate`: ' +
+  'it bases the estimate on past tasks and saves it as the plan the actual effort is measured against.';
 
 /**
  * Claude Code: hooks in the project settings, skills (which are also its slash
@@ -32,16 +38,20 @@ export class ClaudeCodeAdapter implements ToolAdapter {
   state(projectRoot: string, files: ProjectFiles): ToolState {
     const sharedText = files.read(join(projectRoot, SHARED_SETTINGS));
     const localText = files.read(join(projectRoot, LOCAL_SETTINGS));
-    const shared = hasOurHooks(sharedText);
+    const shared = hasOurHooks(sharedText, OURS);
     const broken = [
       ...(isBrokenJson(sharedText) ? [SHARED_SETTINGS] : []),
       ...(isBrokenJson(localText) ? [LOCAL_SETTINGS] : []),
     ];
     return {
-      installed: shared || hasOurHooks(localText),
+      installed: shared || hasOurHooks(localText, OURS),
       shared,
       ...(broken.length === 0 ? {} : { unreadable: `${broken.join(' and ')} ${broken.length === 1 ? 'is' : 'are'} not valid JSON` }),
     };
+  }
+
+  present(files: ProjectFiles): boolean {
+    return files.isDirectory(this.configDir);
   }
 
   personalFiles(): readonly string[] {
@@ -60,13 +70,13 @@ export class ClaudeCodeAdapter implements ToolAdapter {
   private hooks({ projectRoot, files, shared, runner }: InstallContext): InstallPlan {
     const [target, previous] = shared ? [SHARED_SETTINGS, LOCAL_SETTINGS] : [LOCAL_SETTINGS, SHARED_SETTINGS];
     // Personal settings run this installation by its paths; settings the team commits hold no paths of this machine.
-    const command = (event: string) => estimetryCommand(shared ? undefined : runner, `hook claude-code ${event}`);
+    const command = (event: string) => estimetryCommand(shared ? undefined : runner, `${OURS} ${event}`);
     const changes: FileChange[] = [
       {
         path: join(projectRoot, target),
         content: withHooks(
           files.read(join(projectRoot, target)),
-          { events: this.hookEvents, synchronous: SYNCHRONOUS_HOOK_EVENTS, command },
+          { ours: OURS, events: this.hookEvents, synchronous: SYNCHRONOUS_HOOK_EVENTS, command },
           target,
         ),
       },
@@ -75,7 +85,7 @@ export class ClaudeCodeAdapter implements ToolAdapter {
     const old = files.read(join(projectRoot, previous));
     if (old !== undefined) {
       try {
-        const cleaned = withoutHooks(old, previous);
+        const cleaned = withoutHooks(old, OURS, previous);
         changes.push(
           cleaned === undefined
             ? { path: join(projectRoot, previous), remove: true }
@@ -90,33 +100,14 @@ export class ClaudeCodeAdapter implements ToolAdapter {
   }
 
   private skills({ projectRoot, files, shared, force, version }: InstallContext): InstallPlan {
-    const changes: FileChange[] = [];
-    const skipped: SkippedFile[] = [];
-    const projectSkills = join(projectRoot, '.claude', 'skills');
-    const target = shared ? projectSkills : join(this.configDir, 'skills');
-    for (const skill of SKILLS) {
-      const path = join(target, skill.id, 'SKILL.md');
-      const current = files.read(path);
-      const owner = current === undefined ? 'ours' : ownership(current);
-      if (owner === 'foreign') {
-        skipped.push({ path, reason: 'not created by estimetry, left as it is' });
-      } else if (owner === 'edited' && !force) {
-        skipped.push({ path, reason: 'edited after install; run init --force to overwrite it' });
-      } else {
-        changes.push({ path, content: renderSkill(skill, version) });
-      }
-      // A personal install takes the skills out of the project; a shared one keeps the personal ones for other projects.
-      if (!shared) {
-        const inProject = join(projectSkills, skill.id, 'SKILL.md');
-        const text = files.read(inProject);
-        if (text !== undefined && ownership(text) === 'ours') {
-          changes.push({ path: inProject, remove: true });
-        } else if (text !== undefined && ownership(text) === 'edited') {
-          skipped.push({ path: inProject, reason: 'edited after install, so it stays in the project' });
-        }
-      }
-    }
-    return { changes, skipped, warnings: [] };
+    return skillsPlan(SKILLS, {
+      files,
+      projectDir: join(projectRoot, '.claude', 'skills'),
+      userDir: join(this.configDir, 'skills'),
+      shared,
+      force,
+      render: (skill) => renderSkill(skill, version),
+    });
   }
 
   /** The reminder goes to the committed CLAUDE.md only with a shared install. */
@@ -124,7 +115,7 @@ export class ClaudeCodeAdapter implements ToolAdapter {
     const path = join(projectRoot, 'CLAUDE.md');
     const current = files.read(path);
     if (shared) {
-      return { changes: [{ path, content: withBlock(current) }], skipped: [], warnings: [] };
+      return { changes: [{ path, content: withBlock(current, CLAUDE_MD_BLOCK) }], skipped: [], warnings: [] };
     }
     if (current === undefined) {
       return { changes: [], skipped: [], warnings: [] };

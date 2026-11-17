@@ -16,3 +16,8 @@ export const CLAUDE_CODE_HOOK_EVENTS = [
 
 /** Hooks the agent must wait for: their context has to reach it in the same turn, or the session is ending. */
 export const SYNCHRONOUS_HOOK_EVENTS: readonly string[] = ['SessionStart', 'UserPromptSubmit', 'SessionEnd'];
+
+/** How Claude Code calls a skill: as a slash command. One rule for the context of hooks and the bodies of skills. */
+export function claudeCodeSkillRef(id: string): string {
+  return `/${id}`;
+}

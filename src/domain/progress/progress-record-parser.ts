@@ -171,6 +171,9 @@ function logSession(data: Json): void {
     });
     buckets(agent['tokens'], `data.agents[${i}].tokens`);
   });
+  if (data['costReported'] !== undefined && typeof data['costReported'] !== 'boolean') {
+    throw new InvalidProgressRecord('data.costReported', 'must be true or false');
+  }
   list(data['cost'], 'data.cost').forEach((item, i) => {
     const total = object(item, `data.cost[${i}]`);
     moment(total, 'startTime', `data.cost[${i}].`);
@@ -190,6 +193,9 @@ function buckets(value: unknown, path: string): void {
     text(bucket, 'model', `${path}[${i}].`);
     for (const key of ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h']) {
       count(bucket, key, `${path}[${i}].`);
+    }
+    if (bucket['cacheWrite'] !== undefined) {
+      count(bucket, 'cacheWrite', `${path}[${i}].`);
     }
   });
 }
