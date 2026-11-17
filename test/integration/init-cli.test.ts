@@ -83,7 +83,8 @@ describe('estimetry init', () => {
     expect(existsSync(join(repo, '.claude', 'settings.local.json'))).toBe(false);
     expect(report.warnings.join('\n')).toContain('open /hooks in Codex and trust the estimetry hooks');
     const second = await init(repo, '--tools', 'codex');
-    expect(second.warnings.join('\n')).not.toContain('open /hooks in Codex');
+    expect(second.warnings.join('\n')).not.toContain('runs the new hooks');
+    expect(second.warnings.join('\n')).toContain('no trust of the estimetry hooks');
     expect(second.files.every((file) => file.status === 'unchanged')).toBe(true);
   });
 

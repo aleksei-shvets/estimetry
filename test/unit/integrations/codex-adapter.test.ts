@@ -53,7 +53,7 @@ describe('Codex hooks', () => {
     expect(hooks['SessionEnd']?.[0]?.hooks[0]?.timeout).toBe(3);
     expect(hooks['Interrupt']?.[0]?.hooks[0]?.timeout).toBe(3);
     expect(files.read(PROJECT_HOOKS)).toBeUndefined();
-    expect(adapter.state(ROOT, files)).toEqual({ installed: true, shared: false });
+    expect(adapter.state(ROOT, files)).toMatchObject({ installed: true, shared: false, notice: expect.stringContaining('/hooks') });
     expect(adapter.personalFiles()).toEqual([]);
   });
 
@@ -109,16 +109,21 @@ describe('trust of the Codex hooks', () => {
   it('says the hooks are not trusted when a hook of ours has no trusted_hash', () => {
     install();
     files.write(`${HOME}/config.toml`, events.map((event) => trustOf(event, event !== 'stop')).join('\n'));
-    expect(adapter.state(ROOT, files).notice).toMatch(/not trusted yet/);
-    expect(install().warnings.join('\n')).toMatch(/not trusted yet/);
+    expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks/);
+    expect(install().warnings.join('\n')).toMatch(/no trust of the estimetry hooks/);
   });
 
-  it('says nothing when every hook is trusted, or when the config holds no trusts at all', () => {
+  it('says nothing when every hook is trusted', () => {
     install();
     files.write(`${HOME}/config.toml`, events.map((event) => trustOf(event, true)).join('\n'));
     expect(adapter.state(ROOT, files)).not.toHaveProperty('notice');
+  });
+
+  it('warns a first user too: a config with no trusts at all, or no config', () => {
+    install();
+    expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks.*open \/hooks/);
     files.write(`${HOME}/config.toml`, 'model = "x"\n');
-    expect(adapter.state(ROOT, files)).not.toHaveProperty('notice');
+    expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks/);
   });
 });
 

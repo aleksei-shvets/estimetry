@@ -26,7 +26,9 @@ const AGENTS_MD_BLOCK =
   `Before you name a deadline or an effort for a task, run \`${codexSkillRef('emt-estimate')}\`: ` +
   'it bases the estimate on past tasks and saves it as the plan the actual effort is measured against.';
 const TRUST_REMINDER = 'Codex runs the new hooks only after you trust them: open /hooks in Codex and trust the estimetry hooks.';
-const UNTRUSTED = 'the estimetry hooks of Codex are not trusted yet, so Codex does not run them: open /hooks in Codex and trust them';
+const UNTRUSTED =
+  'Codex has no trust of the estimetry hooks in its config.toml, so it may not run them: ' +
+  'if Codex does not measure your sessions, open /hooks in Codex and trust the estimetry hooks';
 
 /** Where Codex keeps what estimetry installs for one user. */
 export interface CodexDirs {
@@ -89,7 +91,7 @@ export class CodexAdapter implements ToolAdapter {
   }
 
   private untrusted(files: ProjectFiles, hooksPath: string): boolean {
-    return untrustedHooks(files.read(join(this.dirs.home, 'config.toml')), hooksPath, files.read(hooksPath), OURS) === true;
+    return untrustedHooks(files.read(join(this.dirs.home, 'config.toml')), hooksPath, files.read(hooksPath), OURS);
   }
 
   private hooks({ projectRoot, files, shared, runner }: InstallContext): InstallPlan {

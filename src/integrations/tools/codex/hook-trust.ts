@@ -1,23 +1,15 @@
 import { ourHandlers } from '../shared/hook-settings.js';
 
 /**
- * Whether Codex has a trust of our hooks in a hooks file (codex-install spec, "Одобрение хуков Codex"). Codex keeps
- * trusts in the user config as `[hooks.state."<file>:<event in snake case>:<group>:<handler>"]` with
- * `trusted_hash`. The format is internal to Codex, so this is a narrow reading of those table headers: `undefined`
- * when the config holds no `[hooks.state` at all, and a hook changed after its trust looks trusted (its hash is
- * Codex's own). estimetry never writes a trust.
+ * Whether a hook of ours in a hooks file has no trust of Codex (codex-install spec, "Одобрение хуков Codex"). Codex
+ * keeps trusts in the user config as `[hooks.state."<file>:<event in snake case>:<group>:<handler>"]` with
+ * `trusted_hash` (checked on Codex 0.162.1). No config, or one with no trusts at all, is a user who has trusted
+ * nothing yet. The format is internal to Codex, so the warning it gives says what it saw, not that Codex is off; a
+ * hook changed after its trust looks trusted, since the hash is Codex's own. estimetry never writes a trust.
  */
-export function untrustedHooks(
-  config: string | undefined,
-  hooksPath: string,
-  hooksText: string | undefined,
-  ours: string,
-): boolean | undefined {
-  if (config === undefined || !config.includes('[hooks.state')) {
-    return undefined;
-  }
+export function untrustedHooks(config: string | undefined, hooksPath: string, hooksText: string | undefined, ours: string): boolean {
   return ourHandlers(hooksText, ours).some(
-    (place) => !trusted(config, `${hooksPath}:${snakeCase(place.event)}:${place.group}:${place.handler}`),
+    (place) => !trusted(config ?? '', `${hooksPath}:${snakeCase(place.event)}:${place.group}:${place.handler}`),
   );
 }
 
