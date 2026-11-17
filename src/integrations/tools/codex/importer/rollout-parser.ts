@@ -2,8 +2,7 @@ import type { LogTurnData, TokenBucketData } from '../../../../application/contr
 
 /*
  * One rollout file of Codex (codex-session-logs spec): `{"timestamp", "type", "payload"}` per line. Only times, turn
- * keys, models, token counts and the thread ids of subagents are read; texts of messages, reasoning, tool calls and
- * instructions are never kept.
+ * keys, models and token counts are read; texts of messages, reasoning, tool calls and instructions are never kept.
  */
 
 const KNOWN_TYPES: ReadonlySet<string> = new Set([
@@ -41,8 +40,6 @@ export class RolloutParser {
   /** A rollout starts with `session_meta`; its absence in a file read from the start means another format. */
   sessionMeta = false;
   skipped = 0;
-  /** Subagents named in this part of the parent, with the moment they first appear. */
-  readonly subagents = new Map<string, number>();
   private readonly turns: OpenTurn[] = [];
   private readonly byKey = new Map<string, OpenTurn>();
   private readonly responses = new Set<string>();
@@ -116,12 +113,6 @@ export class RolloutParser {
     } else if (kind === 'token_count' && !this.usageRecords) {
       const info = isObject(payload['info']) ? payload['info'] : undefined;
       this.count(at, info?.['last_token_usage']);
-    } else if (kind === 'item_completed') {
-      const item = isObject(payload['item']) ? payload['item'] : undefined;
-      const child = item?.['type'] === 'SubAgentActivity' ? item['agent_thread_id'] : undefined;
-      if (typeof child === 'string' && child !== '' && !this.subagents.has(child)) {
-        this.subagents.set(child, at);
-      }
     }
   }
 

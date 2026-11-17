@@ -88,14 +88,19 @@ describe('reading a rollout of Codex', () => {
     expect(second.turns.map((t) => [t.start, t.end])).toEqual([[ms('10:10:00'), ms('10:20:00')]]);
   });
 
-  it('reads the subagents its parent names, from their own rollouts, as spans and tokens', () => {
+  it('reads the subagents the agent spawned, found by their own meta, as spans and tokens; not internal ones', () => {
     const path = writeRollout(home, SESSION, [
       r.meta(SESSION, '09:59:59'),
       r.started('10:00:00', 't1'),
-      r.subagent('10:10:00', CHILD, 'started'),
-      r.subagent('10:20:00', CHILD, 'completed'),
       r.complete('10:30:00', 't1'),
     ]);
+    // A review of Codex itself, and a subagent of another session: neither is work of this session's agent.
+    writeRollout(home, '01a1eaaa-0000-7000-8000-00000000guar', [
+      { timestamp: '2026-11-17T10:11:00.000Z', type: 'session_meta', payload: { id: 'guardian-1', session_id: SESSION, source: { subagent: { other: 'guardian' } } } },
+    ]);
+    writeRollout(home, '01a1eaaa-0000-7000-8000-00000000othr', [r.meta('other-child', '10:12:00', 'other-session')]);
+    // The child of a session resumed the next day.
+    writeRollout(home, 'next-day-child', [r.meta('next-day-child', '09:00:00', SESSION), r.started('09:00:00', 'n1'), r.complete('09:05:00', 'n1')], ['2026', '11', '18']);
     writeRollout(home, CHILD, [
       r.meta(CHILD, '10:10:00', SESSION),
       r.started('10:10:00', 'c1'),
@@ -104,7 +109,8 @@ describe('reading a rollout of Codex', () => {
       r.complete('10:20:00', 'c1'),
     ]);
     const result = ok(read(0, path));
-    expect(result.agents).toEqual([
+    expect(result.agents.map((a) => a.agent)).toEqual([CHILD, 'next-day-child']);
+    expect(result.agents.slice(0, 1)).toEqual([
       {
         agent: CHILD,
         spans: [[ms('10:10:00'), ms('10:20:00')]],
