@@ -70,7 +70,9 @@ describe('reading a rollout of Codex', () => {
       r.meta(SESSION, '09:59:59'),
       r.started('10:00:00', 't1'),
       r.turnContext('10:00:00', 't1', 'gpt-x'),
-      r.tokenCount('10:01:00', { input: 1_000, cached: 400, output: 20 }),
+      r.tokenCount('10:01:00', { input: 1_000, cached: 400, output: 20 }, 1_020),
+      // The same event again: the running total did not move, so no new response.
+      r.tokenCount('10:01:30', { input: 1_000, cached: 400, output: 20 }, 1_020),
       r.complete('10:02:00', 't1'),
     ]);
     expect(ok(read(0, path)).turns[0]?.tokens).toEqual([
@@ -143,6 +145,11 @@ describe('reading a rollout of Codex', () => {
     const lines = [r.meta(SESSION, '09:59:59'), ...Array.from({ length: 20_000 }, (_, i) => r.message(`10:${String(Math.floor(i / 1000) % 60).padStart(2, '0')}:00`))];
     const path = writeRollout(home, SESSION, lines);
     expect(logs.read({ session: SessionId.parse(SESSION), path, from: 0, budgetMs: 0 })).toEqual({ status: 'over-budget' });
+  });
+
+  it('the search of the day directories keeps to the budget too', () => {
+    writeRollout(home, SESSION, [r.meta(SESSION, '09:59:59'), r.started('10:00:00', 't1'), r.complete('10:05:00', 't1')], ['2026', '11', '16']);
+    expect(logs.read({ session: SessionId.parse(SESSION), from: 0, budgetMs: -1 })).toEqual({ status: 'over-budget' });
   });
 
   it('keeps no text of the rollout', () => {

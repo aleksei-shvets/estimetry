@@ -197,7 +197,13 @@ export class FakeToolAdapter implements ToolAdapter {
 
   constructor(readonly id = 'fake-tool') {}
 
+  /** Like Codex: a personal install lives with the user, outside every copy, and serves them all. */
+  userSettings: string | undefined;
+
   private settings(root: string, shared: boolean): string {
+    if (!shared && this.userSettings !== undefined) {
+      return this.userSettings;
+    }
     // Each fake tool has its own settings, so two of them are installed apart.
     const dir = this.id === 'fake-tool' ? '.fake' : `.${this.id}`;
     return `${root}/${dir}/${shared ? 'settings.json' : 'settings.local.json'}`;
@@ -209,7 +215,13 @@ export class FakeToolAdapter implements ToolAdapter {
   state(root: string, files: ProjectFiles): ToolState {
     const shared = files.read(this.settings(root, true)) !== undefined;
     const installed = shared || files.read(this.settings(root, false)) !== undefined;
-    return { installed, shared, ...(installed && this.notice !== undefined ? { notice: this.notice } : {}) };
+    const machineWide = !shared && installed && this.userSettings !== undefined;
+    return {
+      installed,
+      shared,
+      ...(machineWide ? { machineWide: true } : {}),
+      ...(installed && this.notice !== undefined ? { notice: this.notice } : {}),
+    };
   }
 
   personalFiles(): readonly string[] {

@@ -98,6 +98,26 @@ describe('init', () => {
     expect(app.project.init({}).tools).toEqual(['fake-tool']);
   });
 
+  it('a tool installed for the user, outside every copy, joins a personal copy but never turns a shared one shared', () => {
+    const codexLike = new FakeToolAdapter('user-tool');
+    codexLike.userSettings = '/home/u/.user-tool/hooks.json';
+    build({ tools: new ListRegistry([tool, codexLike]) });
+    app.project.init({ tools: ['user-tool'] });
+    expect(files.read('/home/u/.user-tool/hooks.json')).toBeDefined();
+    // A new copy with only the user's install of one tool: the tools found on the machine are the default, not it alone.
+    expect(app.project.choices().defaults.tools).toEqual(['fake-tool', 'user-tool']);
+    // Another project of the machine, set up for the team with the other tool only.
+    files.remove(`${ROOT}/.fake/settings.local.json`);
+    app.project.init({ tools: ['fake-tool'], shared: true });
+    expect(app.project.choices().defaults).toMatchObject({ tools: ['fake-tool'], shared: true });
+    const upgraded = app.project.upgradePlan().copies[0];
+    expect(upgraded?.shared).toBe(true);
+    expect(upgraded?.files.map((file) => file.path)).not.toContain('.user-tool/settings.json');
+    // A personal copy takes the user's install along: it is already there for it.
+    app.project.init({ tools: ['fake-tool'], shared: false });
+    expect(app.project.choices().defaults).toMatchObject({ tools: ['fake-tool', 'user-tool'], shared: false });
+  });
+
   it('every tool is the default when none is installed or found', () => {
     const other = new FakeToolAdapter('other-tool');
     tool.present = () => false;

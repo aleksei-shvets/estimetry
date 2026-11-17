@@ -1,6 +1,5 @@
 import type { ActivityDraft, HookAdapter, HookKind, HookTranslation } from '../../../application/contracts/hook-adapter.js';
-import { SessionId } from '../../../domain/measurement/session-id.js';
-import { InvalidValue } from '../../../domain/shared/domain-error.js';
+import { additionalContext, payloadText, translateHook, type HookPayload } from '../shared/hook-payload.js';
 import { CODEX_HOOK_EVENTS, codexSkillRef } from './hook-events.js';
 
 /*
@@ -21,8 +20,6 @@ const KINDS: Readonly<Record<string, HookKind>> = {
   PostToolUse: 'tool-done',
 };
 
-type Json = Record<string, unknown>;
-
 export const codexHooks: HookAdapter = {
   kind: 'session',
   id: 'codex',
@@ -33,46 +30,28 @@ export const codexHooks: HookAdapter = {
   sessionEndBudgetMs: 2_000,
 
   translate(event: string, payload: unknown): HookTranslation {
-    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-      throw new InvalidValue(`codex ${event}: stdin is not a JSON object`);
-    }
-    const p = payload as Json;
-    if (typeof p['session_id'] !== 'string') {
-      throw new InvalidValue(`codex ${event}: session_id is missing`);
-    }
-    const session = SessionId.parse(p['session_id']);
-    const cwd = text(p['cwd']);
-    const transcript = text(p['transcript_path']);
-    return {
-      session,
-      ...(cwd === undefined ? {} : { cwd }),
-      ...(transcript === undefined ? {} : { transcript }),
-      kind: KINDS[event] ?? 'other',
-      events: translateEvent(event, p),
-    };
+    return translateHook('codex', event, payload, KINDS, translateEvent);
   },
 
   skillRef: codexSkillRef,
-  renderContext(event: string, text: string): string {
-    return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: text } });
-  },
+  renderContext: additionalContext,
 };
 
-function translateEvent(event: string, p: Json): ActivityDraft[] {
+function translateEvent(event: string, p: HookPayload): ActivityDraft[] {
   // Inside a subagent Codex adds its thread id; the session id stays the root one.
-  const agent = text(p['agent_id']);
+  const agent = payloadText(p['agent_id']);
   const onAgent = agent === undefined ? {} : { agent };
-  const turnId = text(p['turn_id']);
+  const turnId = payloadText(p['turn_id']);
   const turn = agent === undefined && turnId !== undefined ? { turn: turnId } : {};
-  const tool = text(p['tool_name']);
-  const toolUseId = text(p['tool_use_id']);
+  const tool = payloadText(p['tool_name']);
+  const toolUseId = payloadText(p['tool_use_id']);
   const call = { ...onAgent, ...(tool === undefined ? {} : { tool }), ...(toolUseId === undefined ? {} : { toolUseId }) };
 
   switch (event) {
     case 'SessionStart': {
-      const source = text(p['source']);
-      if (source === 'clear' || source === 'compact') {
-        return []; // the same session going on
+      const source = payloadText(p['source']);
+      if (agent !== undefined || source === 'clear' || source === 'compact') {
+        return []; // a subagent's thread starting, or the same session going on
       }
       return [{ type: 'session.started', data: source === 'resume' || source === 'fork' ? { resumed: true } : {} }];
     }
@@ -94,7 +73,7 @@ function translateEvent(event: string, p: Json): ActivityDraft[] {
     case 'PostToolUse':
       return [{ type: 'tool.used', data: call }];
     case 'SubagentStart': {
-      const type = text(p['agent_type']);
+      const type = payloadText(p['agent_type']);
       return agent === undefined ? [] : [{ type: 'agent.started', data: { agent, ...(type === undefined ? {} : { agentType: type }) } }];
     }
     case 'SubagentStop':
@@ -104,6 +83,3 @@ function translateEvent(event: string, p: Json): ActivityDraft[] {
   }
 }
 
-function text(value: unknown): string | undefined {
-  return typeof value === 'string' && value !== '' ? value : undefined;
-}

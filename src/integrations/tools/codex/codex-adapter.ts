@@ -4,9 +4,10 @@ import { estimetryCommand } from '../../../application/contracts/estimetry-comma
 import type { InstallContext, ToolAdapter, ToolState } from '../../../application/contracts/tool-adapter.js';
 import type { FileChange, InstallPlan } from '../../../application/ports/file-change.js';
 import type { ProjectFiles } from '../../../application/ports/project-files.js';
-import { COMMANDS, ESTIMETRY_SKILL } from '../content/commands.js';
+import { COMMANDS, ESTIMATE_REMINDER_BLOCK, ESTIMETRY_SKILL } from '../content/commands.js';
 import { HOOK_TIMEOUT_SECONDS, hasOurHooks, isBrokenJson, withHooks, withoutHooks } from '../shared/hook-settings.js';
-import { withBlock, withoutBlock } from '../shared/instructions-block.js';
+import { instructionsPlan } from '../shared/instructions-block.js';
+import { nameSkills } from '../../../application/contracts/skill-mention.js';
 import { skillsPlan } from '../shared/skills-plan.js';
 import {
   CODEX_HOOK_EVENTS,
@@ -22,9 +23,7 @@ const PROJECT_HOOKS = join('.codex', 'hooks.json');
 const SKILLS: readonly CommandContent[] = [ESTIMETRY_SKILL, ...COMMANDS];
 /** Our hooks in a hooks file: `estimetry hook codex …`, in any form `estimetryCommand` gives. */
 const OURS = 'hook codex';
-const AGENTS_MD_BLOCK =
-  `Before you name a deadline or an effort for a task, run \`${codexSkillRef('emt-estimate')}\`: ` +
-  'it bases the estimate on past tasks and saves it as the plan the actual effort is measured against.';
+const AGENTS_MD_BLOCK = nameSkills(ESTIMATE_REMINDER_BLOCK, codexSkillRef);
 const TRUST_REMINDER = 'Codex runs the new hooks only after you trust them: open /hooks in Codex and trust the estimetry hooks.';
 const UNTRUSTED =
   'Codex has no trust of the estimetry hooks in its config.toml, so it may not run them: ' +
@@ -65,6 +64,8 @@ export class CodexAdapter implements ToolAdapter {
       installed,
       shared,
       ...(broken.length === 0 ? {} : { unreadable: `${broken.join(' and ')} ${broken.length === 1 ? 'is' : 'are'} not valid JSON` }),
+      // The user's hooks file serves every project: such an install belongs to no copy of its own.
+      ...(installed && !shared ? { machineWide: true } : {}),
       ...(untrusted ? { notice: UNTRUSTED } : {}),
     };
   }
@@ -146,21 +147,9 @@ export class CodexAdapter implements ToolAdapter {
     });
   }
 
-  /** The reminder goes to the committed AGENTS.md only with a shared install; a file left with nothing else goes. */
+  /** The reminder goes to the committed AGENTS.md only with a shared install. */
   private agentsMd({ projectRoot, files, shared }: InstallContext): InstallPlan {
     const path = join(projectRoot, 'AGENTS.md');
-    const current = files.read(path);
-    if (shared) {
-      return { changes: [{ path, content: withBlock(current, AGENTS_MD_BLOCK) }], skipped: [], warnings: [] };
-    }
-    if (current === undefined) {
-      return { changes: [], skipped: [], warnings: [] };
-    }
-    const rest = withoutBlock(current);
-    if (rest === current) {
-      return { changes: [], skipped: [], warnings: [] };
-    }
-    const change: FileChange = rest === '' ? { path, remove: true } : { path, content: rest };
-    return { changes: [change], skipped: [], warnings: [] };
+    return instructionsPlan(path, files.read(path), shared, AGENTS_MD_BLOCK);
   }
 }

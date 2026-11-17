@@ -53,6 +53,8 @@ describe('Codex hooks into activity events', () => {
     ]);
     expect(events('SubagentStop', { agent_id: 'a1', agent_transcript_path: '/x' })).toEqual([{ type: 'agent.stopped', data: { agent: 'a1' } }]);
     expect(events('SubagentStart', {})).toEqual([]);
+    // A thread of a subagent starting is no start of the session.
+    expect(events('SessionStart', { source: 'startup', agent_id: 'a1' })).toEqual([]);
   });
 
   it('no text of the payload leaves the translation', () => {

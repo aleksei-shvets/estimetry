@@ -50,7 +50,7 @@ export class CodexLogs implements SessionLogReader {
     const deadline = request.budgetMs === undefined ? Infinity : performance.now() + request.budgetMs;
     const over = () => performance.now() > deadline;
     try {
-      const main = this.locate(request.session, request.path);
+      const main = this.locate(request.session, request.path, over);
       if (main === undefined) {
         return { status: 'not-found' };
       }
@@ -67,7 +67,7 @@ export class CodexLogs implements SessionLogReader {
         return { status: 'unrecognized', fingerprint };
       }
       const agents: LogAgentData[] = [];
-      for (const [agent, file] of spawnedChildren(main, request.session.value, this.home)) {
+      for (const [agent, file] of spawnedChildren(main, request.session.value, this.home, over)) {
         const child = new RolloutParser(0);
         if (parse(file, 0, child, over) === 'stopped') {
           return { status: 'over-budget' };
@@ -78,6 +78,9 @@ export class CodexLogs implements SessionLogReader {
       // No `cost`: Codex reports none, and the session counts in tokens only.
       return { status: 'read', from, next, turns, agents, skipped: parser.skipped, fingerprint };
     } catch (error) {
+      if (error instanceof OverBudget) {
+        return { status: 'over-budget' };
+      }
       if (error instanceof SessionLogFailure) {
         throw error;
       }
@@ -86,15 +89,17 @@ export class CodexLogs implements SessionLogReader {
     }
   }
 
-  private locate(session: SessionId, path: string | undefined): string | undefined {
+  /** @throws OverBudget past the time of the read: the search lists many directories. */
+  private locate(session: SessionId, path: string | undefined, over: () => boolean = () => false): string | undefined {
     if (path !== undefined && path !== '' && path.endsWith('.jsonl') && existsSync(path)) {
       return path;
     }
-    return this.find(`-${session.value}.jsonl`, this.newestDays(SEARCHED_DAYS));
+    return this.find(`-${session.value}.jsonl`, this.newestDays(SEARCHED_DAYS), over);
   }
 
-  private find(suffix: string, days: readonly string[]): string | undefined {
+  private find(suffix: string, days: readonly string[], over: () => boolean): string | undefined {
     for (const day of days) {
+      stopIf(over);
       if (!existsSync(day)) {
         continue;
       }
@@ -148,10 +153,11 @@ function stat(file: string): FileFingerprint {
 }
 
 /** Subagents the agent spawned in the session: rollouts of its day and the days after whose meta names the session. */
-function spawnedChildren(main: string, session: string, home: string): [string, string][] {
+function spawnedChildren(main: string, session: string, home: string, over: () => boolean): [string, string][] {
   const children: [string, string][] = [];
   for (const day of daysFrom(dirname(main), home)) {
     for (const name of readdirSync(day).sort()) {
+      stopIf(over);
       if (!name.startsWith('rollout-') || !name.endsWith('.jsonl') || join(day, name) === main) {
         continue;
       }
@@ -206,4 +212,13 @@ function sessionMeta(file: string, session: string): Record<string, unknown> | u
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The read ran out of its time while searching directories; `read` turns it into `over-budget`. */
+class OverBudget extends Error {}
+
+function stopIf(over: () => boolean): void {
+  if (over()) {
+    throw new OverBudget();
+  }
 }

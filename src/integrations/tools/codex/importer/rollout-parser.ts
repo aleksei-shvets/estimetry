@@ -45,6 +45,8 @@ export class RolloutParser {
   private readonly responses = new Set<string>();
   private model = UNKNOWN_MODEL;
   private usageRecords = false;
+  /** The running total of the last `token_count` counted. */
+  private lastTotal: number | undefined;
   private readonly countTokens: OpenTurn;
 
   constructor(private readonly from: number) {
@@ -112,6 +114,12 @@ export class RolloutParser {
       }
     } else if (kind === 'token_count' && !this.usageRecords) {
       const info = isObject(payload['info']) ? payload['info'] : undefined;
+      // Codex repeats the event with the same running total (rate limits, a resumed thread): no new response then.
+      const total = isObject(info?.['total_token_usage']) ? info['total_token_usage']['total_tokens'] : undefined;
+      if (typeof total === 'number' && total === this.lastTotal) {
+        return;
+      }
+      this.lastTotal = typeof total === 'number' ? total : undefined;
       this.count(at, info?.['last_token_usage']);
     }
   }

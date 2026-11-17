@@ -48,12 +48,16 @@ export const rollout = {
       },
     },
   }),
-  tokenCount: (time: string, counts: { input?: number; cached?: number; output?: number }): Line => ({
+  /** `total` is the running total of the thread; Codex repeats an event with the same total, e.g. for rate limits. */
+  tokenCount: (time: string, counts: { input?: number; cached?: number; output?: number }, total = 0): Line => ({
     timestamp: at(time),
     type: 'event_msg',
     payload: {
       type: 'token_count',
-      info: { last_token_usage: { input_tokens: counts.input ?? 0, cached_input_tokens: counts.cached ?? 0, output_tokens: counts.output ?? 0 } },
+      info: {
+        last_token_usage: { input_tokens: counts.input ?? 0, cached_input_tokens: counts.cached ?? 0, output_tokens: counts.output ?? 0 },
+        total_token_usage: { total_tokens: total },
+      },
     },
   }),
   subagent: (time: string, child: string, kind: 'started' | 'completed'): Line => ({

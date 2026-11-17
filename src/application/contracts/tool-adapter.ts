@@ -21,6 +21,11 @@ export interface ToolState {
   readonly shared: boolean;
   /** A settings file of the tool that cannot be read: whether the tool is installed is unknown. */
   readonly unreadable?: string;
+  /**
+   * The install is the user's, outside the copy, and serves every copy on the machine (Codex keeps personal hooks in
+   * `~/.codex`). It counts for a copy only where nothing is installed for the team: a shared copy never takes it on.
+   */
+  readonly machineWide?: boolean;
   /** What the user still has to do in the tool for the hooks to run (trust them in Codex), shown by `emt status`. */
   readonly notice?: string;
 }

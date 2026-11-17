@@ -1,6 +1,5 @@
 import type { ActivityDraft, HookAdapter, HookKind, HookTranslation } from '../../../application/contracts/hook-adapter.js';
-import { SessionId } from '../../../domain/measurement/session-id.js';
-import { InvalidValue } from '../../../domain/shared/domain-error.js';
+import { additionalContext, payloadText, translateHook, type HookPayload } from '../shared/hook-payload.js';
 import { CLAUDE_CODE_HOOK_EVENTS, claudeCodeSkillRef } from './hook-events.js';
 
 /*
@@ -28,8 +27,6 @@ const KINDS: Readonly<Record<string, HookKind>> = {
   PostToolUseFailure: 'tool-done',
 };
 
-type Json = Record<string, unknown>;
-
 export const claudeCodeHooks: HookAdapter = {
   kind: 'session',
   id: 'claude-code',
@@ -40,42 +37,24 @@ export const claudeCodeHooks: HookAdapter = {
   sessionEndBudgetMs: 5_000,
 
   translate(event: string, payload: unknown): HookTranslation {
-    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-      throw new InvalidValue(`claude-code ${event}: stdin is not a JSON object`);
-    }
-    const p = payload as Json;
-    if (typeof p['session_id'] !== 'string') {
-      throw new InvalidValue(`claude-code ${event}: session_id is missing`);
-    }
-    const session = SessionId.parse(p['session_id']);
-    const cwd = typeof p['cwd'] === 'string' ? p['cwd'] : undefined;
-    const transcript = typeof p['transcript_path'] === 'string' && p['transcript_path'] !== '' ? p['transcript_path'] : undefined;
-    return {
-      session,
-      ...(cwd === undefined ? {} : { cwd }),
-      ...(transcript === undefined ? {} : { transcript }),
-      kind: KINDS[event] ?? 'other',
-      events: translateEvent(event, p),
-    };
+    return translateHook('claude-code', event, payload, KINDS, translateEvent);
   },
 
   skillRef: claudeCodeSkillRef,
-  renderContext(event: string, text: string): string {
-    return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: text } });
-  },
+  renderContext: additionalContext,
 };
 
-function translateEvent(event: string, p: Json): ActivityDraft[] {
-  const agent = text(p['agent_id']);
+function translateEvent(event: string, p: HookPayload): ActivityDraft[] {
+  const agent = payloadText(p['agent_id']);
   const onAgent = agent === undefined ? {} : { agent };
-  const turn = agent === undefined && text(p['prompt_id']) !== undefined ? { turn: text(p['prompt_id']) as string } : {};
-  const tool = text(p['tool_name']);
-  const toolUseId = text(p['tool_use_id']);
+  const turn = agent === undefined && payloadText(p['prompt_id']) !== undefined ? { turn: payloadText(p['prompt_id']) as string } : {};
+  const tool = payloadText(p['tool_name']);
+  const toolUseId = payloadText(p['tool_use_id']);
   const call = { ...onAgent, ...(tool === undefined ? {} : { tool }), ...(toolUseId === undefined ? {} : { toolUseId }) };
 
   switch (event) {
     case 'SessionStart': {
-      const source = text(p['source']);
+      const source = payloadText(p['source']);
       if (agent !== undefined || source === 'clear' || source === 'compact') {
         return []; // a subagent's start, or the same session going on
       }
@@ -100,7 +79,7 @@ function translateEvent(event: string, p: Json): ActivityDraft[] {
         ? []
         : [{ type: 'turn.awaiting-input', data: { ...onAgent, reason: 'permission', ...turn } }];
     case 'Notification': {
-      const type = text(p['notification_type']);
+      const type = payloadText(p['notification_type']);
       return type !== undefined && QUESTION_NOTIFICATIONS.has(type)
         ? [{ type: 'turn.awaiting-input', data: { ...onAgent, reason: 'question', ...turn } }]
         : [];
@@ -110,9 +89,9 @@ function translateEvent(event: string, p: Json): ActivityDraft[] {
       const response = p['tool_response'];
       const launched =
         tool !== undefined && SUBAGENT_TOOLS.has(tool) && typeof response === 'object' && response !== null
-          ? (response as Json)
+          ? (response as HookPayload)
           : undefined;
-      const child = launched?.['status'] === 'async_launched' ? text(launched['agentId']) : undefined;
+      const child = launched?.['status'] === 'async_launched' ? payloadText(launched['agentId']) : undefined;
       return child === undefined ? [used] : [used, { type: 'agent.detached', data: { agent: child } }];
     }
     case 'PostToolUseFailure': {
@@ -122,7 +101,7 @@ function translateEvent(event: string, p: Json): ActivityDraft[] {
         : [used];
     }
     case 'SubagentStart': {
-      const type = text(p['agent_type']);
+      const type = payloadText(p['agent_type']);
       return agent === undefined ? [] : [{ type: 'agent.started', data: { agent, ...(type === undefined ? {} : { agentType: type }) } }];
     }
     case 'SubagentStop':
@@ -132,11 +111,8 @@ function translateEvent(event: string, p: Json): ActivityDraft[] {
   }
 }
 
-function duration(p: Json): { durationMs?: number } {
+function duration(p: HookPayload): { durationMs?: number } {
   const value = typeof p['duration_ms'] === 'string' ? Number(p['duration_ms']) : p['duration_ms'];
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? { durationMs: Math.round(value) } : {};
 }
 
-function text(value: unknown): string | undefined {
-  return typeof value === 'string' && value !== '' ? value : undefined;
-}

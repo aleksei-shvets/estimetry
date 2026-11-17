@@ -183,3 +183,8 @@ Running it again replaces the retro.
 `,
   },
 ];
+
+/** The reminder a shared install puts into the instructions file of the agent (`CLAUDE.md`, `AGENTS.md`). */
+export const ESTIMATE_REMINDER_BLOCK =
+  'Before you name a deadline or an effort for a task, run `{{skill:emt-estimate}}`: ' +
+  'it bases the estimate on past tasks and saves it as the plan the actual effort is measured against.';

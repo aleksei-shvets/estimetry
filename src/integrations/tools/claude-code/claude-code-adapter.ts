@@ -3,12 +3,13 @@ import type { CommandContent } from '../../../application/contracts/command-cont
 import type { FileChange, InstallPlan } from '../../../application/ports/file-change.js';
 import type { InstallContext, ToolAdapter, ToolState } from '../../../application/contracts/tool-adapter.js';
 import type { ProjectFiles } from '../../../application/ports/project-files.js';
-import { COMMANDS, ESTIMETRY_SKILL } from '../content/commands.js';
+import { COMMANDS, ESTIMATE_REMINDER_BLOCK, ESTIMETRY_SKILL } from '../content/commands.js';
 import { estimetryCommand } from '../../../application/contracts/estimetry-command.js';
 import { hasOurHooks, isBrokenJson, withHooks, withoutHooks } from '../shared/hook-settings.js';
-import { withBlock, withoutBlock } from '../shared/instructions-block.js';
+import { instructionsPlan } from '../shared/instructions-block.js';
+import { nameSkills } from '../../../application/contracts/skill-mention.js';
 import { skillsPlan } from '../shared/skills-plan.js';
-import { CLAUDE_CODE_HOOK_EVENTS, SYNCHRONOUS_HOOK_EVENTS } from './hook-events.js';
+import { CLAUDE_CODE_HOOK_EVENTS, SYNCHRONOUS_HOOK_EVENTS, claudeCodeSkillRef } from './hook-events.js';
 import { renderSkill } from './skill-file.js';
 
 export { CLAUDE_CODE_HOOK_EVENTS } from './hook-events.js';
@@ -18,9 +19,7 @@ const LOCAL_SETTINGS = join('.claude', 'settings.local.json');
 const SKILLS: readonly CommandContent[] = [ESTIMETRY_SKILL, ...COMMANDS];
 /** Our hooks in the settings: `estimetry hook claude-code …`, in any form `estimetryCommand` gives. */
 const OURS = 'hook claude-code';
-const CLAUDE_MD_BLOCK =
-  'Before you name a deadline or an effort for a task, run `/emt-estimate`: ' +
-  'it bases the estimate on past tasks and saves it as the plan the actual effort is measured against.';
+const CLAUDE_MD_BLOCK = nameSkills(ESTIMATE_REMINDER_BLOCK, claudeCodeSkillRef);
 
 /**
  * Claude Code: hooks in the project settings, skills (which are also its slash
@@ -113,13 +112,6 @@ export class ClaudeCodeAdapter implements ToolAdapter {
   /** The reminder goes to the committed CLAUDE.md only with a shared install. */
   private claudeMd({ projectRoot, files, shared }: InstallContext): InstallPlan {
     const path = join(projectRoot, 'CLAUDE.md');
-    const current = files.read(path);
-    if (shared) {
-      return { changes: [{ path, content: withBlock(current, CLAUDE_MD_BLOCK) }], skipped: [], warnings: [] };
-    }
-    if (current === undefined) {
-      return { changes: [], skipped: [], warnings: [] };
-    }
-    return { changes: [{ path, content: withoutBlock(current) }], skipped: [], warnings: [] };
+    return instructionsPlan(path, files.read(path), shared, CLAUDE_MD_BLOCK);
   }
 }
