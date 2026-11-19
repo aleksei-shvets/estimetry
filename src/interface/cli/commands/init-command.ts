@@ -11,6 +11,7 @@ interface InitOptions {
   readonly share?: string;
   readonly trackCommits?: boolean;
   readonly sharedHooks?: boolean;
+  readonly trustHooks?: boolean;
   readonly force?: boolean;
   readonly interactive: boolean;
   readonly json?: boolean;
@@ -44,6 +45,8 @@ export function registerInitCommand(program: Command, ctx: CliContext): void {
     .option('--no-track-commits', 'remove the git post-commit hook')
     .option('--shared-hooks', 'install for the whole team, into files the project commits')
     .option('--no-shared-hooks', 'install for yourself only (default)')
+    .option('--trust-hooks', 'trust the hooks in tools that ask for it (Codex) and let its task commands run outside their sandbox')
+    .option('--no-trust-hooks', 'leave the trust to you (default without a terminal)')
     .option('--force', 'overwrite generated skills you have edited')
     .option('--no-interactive', 'do not ask; use flags and defaults')
     .option('--json', 'print JSON')
@@ -63,6 +66,7 @@ function fromFlags(options: InitOptions): InitInput {
     ...(options.share === undefined ? {} : { share: options.share }),
     ...(options.trackCommits === undefined ? {} : { trackCommits: options.trackCommits }),
     ...(options.sharedHooks === undefined ? {} : { shared: options.sharedHooks }),
+    ...(options.trustHooks === undefined ? {} : { trustHooks: options.trustHooks }),
     ...(options.force ? { force: true } : {}),
   };
 }
@@ -105,6 +109,15 @@ async function ask(ctx: CliContext, choices: InitChoices, options: InitOptions):
     }
     if (input.trackCommits === undefined) {
       input.trackCommits = await prompts.confirm('Install a git post-commit hook to link commits to tasks?', defaults.trackCommits);
+    }
+    const asking = choices.tools.filter((tool) => tool.asksTrust && (input.tools ?? defaults.tools).includes(tool.id));
+    if (input.trustHooks === undefined && asking.length > 0) {
+      const titles = asking.map((tool) => tool.title).join(', ');
+      input.trustHooks = await prompts.confirm(
+        `${titles} runs a hook only after you trust it, and the agent's commands in a sandbox. ` +
+          'Trust the estimetry hooks and let its task commands (emt start, extra, close…) run outside the sandbox?',
+        true,
+      );
     }
     const shared = input.shared ?? defaults.shared;
     if (!shared && choices.unignoredPersonalFiles.length > 0) {

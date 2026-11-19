@@ -30,6 +30,8 @@ export class ClaudeCodeAdapter implements ToolAdapter {
   readonly aliases = ['claude'];
   readonly title = 'Claude Code';
   readonly hookEvents: readonly string[] = CLAUDE_CODE_HOOK_EVENTS;
+  /** Claude Code runs the hooks in its settings as they are. */
+  readonly asksTrust = false;
 
   /** `configDir` is the user's Claude Code directory: `$CLAUDE_CONFIG_DIR` or `~/.claude`. */
   constructor(private readonly configDir: string) {}

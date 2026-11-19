@@ -166,6 +166,9 @@ export interface HandlerPlace {
   readonly event: string;
   readonly group: number;
   readonly handler: number;
+  /** The handler as the file holds it, and the matcher of its group if there is one. */
+  readonly config: Readonly<Record<string, unknown>>;
+  readonly matcher?: string;
 }
 
 /** Every handler of ours in the settings, in their order; none when the text does not parse. */
@@ -183,8 +186,14 @@ export function ourHandlers(text: string | undefined, ours: string): HandlerPlac
   return Object.entries(hooks).flatMap(([event, groups]) =>
     (Array.isArray(groups) ? groups : []).flatMap((group: unknown, groupIndex) =>
       (isObject(group) && Array.isArray(group['hooks']) ? group['hooks'] : []).flatMap((handler: unknown, handlerIndex) =>
-        isOurs(handler, ours) ? [{ event, group: groupIndex, handler: handlerIndex }] : [],
+        isOurs(handler, ours) && isObject(handler) && isObject(group)
+          ? [{ event, group: groupIndex, handler: handlerIndex, config: handler, ...matcherOf(group) }]
+          : [],
       ),
     ),
   );
+}
+
+function matcherOf(group: Json): { matcher?: string } {
+  return typeof group['matcher'] === 'string' ? { matcher: group['matcher'] } : {};
 }

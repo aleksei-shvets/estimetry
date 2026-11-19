@@ -20,8 +20,15 @@ const RUNNER: EstimetryRunner = { node: '/opt/node/bin/node', main: '/opt/lib/es
 let files: InMemoryProjectFiles;
 const adapter = new CodexAdapter({ home: HOME, userSkills: USER_SKILLS });
 
-function install(options: { shared?: boolean; force?: boolean; runner?: EstimetryRunner } = {}): InstallPlan {
-  const context = { projectRoot: ROOT, files, shared: options.shared ?? false, force: options.force ?? false, version: '1.0.0' };
+function install(options: { shared?: boolean; force?: boolean; runner?: EstimetryRunner; trust?: boolean } = {}): InstallPlan {
+  const context = {
+    projectRoot: ROOT,
+    files,
+    shared: options.shared ?? false,
+    force: options.force ?? false,
+    version: '1.0.0',
+    ...(options.trust === undefined ? {} : { trust: options.trust }),
+  };
   const plan = adapter.plan(options.runner === undefined ? context : { ...context, runner: options.runner });
   for (const change of plan.changes) {
     if (isRemoval(change)) {
@@ -102,27 +109,66 @@ describe('Codex hooks', () => {
 });
 
 describe('trust of the Codex hooks', () => {
-  const trustOf = (event: string, trusted: boolean) =>
-    `[hooks.state."${USER_HOOKS}:${event}:0:0"]\nenabled = true\n${trusted ? 'trusted_hash = "sha256:abc"\n' : ''}`;
-  const events = ['session_start', 'session_end', 'user_prompt_submit', 'stop', 'interrupt', 'permission_request', 'pre_tool_use', 'post_tool_use', 'subagent_start', 'subagent_stop'];
+  const CONFIG = `${HOME}/config.toml`;
+  const RULES = `${HOME}/rules/estimetry.rules`;
 
-  it('says the hooks are not trusted when a hook of ours has no trusted_hash', () => {
-    install();
-    files.write(`${HOME}/config.toml`, events.map((event) => trustOf(event, event !== 'stop')).join('\n'));
-    expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks/);
-    expect(install().warnings.join('\n')).toMatch(/no trust of the estimetry hooks/);
+  it('computes the trust hash Codex itself computes: one Codex 0.162.1 wrote for this hook', () => {
+    install({ shared: true, trust: true });
+    const key = `[hooks.state."${ROOT}/.codex/hooks.json:pre_tool_use:0:0"]`;
+    const config = files.read(CONFIG) ?? '';
+    expect(config).toContain(`${key}\ntrusted_hash = "sha256:46dcd7f0c41071dc48c3bda925abe51e63586bc4aeb628cc27fe822d3a4254b3"`);
+    expect(config.match(/trusted_hash/g)).toHaveLength(10);
+    expect(adapter.state(ROOT, files)).not.toHaveProperty('notice');
   });
 
-  it('says nothing when every hook is trusted', () => {
-    install();
-    files.write(`${HOME}/config.toml`, events.map((event) => trustOf(event, true)).join('\n'));
+  it('with consent writes the trusts and the rule for the task commands, and keeps the rest of the config', () => {
+    files.write(CONFIG, `model = "x"\n\n[hooks.state."${USER_HOOKS}:stop:0:0"]\nenabled = false\ntrusted_hash = "sha256:old"\n`);
+    const plan = install({ trust: true });
+    const config = files.read(CONFIG) ?? '';
+    expect(config.startsWith('model = "x"\n')).toBe(true);
+    expect(config.match(/hooks\.json:stop:0:0/g)).toHaveLength(1);
+    expect(config).toMatch(/json:stop:0:0"\]\nenabled = false\ntrusted_hash = "sha256:[0-9a-f]{64}"/);
+    expect(files.read(RULES)).toMatch(/^# Written by estimetry 1\.0\.0/);
+    expect(files.read(RULES)).toContain('prefix_rule(pattern=["emt", ["task","start"');
+    expect(files.read(RULES)).not.toMatch(/"init"|"upgrade"|"rebuild"/);
+    expect(plan.warnings.join('\n')).not.toContain('--trust-hooks');
+    expect(install({ trust: true }).changes.every((change) => !('content' in change) || files.read(change.path) === change.content)).toBe(true);
+  });
+
+  it('without consent writes no trust and says how to give it', () => {
+    const plan = install({ trust: false });
+    expect(files.read(CONFIG)).toBeUndefined();
+    expect(files.read(RULES)).toBeUndefined();
+    expect(plan.warnings.join('\n')).toContain('estimetry init --tools codex --trust-hooks');
+    expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks/);
+  });
+
+  it('an upgrade that changes the hooks trusts them again when the user trusted them before, and only then', () => {
+    install({ trust: true, runner: { node: '/old/node', main: '/old/main.js', home: '/data' } });
+    install({ runner: { node: '/new/node', main: '/new/main.js', home: '/data' } });
     expect(adapter.state(ROOT, files)).not.toHaveProperty('notice');
+    files.remove(CONFIG);
+    install({ runner: { node: '/newer/node', main: '/newer/main.js', home: '/data' } });
+    expect(files.read(CONFIG)).toBeUndefined();
+  });
+
+  it('a hook changed after its trust is not trusted: the hash is of the old form', () => {
+    install({ trust: true });
+    install({ trust: false, runner: { node: '/other/node', main: '/other/main.js', home: '/data' } });
+    expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks/);
+  });
+
+  it('leaves a rules file of the user alone', () => {
+    files.write(RULES, 'prefix_rule(pattern=["emt"], decision="forbidden")\n');
+    const plan = install({ trust: true });
+    expect(files.read(RULES)).toBe('prefix_rule(pattern=["emt"], decision="forbidden")\n');
+    expect(plan.skipped.map((skip) => skip.path)).toContain(RULES);
   });
 
   it('warns a first user too: a config with no trusts at all, or no config', () => {
     install();
-    expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks.*open \/hooks/);
-    files.write(`${HOME}/config.toml`, 'model = "x"\n');
+    expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks/);
+    files.write(CONFIG, 'model = "x"\n');
     expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks/);
   });
 });

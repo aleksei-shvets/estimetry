@@ -16,7 +16,8 @@ import {
   CODEX_SYNCHRONOUS_EVENTS,
   codexSkillRef,
 } from './hook-events.js';
-import { untrustedHooks } from './hook-trust.js';
+import { hookTrusts, trustedBefore, untrustedHooks, withTrusts } from './hook-trust.js';
+import { SANDBOX_RULES, isOurRules } from './sandbox-rules.js';
 import { renderSkill } from './skill-file.js';
 
 const PROJECT_HOOKS = join('.codex', 'hooks.json');
@@ -24,10 +25,12 @@ const SKILLS: readonly CommandContent[] = [ESTIMETRY_SKILL, ...COMMANDS];
 /** Our hooks in a hooks file: `estimetry hook codex …`, in any form `estimetryCommand` gives. */
 const OURS = 'hook codex';
 const AGENTS_MD_BLOCK = nameSkills(ESTIMATE_REMINDER_BLOCK, codexSkillRef);
-const TRUST_REMINDER = 'Codex runs the new hooks only after you trust them: open /hooks in Codex and trust the estimetry hooks.';
+const TRUST_HINT =
+  'Codex runs no hook you have not trusted, so it does not measure your sessions yet: ' +
+  'run `estimetry init --tools codex --trust-hooks`, or open /hooks in Codex and trust the estimetry hooks';
 const UNTRUSTED =
   'Codex has no trust of the estimetry hooks in its config.toml, so it may not run them: ' +
-  'if Codex does not measure your sessions, open /hooks in Codex and trust the estimetry hooks';
+  'run `estimetry init --tools codex --trust-hooks`, or open /hooks in Codex and trust them';
 
 /** Where Codex keeps what estimetry installs for one user. */
 export interface CodexDirs {
@@ -47,6 +50,8 @@ export class CodexAdapter implements ToolAdapter {
   readonly aliases = ['openai-codex'];
   readonly title = 'Codex';
   readonly hookEvents: readonly string[] = CODEX_HOOK_EVENTS;
+  /** Codex runs a hook only once the user trusts it, and runs commands of the agent in a sandbox. */
+  readonly asksTrust = true;
 
   constructor(private readonly dirs: CodexDirs) {}
 
@@ -91,11 +96,16 @@ export class CodexAdapter implements ToolAdapter {
     return join(this.dirs.home, 'hooks.json');
   }
 
-  private untrusted(files: ProjectFiles, hooksPath: string): boolean {
-    return untrustedHooks(files.read(join(this.dirs.home, 'config.toml')), hooksPath, files.read(hooksPath), OURS);
+  private config(): string {
+    return join(this.dirs.home, 'config.toml');
   }
 
-  private hooks({ projectRoot, files, shared, runner }: InstallContext): InstallPlan {
+  private untrusted(files: ProjectFiles, hooksPath: string): boolean {
+    return untrustedHooks(files.read(this.config()), hookTrusts(hooksPath, files.read(hooksPath), OURS));
+  }
+
+  private hooks(context: InstallContext): InstallPlan {
+    const { projectRoot, files, shared, runner } = context;
     const projectPath = join(projectRoot, PROJECT_HOOKS);
     const [target, display] = shared ? [projectPath, PROJECT_HOOKS] : [this.userHooks(), this.userHooks()];
     // The user's hooks run this installation by its paths; hooks the team commits hold no paths of this machine.
@@ -112,13 +122,9 @@ export class CodexAdapter implements ToolAdapter {
       },
       display,
     );
-    const changes: FileChange[] = [{ path: target, content }];
-    const warnings: string[] = [];
-    if (content !== current) {
-      warnings.push(TRUST_REMINDER); // a new or changed hook waits for a trust in Codex
-    } else if (this.untrusted(files, target)) {
-      warnings.push(UNTRUSTED);
-    }
+    const trust = this.trustPlan(context, target, current, content);
+    const changes: FileChange[] = [{ path: target, content }, ...trust.changes];
+    const warnings: string[] = [...trust.warnings];
     if (shared) {
       if (hasOurHooks(files.read(this.userHooks()), OURS)) {
         warnings.push(
@@ -133,7 +139,32 @@ export class CodexAdapter implements ToolAdapter {
         changes.push(cleaned === undefined ? { path: projectPath, remove: true } : { path: projectPath, content: cleaned });
       }
     }
-    return { changes, skipped: [], warnings };
+    return { changes, skipped: trust.skipped, warnings };
+  }
+
+  /**
+   * The trust of the hooks and the rule for the task commands, with the user's consent: given now (`trust: true`), or
+   * given before for these hooks and kept when the hooks change (an upgrade). Without it, a hint how to give it.
+   */
+  private trustPlan(context: InstallContext, target: string, current: string | undefined, content: string): InstallPlan {
+    const { files, shared, projectRoot, version } = context;
+    const config = files.read(this.config());
+    const trust = context.trust ?? trustedBefore(config, hookTrusts(target, current, OURS));
+    const wanted = hookTrusts(target, content, OURS);
+    if (!trust) {
+      return { changes: [], skipped: [], warnings: untrustedHooks(config, wanted) ? [TRUST_HINT] : [] };
+    }
+    const rules = shared ? join(projectRoot, '.codex', 'rules', 'estimetry.rules') : join(this.dirs.home, 'rules', 'estimetry.rules');
+    const existing = files.read(rules);
+    const ownRules = existing === undefined || isOurRules(existing);
+    return {
+      changes: [
+        { path: this.config(), content: withTrusts(config, wanted) },
+        ...(ownRules ? [{ path: rules, content: SANDBOX_RULES(version) }] : []),
+      ],
+      skipped: ownRules ? [] : [{ path: rules, reason: 'not created by estimetry, left as it is' }],
+      warnings: [],
+    };
   }
 
   private skills({ projectRoot, files, shared, force, version }: InstallContext): InstallPlan {

@@ -13,6 +13,12 @@ export interface InstallContext {
   readonly version: string;
   /** How hooks start this installation; omitted — `estimetry` from PATH. */
   readonly runner?: EstimetryRunner;
+  /**
+   * The user agreed that the tool runs the hooks and the task commands of estimetry without asking, where the tool
+   * asks for that (Codex trusts each hook and runs commands in a sandbox): true — record it, false — record nothing,
+   * omitted — keep a trust the user gave before (an upgrade).
+   */
+  readonly trust?: boolean;
 }
 
 /** What is installed now; `init` takes its defaults from here, not from saved choices. */
@@ -41,6 +47,8 @@ export interface ToolAdapter {
   state(projectRoot: string, files: ProjectFiles): ToolState;
   /** Whether the tool is found on this machine (its user directory exists): `init` installs found tools by default. */
   present(files: ProjectFiles): boolean;
+  /** Whether the tool runs a hook of estimetry only after the user trusts it: then `init` asks about `trust`. */
+  readonly asksTrust: boolean;
   /**
    * Files inside the project that this tool writes for this user only (when the
    * install is not shared); they must stay out of git. Relative to the project root.

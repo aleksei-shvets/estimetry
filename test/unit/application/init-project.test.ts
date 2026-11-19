@@ -118,6 +118,15 @@ describe('init', () => {
     expect(app.project.choices().defaults).toMatchObject({ tools: ['fake-tool', 'user-tool'], shared: false });
   });
 
+  it('passes the consent to trust the hooks to the tools, and none when the user gave no answer', () => {
+    tool.asksTrust = true;
+    expect(app.project.choices().tools).toEqual([{ id: 'fake-tool', title: 'Fake Tool', asksTrust: true }]);
+    app.project.init({ trustHooks: true });
+    expect(tool.trusted).toBe(true);
+    app.project.init({});
+    expect(tool.trusted).toBeUndefined(); // the tool keeps a trust given before
+  });
+
   it('every tool is the default when none is installed or found', () => {
     const other = new FakeToolAdapter('other-tool');
     tool.present = () => false;

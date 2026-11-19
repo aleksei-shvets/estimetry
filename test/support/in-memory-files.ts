@@ -197,6 +197,10 @@ export class FakeToolAdapter implements ToolAdapter {
 
   constructor(readonly id = 'fake-tool') {}
 
+  /** Like Codex: the tool runs a hook only once the user trusts it; the last install's `trust` is kept here. */
+  asksTrust = false;
+  trusted: boolean | undefined;
+
   /** Like Codex: a personal install lives with the user, outside every copy, and serves them all. */
   userSettings: string | undefined;
 
@@ -232,6 +236,7 @@ export class FakeToolAdapter implements ToolAdapter {
     if (this.blocked !== undefined) {
       throw new InstallBlocked(this.blocked);
     }
+    this.trusted = context.trust;
     return {
       changes: [
         { path: this.settings(context.projectRoot, context.shared), content: `hooks ${context.version}\n` },

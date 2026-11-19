@@ -26,7 +26,7 @@ To update later: `npm install -g estimetry@latest`, then `emt upgrade` once (see
 
 ## Getting started
 
-1. In the root of a repository, run `estimetry init`. It sets up the hooks and the `emt-…` skills of the AI tools it finds on your machine. In Codex, open `/hooks` once and trust the estimetry hooks: Codex runs no new hook before that.
+1. In the root of a repository, run `estimetry init`. It sets up the hooks and the `emt-…` skills of the AI tools it finds on your machine. Codex runs a hook only once you trust it: init asks whether to trust the estimetry hooks for you.
 2. Start a new session there and ask how long a task will take, or run `/emt-estimate` (`$emt-estimate` in Codex). The agent creates the task, estimates it by parts and saves the estimate once you approve it.
 3. Run `/emt-start` (`$emt-start`) and work as usual. The hooks measure the time of the agents and your own time; `emt status` shows it.
 4. When the work is done, run `/emt-close` (`$emt-close`). The agent closes the task and asks you why the fact differs from the estimate.
@@ -76,6 +76,8 @@ With `--shared-hooks` the hooks go to `.claude/settings.json` and the skills to 
 |---|---|---|
 | Hooks for 10 Codex events, each running this installation (`<node> <estimetry> hook codex <event>`, else `estimetry hook codex <event>` from `PATH`) | `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`) | you, in every project |
 | The same skills, called as `$emt-…` | `~/.agents/skills/` | you, in every project |
+| With your consent: a trust of each hook | `~/.codex/config.toml`, `[hooks.state."…"]` | you |
+| With your consent: a rule that lets the task commands (`emt start`, `extra`, `close`…) run outside the sandbox of Codex | `~/.codex/rules/estimetry.rules` | you |
 
 Codex has no personal settings inside a project, so the hooks of a personal install serve every project on the machine; in a project without estimetry they do nothing. With `--shared-hooks` the hooks go to `.codex/hooks.json` and the skills to `.agents/skills/` of the project, and the reminder to run `$emt-estimate` goes to `AGENTS.md`. Codex reads the hooks of a project only once you trust the project.
 
@@ -98,6 +100,7 @@ No task data ever goes into the repository. Tasks, estimates and the event journ
 | `--share <mode>` | `none`, `calibration` or `cards`; only saved for now |
 | `--track-commits` / `--no-track-commits` | install or remove the git hook |
 | `--shared-hooks` / `--no-shared-hooks` | install for the whole team or for yourself only |
+| `--trust-hooks` / `--no-trust-hooks` | trust the hooks in tools that ask for it (Codex) and let the task commands run outside their sandbox; asked in a terminal, not done without one |
 | `--force` | overwrite generated skills you have edited |
 | `--no-interactive` | do not ask questions |
 | `--json` | print the report as JSON |
@@ -107,7 +110,7 @@ A repeated run keeps what is installed: once the git hook or the shared install 
 ### Good to know
 
 - **Your edits to generated skills are kept.** Every generated skill carries `metadata.generatedBy` and a hash of its content. If you edit one, init keeps your version and reports it as `skipped`; `--force` overwrites it. A file of the same name that estimetry did not create is never touched.
-- **Codex runs a hook only once you trust it.** After init writes or changes the Codex hooks (`emt upgrade` too), open `/hooks` in Codex and trust the estimetry hooks; init says so whenever the hooks file changed. `emt status` warns while they are not trusted. estimetry never trusts them for you.
+- **Codex runs a hook only once you trust it, and the agent's commands in a sandbox.** Neither the CLI nor the VS Code extension of Codex always asks, so the hooks may stay silent. In a terminal init asks whether to trust them; with yes (or `--trust-hooks`) it records the trust in `~/.codex/config.toml`, as `/hooks` in Codex would, and adds a rule that lets the task commands write to the store of estimetry without asking: the sandbox allows writes only inside the project. `init`, `upgrade` and `rebuild` stay outside the rule. Without a terminal nothing is trusted unless you pass `--trust-hooks`. `emt upgrade` trusts again the hooks it changes, if you trusted them before. `emt status` warns while they are not trusted.
 - **Personal and shared Codex hooks together run twice.** Codex adds up the hooks of every file. The fact stays right, since repeated events are dropped, but init warns and you may remove the estimetry hooks from `~/.codex/hooks.json`.
 - **Codex may copy Claude Code settings.** Its migration of Claude Code settings (hooks, skills) can bring the Claude Code hooks of estimetry into Codex. Set up Codex with `estimetry init --tools codex` instead, and remove such copies.
 - **A rewritten hook is yours.** estimetry recognises its hooks by the command it writes: the paths of the installation that fall back to `estimetry hook claude-code` (or `hook codex`), or that prefix alone. If you change that command, init treats the hook as yours and adds its own next to it.
@@ -350,6 +353,8 @@ Every command and flag, by stage, as `emt --help` lists them. `estimetry` and `e
   - `--no-track-commits` — remove the git post-commit hook
   - `--shared-hooks` — install for the whole team, into files the project commits
   - `--no-shared-hooks` — install for yourself only (default)
+  - `--trust-hooks` — trust the hooks in tools that ask for it (Codex) and let its task commands run outside their sandbox
+  - `--no-trust-hooks` — leave the trust to you (default without a terminal)
   - `--force` — overwrite generated skills you have edited
   - `--no-interactive` — do not ask; use flags and defaults
 - **`emt upgrade`** — after updating estimetry: set it up again in every project on this machine, each with its own choices

@@ -23,6 +23,11 @@ export interface InitInput {
   readonly force?: boolean;
   /** The user agreed to add personal files to the global git excludes; omitted — only warn. */
   readonly excludePersonalFiles?: boolean;
+  /**
+   * The user agreed that the tools which ask for it run the hooks and task commands of estimetry without asking
+   * (Codex): true — trust them, false — leave them to the user; omitted — keep a trust given before.
+   */
+  readonly trustHooks?: boolean;
 }
 
 
@@ -86,6 +91,7 @@ export class InitProject {
       trackCommits,
       force: input.force ?? false,
       ...(input.excludePersonalFiles === undefined ? {} : { excludePersonalFiles: input.excludePersonalFiles }),
+      ...(input.trustHooks === undefined ? {} : { trust: input.trustHooks }),
     });
 
     const project = this.projects.update(this.currentProject.register(registration).id, (registered) => {

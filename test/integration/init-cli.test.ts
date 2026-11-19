@@ -83,9 +83,21 @@ describe('estimetry init', () => {
     expect(existsSync(join(repo, '.claude', 'settings.local.json'))).toBe(false);
     expect(report.warnings.join('\n')).toContain('open /hooks in Codex and trust the estimetry hooks');
     const second = await init(repo, '--tools', 'codex');
-    expect(second.warnings.join('\n')).not.toContain('runs the new hooks');
-    expect(second.warnings.join('\n')).toContain('no trust of the estimetry hooks');
+    // Not trusted yet: every run says how to trust them.
+    expect(second.warnings.join('\n')).toContain('estimetry init --tools codex --trust-hooks');
     expect(second.files.every((file) => file.status === 'unchanged')).toBe(true);
+  });
+
+  it('trusts the Codex hooks and lets the task commands out of the sandbox only with --trust-hooks', async () => {
+    const repo = gitRepo('codex-trust');
+    const without = await init(repo, '--tools', 'codex');
+    expect(existsSync(join(cli.codexDir, 'config.toml'))).toBe(false);
+    expect(without.warnings.join('\n')).toContain('estimetry init --tools codex --trust-hooks');
+    const trusted = await init(repo, '--tools', 'codex', '--trust-hooks');
+    expect(read(join(cli.codexDir, 'config.toml')).match(/trusted_hash = "sha256:[0-9a-f]{64}"/g)).toHaveLength(10);
+    expect(read(join(cli.codexDir, 'rules', 'estimetry.rules'))).toContain('decision="allow"');
+    expect(trusted.warnings.join('\n')).not.toContain('--trust-hooks');
+    expect((await cli.run(['status'], repo)).stderr).not.toContain('no trust of the estimetry hooks');
   });
 
   it('the hook of Codex runs this installation without estimetry or node on PATH', async () => {
