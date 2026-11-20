@@ -73,6 +73,9 @@ describe('reading a rollout of Codex', () => {
       r.tokenCount('10:01:00', { input: 1_000, cached: 400, output: 20 }, 1_020),
       // The same event again: the running total did not move, so no new response.
       r.tokenCount('10:01:30', { input: 1_000, cached: 400, output: 20 }, 1_020),
+      // An event with no info between them forgets nothing.
+      { timestamp: '2026-11-17T10:01:40.000Z', type: 'event_msg', payload: { type: 'token_count', info: null } },
+      r.tokenCount('10:01:50', { input: 1_000, cached: 400, output: 20 }, 1_020),
       r.complete('10:02:00', 't1'),
     ]);
     expect(ok(read(0, path)).turns[0]?.tokens).toEqual([

@@ -115,7 +115,10 @@ describe('estimetry init', () => {
     mkdirSync(cli.codexDir);
     const repo = gitRepo('both');
     expect((await init(repo)).tools).toEqual(['claude-code', 'codex']);
-    const shared = await init(repo, '--shared-hooks');
+    // The user's own Codex does not go to the team by itself: only when named.
+    expect((await init(repo, '--shared-hooks')).tools).toEqual(['claude-code']);
+    expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(false);
+    const shared = await init(repo, '--shared-hooks', '--tools', 'claude-code,codex');
     expect(read(join(repo, '.codex', 'hooks.json')).match(/"estimetry hook codex /g)).toHaveLength(10);
     expect(existsSync(join(repo, '.agents', 'skills', 'emt-start', 'SKILL.md'))).toBe(true);
     expect(read(join(repo, 'AGENTS.md'))).toContain('run `$emt-estimate`');

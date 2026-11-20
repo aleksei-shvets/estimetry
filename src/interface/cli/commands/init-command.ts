@@ -46,7 +46,7 @@ export function registerInitCommand(program: Command, ctx: CliContext): void {
     .option('--shared-hooks', 'install for the whole team, into files the project commits')
     .option('--no-shared-hooks', 'install for yourself only (default)')
     .option('--trust-hooks', 'trust the hooks in tools that ask for it (Codex) and let its task commands run outside their sandbox')
-    .option('--no-trust-hooks', 'leave the trust to you (default without a terminal)')
+    .option('--no-trust-hooks', 'trust nothing, take away the rule for the task commands (without either flag: kept as it is)')
     .option('--force', 'overwrite generated skills you have edited')
     .option('--no-interactive', 'do not ask; use flags and defaults')
     .option('--json', 'print JSON')

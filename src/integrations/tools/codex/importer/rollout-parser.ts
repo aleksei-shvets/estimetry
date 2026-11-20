@@ -119,7 +119,9 @@ export class RolloutParser {
       if (typeof total === 'number' && total === this.lastTotal) {
         return;
       }
-      this.lastTotal = typeof total === 'number' ? total : undefined;
+      if (typeof total === 'number') {
+        this.lastTotal = total; // an event without a total does not forget the last one
+      }
       this.count(at, info?.['last_token_usage']);
     }
   }

@@ -118,6 +118,15 @@ describe('init', () => {
     expect(app.project.choices().defaults).toMatchObject({ tools: ['fake-tool', 'user-tool'], shared: false });
   });
 
+  it('a copy turned shared does not take the user’s own install of a tool into the team’s repository', () => {
+    const codexLike = new FakeToolAdapter('user-tool');
+    codexLike.userSettings = '/home/u/.user-tool/hooks.json';
+    build({ tools: new ListRegistry([tool, codexLike]) });
+    app.project.init({ tools: ['fake-tool', 'user-tool'] });
+    expect(app.project.init({ shared: true }).tools).toEqual(['fake-tool']);
+    expect(files.read(`${ROOT}/.user-tool/settings.json`)).toBeUndefined();
+  });
+
   it('passes the consent to trust the hooks to the tools, and none when the user gave no answer', () => {
     tool.asksTrust = true;
     expect(app.project.choices().tools).toEqual([{ id: 'fake-tool', title: 'Fake Tool', asksTrust: true }]);

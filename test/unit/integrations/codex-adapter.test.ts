@@ -143,13 +143,35 @@ describe('trust of the Codex hooks', () => {
     expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks/);
   });
 
-  it('an upgrade that changes the hooks trusts them again when the user trusted them before, and only then', () => {
+  it('an upgrade that changes the hooks trusts them again while our rule says the user agreed, and only then', () => {
     install({ trust: true, runner: { node: '/old/node', main: '/old/main.js', home: '/data' } });
     install({ runner: { node: '/new/node', main: '/new/main.js', home: '/data' } });
     expect(adapter.state(ROOT, files)).not.toHaveProperty('notice');
-    files.remove(CONFIG);
+    // A trust given in /hooks alone is no consent to the rule: without our rule the upgrade trusts nothing.
+    files.remove(RULES);
     install({ runner: { node: '/newer/node', main: '/newer/main.js', home: '/data' } });
-    expect(files.read(CONFIG)).toBeUndefined();
+    expect(adapter.state(ROOT, files).notice).toMatch(/no trust of the estimetry hooks/);
+    expect(files.read(RULES)).toBeUndefined();
+  });
+
+  it('--no-trust-hooks takes our rule away; the trusts Codex keeps stay', () => {
+    install({ trust: true });
+    install({ trust: false });
+    expect(files.read(RULES)).toBeUndefined();
+    expect(files.read(CONFIG)).toContain('trusted_hash');
+  });
+
+  it('a shared install keeps the rule with the user: one consent does not go into the team repository', () => {
+    install({ shared: true, trust: true });
+    expect(files.read(RULES)).toBeDefined();
+    expect(files.read(`${ROOT}/.codex/rules/estimetry.rules`)).toBeUndefined();
+  });
+
+  it('a config estimetry cannot change safely is left alone, with a hint to trust in /hooks', () => {
+    files.write(CONFIG, '[hooks]\nstate = {}\n');
+    const plan = install({ trust: true });
+    expect(files.read(CONFIG)).toBe('[hooks]\nstate = {}\n');
+    expect(plan.warnings.join('\n')).toMatch(/open \/hooks in Codex/);
   });
 
   it('a hook changed after its trust is not trusted: the hash is of the old form', () => {

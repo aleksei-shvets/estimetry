@@ -60,7 +60,11 @@ export class InitProject {
    */
   execute(input: InitInput): InitReport {
     const root = this.workspace.currentRoot();
-    const tools = input.tools === undefined ? defaultTools(this.deps, root) : this.toolsById(input.tools);
+    // A shared install puts the files into the team's repository: an install of the user's own does not go there by itself.
+    const defaults = defaultTools(this.deps, root).filter(
+      (tool) => input.shared !== true || tool.state(root, this.deps.files).machineWide !== true,
+    );
+    const tools = input.tools === undefined ? defaults : this.toolsById(input.tools);
     const flow = this.flowById(input.flow ?? defaultFlow(this.deps, this.projectConfig, root));
     const share = this.shareMode(input.share ?? this.deps.sharing.mode() ?? 'none');
     const shared = input.shared ?? isSharedInstall(this.deps, root, tools);

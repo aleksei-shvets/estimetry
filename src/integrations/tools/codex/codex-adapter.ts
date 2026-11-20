@@ -16,7 +16,7 @@ import {
   CODEX_SYNCHRONOUS_EVENTS,
   codexSkillRef,
 } from './hook-events.js';
-import { hookTrusts, trustedBefore, untrustedHooks, withTrusts } from './hook-trust.js';
+import { hookTrusts, untrustedHooks, withTrusts } from './hook-trust.js';
 import { SANDBOX_RULES, isOurRules } from './sandbox-rules.js';
 import { renderSkill } from './skill-file.js';
 
@@ -28,6 +28,9 @@ const AGENTS_MD_BLOCK = nameSkills(ESTIMATE_REMINDER_BLOCK, codexSkillRef);
 const TRUST_HINT =
   'Codex runs no hook you have not trusted, so it does not measure your sessions yet: ' +
   'run `estimetry init --tools codex --trust-hooks`, or open /hooks in Codex and trust the estimetry hooks';
+const CONFIG_REFUSED =
+  'the config.toml of Codex has a form estimetry does not change by itself (an inline or dotted hooks table, a ' +
+  'multi-line string): open /hooks in Codex and trust the estimetry hooks there';
 const UNTRUSTED =
   'Codex has no trust of the estimetry hooks in its config.toml, so it may not run them: ' +
   'run `estimetry init --tools codex --trust-hooks`, or open /hooks in Codex and trust them';
@@ -122,7 +125,7 @@ export class CodexAdapter implements ToolAdapter {
       },
       display,
     );
-    const trust = this.trustPlan(context, target, current, content);
+    const trust = this.trustPlan(context, target, content);
     const changes: FileChange[] = [{ path: target, content }, ...trust.changes];
     const warnings: string[] = [...trust.warnings];
     if (shared) {
@@ -143,27 +146,35 @@ export class CodexAdapter implements ToolAdapter {
   }
 
   /**
-   * The trust of the hooks and the rule for the task commands, with the user's consent: given now (`trust: true`), or
-   * given before for these hooks and kept when the hooks change (an upgrade). Without it, a hint how to give it.
+   * The trust of the hooks and the rule for the task commands, with the user's consent. The consent is our rules file
+   * in the user's Codex directory: `trust: true` writes it, `trust: false` takes it away, and without an answer (an
+   * upgrade) a rules file of ours means the user agreed before, so the hooks changed now are trusted again. The rule
+   * is the user's own even with a shared install: one person's consent does not go into the team's repository.
    */
-  private trustPlan(context: InstallContext, target: string, current: string | undefined, content: string): InstallPlan {
-    const { files, shared, projectRoot, version } = context;
+  private trustPlan(context: InstallContext, target: string, content: string): InstallPlan {
+    const { files, version } = context;
     const config = files.read(this.config());
-    const trust = context.trust ?? trustedBefore(config, hookTrusts(target, current, OURS));
+    const rules = join(this.dirs.home, 'rules', 'estimetry.rules');
+    const existing = files.read(rules);
+    const ownRules = existing !== undefined && isOurRules(existing);
+    const trust = context.trust ?? ownRules;
     const wanted = hookTrusts(target, content, OURS);
     if (!trust) {
-      return { changes: [], skipped: [], warnings: untrustedHooks(config, wanted) ? [TRUST_HINT] : [] };
+      return {
+        changes: context.trust === false && ownRules ? [{ path: rules, remove: true }] : [],
+        skipped: [],
+        warnings: untrustedHooks(config, wanted) ? [TRUST_HINT] : [],
+      };
     }
-    const rules = shared ? join(projectRoot, '.codex', 'rules', 'estimetry.rules') : join(this.dirs.home, 'rules', 'estimetry.rules');
-    const existing = files.read(rules);
-    const ownRules = existing === undefined || isOurRules(existing);
+    const trusted = withTrusts(config, wanted);
+    const foreignRules = existing !== undefined && !ownRules;
     return {
       changes: [
-        { path: this.config(), content: withTrusts(config, wanted) },
-        ...(ownRules ? [{ path: rules, content: SANDBOX_RULES(version) }] : []),
+        ...(trusted === undefined ? [] : [{ path: this.config(), content: trusted }]),
+        ...(foreignRules ? [] : [{ path: rules, content: SANDBOX_RULES(version) }]),
       ],
-      skipped: ownRules ? [] : [{ path: rules, reason: 'not created by estimetry, left as it is' }],
-      warnings: [],
+      skipped: foreignRules ? [{ path: rules, reason: 'not created by estimetry, left as it is' }] : [],
+      warnings: trusted === undefined ? [CONFIG_REFUSED] : [],
     };
   }
 

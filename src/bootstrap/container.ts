@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir, userInfo } from 'node:os';
 import { basename, dirname, join, sep } from 'node:path';
@@ -68,8 +68,10 @@ function claudeConfigDir(environment: Environment): string {
 /** Codex keeps the user's hooks and config in `$CODEX_HOME`, else `~/.codex`; its skills in `~/.agents/skills`. */
 export function codexDirs(environment: Environment): { home: string; userSkills: string } {
   const configured = environment.env['CODEX_HOME'];
+  const home = configured !== undefined && configured !== '' ? configured : join(environment.homeDir, '.codex');
   return {
-    home: configured !== undefined && configured !== '' ? configured : join(environment.homeDir, '.codex'),
+    // Codex keys the trust of a hook by the canonical path of its file: a symlinked CODEX_HOME must give the same key.
+    home: existsSync(home) ? realpathSync(home) : home,
     userSkills: join(environment.homeDir, '.agents', 'skills'),
   };
 }
