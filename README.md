@@ -27,9 +27,11 @@ To update later: `npm install -g estimetry@latest`, then `emt upgrade` once (see
 ## Getting started
 
 1. In the root of a repository, run `estimetry init`. It sets up the hooks and the `emt-…` skills of the AI tools it finds on your machine. Codex runs a hook only once you trust it: init asks whether to trust the estimetry hooks for you.
-2. Start a new session there and ask how long a task will take, or run `/emt-estimate` (`$emt-estimate` in Codex). The agent creates the task, estimates it by parts and saves the estimate once you approve it.
-3. Run `/emt-start` (`$emt-start`) and work as usual. The hooks measure the time of the agents and your own time; `emt status` shows it.
-4. When the work is done, run `/emt-close` (`$emt-close`). The agent closes the task and asks you why the fact differs from the estimate.
+2. Start a new session there and ask how long a task will take, or run `/emt-estimate`. The agent creates the task, estimates it by parts and saves the estimate once you approve it.
+3. Run `/emt-start` and work as usual. The hooks measure the time of the agents and your own time; `emt status` shows it.
+4. When the work is done, run `/emt-close`. The agent closes the task and asks you why the fact differs from the estimate.
+
+The skills are the same in both tools: Claude Code calls them as `/emt-…`, Codex as `$emt-…` (`$emt-estimate`, `$emt-start`). This README names them the Claude Code way.
 
 Every closed task makes the next estimate more grounded: `emt similar` finds past tasks like the new one, and `emt calibrate` gives your own coefficient once there are enough of them.
 
@@ -191,7 +193,7 @@ Sessions that ended before you installed this version are read when the task clo
 
 ### Restarts and parallel sessions
 
-The hooks find the project by the directory Claude Code runs in, not by the session id.
+The hooks find the project by the directory the AI tool runs in, not by the session id. In Codex a session begins with its first prompt, not when Codex starts: Codex tells the hooks of a session only then.
 
 - **After a restart** (VS Code, a crash, a reboot) the new session has a new id and binds again by the rules above: with one task in progress, time goes on into it without anything to do. With several, answer the agent which task it is: once attached, the work the new session did since the task started counts too.
 - **A turn cut off by a crash** gets no end. Its tail is closed by the idle threshold and shows as uncertainty (`± …` in `emt status`). The time between the crash and the restart does not count.
