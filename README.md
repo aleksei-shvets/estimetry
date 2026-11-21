@@ -91,7 +91,7 @@ Codex has no personal settings inside a project, so the hooks of a personal inst
 
 With `--track-commits` a `post-commit` hook is installed into the repository's hooks directory. This respects `core.hooksPath`, worktrees and husky (`.husky/post-commit`). An existing hook keeps its content: estimetry adds its own block between `# >>> estimetry >>>` and `# <<< estimetry <<<`. The hook runs estimetry in the background, so commits never wait for it. Colleagues without estimetry see nothing. A personal hook (in `.git`, or a hooks directory outside the repository) runs this installation by its paths, like the Claude Code hooks, so a commit from an IDE started from the Dock is recorded too. A hook the project commits (husky, `core.hooksPath` inside the repository) holds no paths of your machine and needs `estimetry` on `PATH`.
 
-No task data ever goes into the repository. Tasks, estimates and the event journal live in `~/.local/share/estimetry/`, or in `ESTIMETRY_HOME` if set.
+No task data ever goes into the repository. Tasks, estimates and the event journal live in `ESTIMETRY_HOME` if set, else in `$XDG_DATA_HOME/estimetry/`, else in `~/.local/share/estimetry/`; the paths below name the last.
 
 ### Flags
 
@@ -330,7 +330,7 @@ Every slice has a weight, n / (n + k), next to its median and mean (see [Estimat
 }
 ```
 
-**Settings.** Two settings in `~/.local/share/estimetry/config.yaml` (under `ESTIMETRY_HOME` if you set it) decide how soon calibration starts and how strongly it acts:
+**Settings.** Two settings in `config.yaml` of the data directory (`~/.local/share/estimetry/`, see [Setting up a project](#setting-up-a-project-estimetry-init) for `ESTIMETRY_HOME` and `XDG_DATA_HOME`) decide how soon calibration starts and how strongly it acts:
 
 ```yaml
 calibration:
@@ -355,6 +355,8 @@ Setting `minTasks` without `shrink` means `shrink: 0`: a threshold you chose you
 - When your estimates run low, nothing caps the pessimistic coefficient: with fact over estimate 1.5 the default gives ×1.14 / ×2.29 after one task and ×1.40 / ×1.75 after ten.
 - With tasks of several types and technologies the coefficient comes from the chain of slices: the tasks of the type weigh by their number, your other tasks fill in the rest of the weight, and what is still missing stays at 1.
 - `minTasks: 5` gives the coefficient of earlier versions wherever they gave one, with two differences. When neither the type nor a technology has 5 tasks, the median of all your tasks applies, where earlier versions gave none. The pessimistic hours are multiplied by the pessimistic coefficient, not by the coefficient, so they keep a reserve earlier versions did not give.
+
+**Seeing them.** The second line of `emt calibrate` names the settings in force, and says when they are the defaults: `Settings: calibration.minTasks 1, calibration.shrink 2 (the defaults); see emt help calibrate.` `emt calibrate --json` has them as `minTasks` and `shrink`.
 
 **Changing them.** Edit `config.yaml` and run `emt calibrate --type <type> --stack <a,b>`: it computes from your cards at once and names the coefficient, the slice, the number of tasks and the weight. Estimates already saved keep their coefficient. `calibration.json` follows at the next closing or with `emt rebuild`, which also rewrites a `calibration.json` of an earlier schema.
 

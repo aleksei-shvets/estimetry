@@ -67,12 +67,16 @@ describe('emt calibrate', () => {
   it('without closed tasks, below a threshold chosen in config.yaml, and with --revise when nothing was revised', async () => {
     expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Without calibration: no closed task yet\./);
     cards(...six().slice(0, 2));
-    expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Coefficient ×1\.02 from 2 tasks \(weight 50%\), slice type feature;/);
+    const defaults = (await emt('calibrate', '--type', 'feature')).stdout;
+    expect(defaults).toMatch(/^Coefficient ×1\.02 from 2 tasks \(weight 50%\), slice type feature;/);
+    expect(defaults.split('\n')[1]).toBe('Settings: calibration.minTasks 1, calibration.shrink 2 (the defaults); see emt help calibrate.');
     writeFileSync(
       join(cli.home, 'config.yaml'),
       stringify({ schemaVersion: 1, author: { id: 'dev@example.com' }, calibration: { minTasks: 5 } }),
     );
-    expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Without calibration: 2 of 5 tasks needed \(calibration\.minTasks\)\./);
+    const chosen = (await emt('calibrate', '--type', 'feature')).stdout;
+    expect(chosen).toMatch(/^Without calibration: 2 of 5 tasks needed \(calibration\.minTasks\)\./);
+    expect(chosen.split('\n')[1]).toBe('Settings: calibration.minTasks 5, calibration.shrink 0; see emt help calibrate.');
     cards(...six());
     const strict = JSON.parse((await emt('calibrate', '--type', 'feature', '--json')).stdout) as { coefficient: unknown; shrink: number };
     expect(strict).toMatchObject({ shrink: 0, coefficient: { value: 1.25, slice: { kind: 'type', key: 'feature' }, n: 6, weight: 1 } });

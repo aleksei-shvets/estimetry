@@ -2,6 +2,7 @@ import type { EstimateData } from '../../../../domain/estimate/estimate.js';
 import type { CalibrationView } from '../../../../application/task/show-calibration.js';
 import type { SimilarTasksView } from '../../../../application/task/find-similar-tasks.js';
 import type { RatioStats } from '../../../../domain/calibration/calibration.js';
+import { CalibrationPolicy } from '../../../../domain/calibration/calibration-policy.js';
 import { formatMinutes, percent, table } from './format.js';
 
 export function similarText(view: SimilarTasksView): string {
@@ -82,7 +83,7 @@ function queried<T>(slices: {
 
 export function calibrationText(view: CalibrationView): string {
   const slices = queried(view.ratio);
-  const lines: string[] = [coefficientLine(view)];
+  const lines: string[] = [coefficientLine(view), settingsLine(view)];
   lines.push('', 'Fact over the first estimate:');
   const ratioRows: [string, string][] = [
     ['overall', statsText(view.ratio.overall)],
@@ -157,6 +158,13 @@ function coefficientLine(view: CalibrationView): string {
       : 'Without calibration: none of the closed tasks counts (see what is left out below).';
   }
   return `Without calibration: ${overall.n} of ${view.minTasks} tasks needed (calibration.minTasks).`;
+}
+
+/** The calibration settings in force, with or without a coefficient; `emt help calibrate` describes them. */
+function settingsLine(view: CalibrationView): string {
+  const defaults = view.minTasks === CalibrationPolicy.DEFAULT.minTasks && view.shrink === CalibrationPolicy.DEFAULT.shrink;
+  const mark = defaults ? ' (the defaults)' : '';
+  return `Settings: calibration.minTasks ${view.minTasks}, calibration.shrink ${view.shrink}${mark}; see emt help calibrate.`;
 }
 
 /** A coefficient in text: two decimals are enough to read; `--json` keeps three. */

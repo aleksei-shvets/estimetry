@@ -72,6 +72,21 @@ describe('emt calibrate text', () => {
     expect(firstLine(strict)).toBe('Without calibration: 2 of 5 tasks needed (calibration.minTasks).');
     expect(strict).toMatch(/overall\s+2 tasks, median ×0\.41, mean ×0\.41, too few to apply/);
   });
+
+  it('names the settings on the second line, and says when they are the defaults', () => {
+    const secondLine = (text: string) => text.split('\n')[1];
+    const coefficient = { value: 0.794, pessimistic: 1, slice: { kind: 'overall' as const }, n: 1, weight: 0.333 };
+    expect(secondLine(calibrationText(view({ coefficient })))).toBe(
+      'Settings: calibration.minTasks 1, calibration.shrink 2 (the defaults); see emt help calibrate.',
+    );
+    expect(secondLine(calibrationText(view({ overall: stats(2, 0), minTasks: 5, shrink: 0 })))).toBe(
+      'Settings: calibration.minTasks 5, calibration.shrink 0; see emt help calibrate.',
+    );
+    // One of the two differing is enough to drop the mark.
+    expect(secondLine(calibrationText(view({ coefficient, shrink: 1 })))).toBe('Settings: calibration.minTasks 1, calibration.shrink 1; see emt help calibrate.');
+    expect(secondLine(calibrationText(view({ overall: stats(0, 0), tasks: 0 })))).toMatch(/^Settings: /);
+    expect(secondLine(calibrationText(view({ skipped: ['T-9'] })))).toMatch(/^Settings: /);
+  });
 });
 
 describe('estimate text', () => {
