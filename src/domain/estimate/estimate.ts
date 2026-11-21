@@ -17,8 +17,8 @@ export interface EstimateData {
   readonly rationale?: string;
   readonly basedOn?: readonly string[];
   readonly calibrated: boolean;
-  /** The coefficient the estimate was multiplied by when calibrated. */
-  readonly calibration?: { readonly coefficient: number };
+  /** What calibration multiplied the optimistic and likely hours by, and the pessimistic ones by. */
+  readonly calibration?: { readonly coefficient: number; readonly pessimistic?: number };
 }
 
 /**
@@ -35,8 +35,10 @@ export class Estimate {
     readonly rationale: string | undefined,
     readonly basedOn: readonly string[],
     readonly calibrated: boolean,
-    /** What calibration multiplied the estimate by; undefined when it was not applied. */
+    /** What calibration multiplied the optimistic and likely hours by; undefined when it was not applied. */
     readonly coefficient: number | undefined,
+    /** What calibration multiplied the pessimistic hours by; not part of the base of the estimate. */
+    readonly pessimisticCoefficient: number | undefined,
   ) {}
 
   /** @throws InvalidEstimate when there are no parts or part ids repeat. */
@@ -49,10 +51,15 @@ export class Estimate {
     readonly basedOn?: readonly string[];
     readonly calibrated?: boolean;
     readonly coefficient?: number;
+    readonly pessimisticCoefficient?: number;
   }): Estimate {
     const issues: EstimateIssue[] = [];
-    if (input.coefficient !== undefined && !(Number.isFinite(input.coefficient) && input.coefficient > 0)) {
+    const positive = (value: number) => Number.isFinite(value) && value > 0;
+    if (input.coefficient === undefined ? input.pessimisticCoefficient !== undefined : !positive(input.coefficient)) {
       issues.push({ path: 'calibration.coefficient', message: 'expected a number greater than 0' });
+    }
+    if (input.pessimisticCoefficient !== undefined && !positive(input.pessimisticCoefficient)) {
+      issues.push({ path: 'calibration.pessimistic', message: 'expected a number greater than 0' });
     }
     if (input.parts.length === 0) {
       issues.push({ path: 'parts', message: 'the estimate needs at least one part' });
@@ -79,6 +86,7 @@ export class Estimate {
       [...(input.basedOn ?? [])],
       input.calibrated ?? false,
       input.coefficient,
+      input.pessimisticCoefficient,
     );
   }
 
@@ -92,6 +100,7 @@ export class Estimate {
       ...(data.basedOn === undefined ? {} : { basedOn: data.basedOn }),
       calibrated: data.calibrated,
       ...(data.calibration === undefined ? {} : { coefficient: data.calibration.coefficient }),
+      ...(data.calibration?.pessimistic === undefined ? {} : { pessimisticCoefficient: data.calibration.pessimistic }),
     });
   }
 
@@ -125,6 +134,10 @@ export class Estimate {
     return groupsOf(this.parts);
   }
 
+  private calibrationData(coefficient: number): NonNullable<EstimateData['calibration']> {
+    return this.pessimisticCoefficient === undefined ? { coefficient } : { coefficient, pessimistic: this.pessimisticCoefficient };
+  }
+
   toData(): EstimateData {
     return {
       schemaVersion: ESTIMATE_SCHEMA_VERSION,
@@ -135,7 +148,7 @@ export class Estimate {
       ...(this.rationale === undefined ? {} : { rationale: this.rationale }),
       ...(this.basedOn.length === 0 ? {} : { basedOn: [...this.basedOn] }),
       calibrated: this.calibrated,
-      ...(this.coefficient === undefined ? {} : { calibration: { coefficient: this.coefficient } }),
+      ...(this.coefficient === undefined ? {} : { calibration: this.calibrationData(this.coefficient) }),
     };
   }
 }

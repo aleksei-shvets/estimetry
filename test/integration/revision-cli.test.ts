@@ -132,11 +132,16 @@ describe('cards of revised tasks', () => {
     expect((await emt('close', '--yes')).code).toBe(0);
   }
 
-  it('a closed revised task gets a card v3 and calibration v2 with the revised slices', async () => {
+  it('a closed revised task gets a card v3 and calibration v3 with the revised slices', async () => {
     await closeRevised();
     expect(card()).toMatchObject({ schemaVersion: 3, estimate: { likelyHours: 4, type: 'feature' }, currentEstimate: { likelyHours: 6 }, revisions: [{ spent: 'exclude', category: 'missed-analysis' }] });
-    const written = JSON.parse(calibration()) as { schemaVersion: number; authors: Record<string, { revisions: { byType: Record<string, unknown> } }> };
-    expect(written.schemaVersion).toBe(2);
+    const written = JSON.parse(calibration()) as {
+      schemaVersion: number;
+      minTasks: number;
+      shrink: number;
+      authors: Record<string, { revisions: { byType: Record<string, unknown> } }>;
+    };
+    expect(written).toMatchObject({ schemaVersion: 3, minTasks: 1, shrink: 2 });
     expect(Object.values(written.authors)[0]?.revisions.byType['feature']).toBeDefined();
     const shown = await emt('task', 'show', 'T-1');
     expect(shown.stdout).toMatch(/counted\s+.* current estimate/);

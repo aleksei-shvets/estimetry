@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CalibrationView } from '../../../src/application/task/show-calibration.js';
 import type { RatioStats } from '../../../src/domain/calibration/calibration.js';
-import { calibrationText } from '../../../src/interface/cli/presenters/text/estimate-text.js';
+import { calibrationText, estimateText } from '../../../src/interface/cli/presenters/text/estimate-text.js';
 
 const stats = (n: number, weight: number, median: number | null = n === 0 ? null : 0.41): RatioStats => ({
   n,
@@ -68,5 +68,15 @@ describe('emt calibrate text', () => {
     const strict = calibrationText(view({ overall: stats(2, 0), minTasks: 5, shrink: 0 }));
     expect(firstLine(strict)).toBe('Without calibration: 2 of 5 tasks needed (calibration.minTasks).');
     expect(strict).toMatch(/overall\s+2 tasks, median ×0\.41, mean ×0\.41, too few to apply/);
+  });
+});
+
+describe('estimate text', () => {
+  const parts = [{ id: 'a', name: 'a', kind: 'implementation' as const, hours: { optimistic: 1, likely: 2, pessimistic: 3 } }];
+
+  it('names both coefficients of a calibrated estimate', () => {
+    const text = estimateText({ schemaVersion: 1, parts, calibrated: true, calibration: { coefficient: 0.59, pessimistic: 0.87 } });
+    expect(text).toMatch(/^estimate\s+1 \/ 2 \/ 3 h \(calibrated ×0\.59, pessimistic ×0\.87\)/);
+    expect(estimateText({ schemaVersion: 1, parts, calibrated: true, calibration: { coefficient: 1.3 } })).toMatch(/\(calibrated ×1\.3\)/);
   });
 });

@@ -86,6 +86,23 @@ describe('Estimate', () => {
     expect(Estimate.fromData(estimate.toData()).toData()).toEqual(estimate.toData());
   });
 
+  it('keeps the pessimistic coefficient beside the coefficient; the base is still likely over the coefficient', () => {
+    const estimate = Estimate.of({ parts: [part('impl')], calibrated: true, coefficient: 0.5, pessimisticCoefficient: 0.8 });
+    expect(estimate.toData().calibration).toEqual({ coefficient: 0.5, pessimistic: 0.8 });
+    expect(Estimate.fromData(estimate.toData()).pessimisticCoefficient).toBe(0.8);
+    expect(estimate.baseLikely).toBe(estimate.total.likely / 0.5);
+    const paths = (input: { coefficient?: number; pessimisticCoefficient?: number }) => {
+      try {
+        Estimate.of({ parts: [part('impl')], ...input });
+        return [];
+      } catch (error) {
+        return (error as InvalidEstimate).issues.map((issue) => issue.path);
+      }
+    };
+    expect(paths({ coefficient: 0.5, pessimisticCoefficient: 0 })).toEqual(['calibration.pessimistic']);
+    expect(paths({ pessimisticCoefficient: 0.8 })).toEqual(['calibration.coefficient']);
+  });
+
   it('checks code volume ranges', () => {
     expect(() => CodeVolume.of({ tests: [300, 100] })).toThrow(/min ≤ max/);
     expect(() => CodeVolume.of({ production: [1] })).toThrow(InvalidValue);

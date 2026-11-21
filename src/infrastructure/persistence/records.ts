@@ -179,7 +179,10 @@ function isEstimateData(value: unknown): value is EstimateData {
     !optional(value['basedOn'], isStringArray) ||
     !optionalString(value['rationale']) ||
     !optional(value['codeVolume'], isObject) ||
-    !optional(value['calibration'], (c) => isObject(c) && typeof c['coefficient'] === 'number')
+    !optional(
+      value['calibration'],
+      (c) => isObject(c) && typeof c['coefficient'] === 'number' && optional(c['pessimistic'], (p) => typeof p === 'number'),
+    )
   ) {
     return false;
   }

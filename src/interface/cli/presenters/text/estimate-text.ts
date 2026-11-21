@@ -217,7 +217,7 @@ export function estimateText(estimate: EstimateData): string {
   const context = [
     estimate.type,
     estimate.stack === undefined ? undefined : estimate.stack.join(', '),
-    estimate.calibrated ? `calibrated ×${estimate.calibration?.coefficient ?? '?'}` : 'without calibration',
+    estimate.calibrated ? calibratedText(estimate.calibration) : 'without calibration',
     estimate.basedOn === undefined ? undefined : `based on ${estimate.basedOn.join(', ')}`,
   ].filter((part): part is string => part !== undefined);
   return table([
@@ -228,4 +228,9 @@ export function estimateText(estimate: EstimateData): string {
       return [`  ${part.id}`, `${part.hours.optimistic} / ${part.hours.likely} / ${part.hours.pessimistic} h, ${part.kind}${who}${group}`];
     }),
   ]);
+}
+
+function calibratedText(calibration: EstimateData['calibration']): string {
+  const pessimistic = calibration?.pessimistic === undefined ? '' : `, pessimistic ×${calibration.pessimistic}`;
+  return `calibrated ×${calibration?.coefficient ?? '?'}${pessimistic}`;
 }
