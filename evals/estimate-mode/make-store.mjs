@@ -1,52 +1,66 @@
 #!/usr/bin/env node
-// Builds a synthetic estimetry store for the evals of estimate mode: closed tasks with
+// Builds synthetic estimetry stores for the evals of estimate mode: closed tasks with
 // real journals, snapshots and cards, made by the built CLI (`npm run build` first).
 //
 //   node evals/estimate-mode/make-store.mjs <dir>
 //
-// <dir>/home is ESTIMETRY_HOME, <dir>/project a git project on typescript and node, <dir>/user
-// the HOME of the evals, with the skills `emt init` installs in <dir>/user/.claude.
-// Six closed `feature` tasks on typescript and node (enough for a coefficient), two
-// closed `research` tasks on python (too few by type and by stack), and one `feature` task in progress.
+// One store per amount of experience, each in <dir>/<store>: `home` is its ESTIMETRY_HOME,
+// `project` a git project on typescript and node, `user` the HOME of the evals, with the
+// skills `emt init` installs in `user/.claude`, and `bin/emt` the built CLI with this store.
+// - none: no closed task;
+// - one: one closed `feature` task;
+// - two: two closed `feature` tasks;
+// - many: six closed `feature` tasks on typescript and node, two closed `research` tasks on
+//   python, and one `feature` task in progress.
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const dir = resolve(process.argv[2] ?? '');
+const root = resolve(process.argv[2] ?? '');
 if (process.argv[2] === undefined) {
   console.error('usage: node evals/estimate-mode/make-store.mjs <dir>');
   process.exit(2);
 }
 const main = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'bootstrap', 'main.js');
-const home = join(dir, 'home');
-const project = join(dir, 'project');
 const author = 'dev@example.com';
-// HOME and CLAUDE_CONFIG_DIR inside <dir>: `emt init` must never touch the user's own skills.
-const user = join(dir, 'user');
-const env = { ...process.env, ESTIMETRY_HOME: home, HOME: user, CLAUDE_CONFIG_DIR: join(user, '.claude'), GIT_CONFIG_GLOBAL: join(user, '.gitconfig') };
-delete env.CI;
 
-mkdirSync(home, { recursive: true });
-mkdirSync(user, { recursive: true });
-mkdirSync(project, { recursive: true });
-writeFileSync(join(home, 'config.yaml'), `schemaVersion: 1\nauthor:\n  id: ${author}\n`);
-const git = (...args) => execFileSync('git', args, { cwd: project, env, stdio: 'ignore' });
-git('init', '-q');
-git('config', 'user.email', author);
-git('config', 'user.name', 'Dev');
-writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'demo', devDependencies: { typescript: '5.9' } }, null, 2));
-writeFileSync(join(project, 'tsconfig.json'), '{}\n');
-const emt = (...args) => execFileSync(process.execPath, [main, ...args], { cwd: project, env, encoding: 'utf8' });
-emt('init', '--no-interactive', '--flow', 'none', '--tools', 'claude-code');
+/** A store in <root>/<name>: its data directory, project and HOME, with `emt` run inside them. */
+function store(name) {
+  const dir = join(root, name);
+  const home = join(dir, 'home');
+  const project = join(dir, 'project');
+  // HOME and CLAUDE_CONFIG_DIR inside the store: `emt init` must never touch the user's own skills.
+  const user = join(dir, 'user');
+  const env = { ...process.env, ESTIMETRY_HOME: home, HOME: user, CLAUDE_CONFIG_DIR: join(user, '.claude'), GIT_CONFIG_GLOBAL: join(user, '.gitconfig') };
+  delete env.CI;
+  mkdirSync(home, { recursive: true });
+  mkdirSync(user, { recursive: true });
+  mkdirSync(project, { recursive: true });
+  writeFileSync(join(home, 'config.yaml'), `schemaVersion: 1\nauthor:\n  id: ${author}\n`);
+  const git = (...args) => execFileSync('git', args, { cwd: project, env, stdio: 'ignore' });
+  git('init', '-q');
+  git('config', 'user.email', author);
+  git('config', 'user.name', 'Dev');
+  writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'demo', devDependencies: { typescript: '5.9' } }, null, 2));
+  writeFileSync(join(project, 'tsconfig.json'), '{}\n');
+  const emt = (...args) => execFileSync(process.execPath, [main, ...args], { cwd: project, env, encoding: 'utf8' });
+  emt('init', '--no-interactive', '--flow', 'none', '--tools', 'claude-code');
+  // `bin/emt`: the built CLI with this store, for an agent that cannot set the environment of its shell.
+  const bin = join(dir, 'bin', 'emt');
+  mkdirSync(dirname(bin), { recursive: true });
+  writeFileSync(bin, `#!/bin/sh\nESTIMETRY_HOME='${home}' HOME='${user}' exec '${process.execPath}' '${main}' "$@"\n`);
+  chmodSync(bin, 0o755);
+  return { dir, home, project, emt };
+}
 
 const DAY = 24 * 60 * 60 * 1000;
 const iso = (ms) => new Date(ms).toISOString();
 let seq = 0;
 
 /** Agent work from `from` for `hours`: a turn with a tool call every 5 minutes, so no gap counts as idle. */
-function work(task, from, hours) {
-  const file = join(home, 'events', `${task}.jsonl`);
+function work(at, task, from, hours) {
+  const file = join(at.home, 'events', `${task}.jsonl`);
   const event = (type, ms, data = {}) =>
     appendFileSync(
       file,
@@ -73,16 +87,17 @@ function plan(file, type, likely, stack) {
   writeFileSync(file, `schemaVersion: 1\ntype: ${type}\nstack: [${stack.join(', ')}]\nparts:\n${lines.join('\n')}\n`);
 }
 
-/** A closed task: estimated `likely` hours, worked `ratio` times that, started `daysAgo` days ago. */
-function closedTask(title, type, likely, ratio, daysAgo, lesson, stack = ['typescript', 'node']) {
+/** A closed task of a store: estimated `likely` hours, worked `ratio` times that, started `daysAgo` days ago. */
+function closedTask(at, [title, likely, ratio], daysAgo, type = 'feature', lesson = 'plan manual testing per platform', stack = ['typescript', 'node']) {
+  const { emt } = at;
   const created = emt('task', 'new', title, '--type', type, '--json');
   const task = JSON.parse(created).id;
-  const file = join(dir, `${task}.yaml`);
+  const file = join(at.dir, `${task}.yaml`);
   plan(file, type, likely, stack);
   emt('estimate', 'save', file);
   const start = Date.now() - daysAgo * DAY;
   emt('start', task, '--at', iso(start));
-  work(task, start + 60 * 1000, likely * ratio);
+  work(at, task, start + 60 * 1000, likely * ratio);
   // Closed now: the estimate was saved now, and a closing may not precede a record. The fact is the work above.
   emt('close', task, '--yes');
   emt('retro', task, '--reason', 'manual-testing: took longer than planned', '--lesson', lesson);
@@ -97,16 +112,24 @@ const features = [
   ['Audit log', 7, 1.5],
   ['Search by tags', 4, 1.25],
 ];
-features.forEach(([title, likely, ratio], i) => closedTask(title, 'feature', likely, ratio, 40 - i * 5, 'plan manual testing per platform'));
-closedTask('Evaluate queue libraries', 'research', 3, 0.9, 12, 'time-box research up front', ['python']);
-closedTask('Spike: streaming parser', 'research', 4, 1.6, 8, 'prototype before estimating', ['python']);
 
-const current = JSON.parse(emt('task', 'new', 'Bulk import of products', '--type', 'feature', '--json')).id;
-const file = join(dir, `${current}.yaml`);
+store('none');
+const one = store('one');
+closedTask(one, features[1], 10);
+const two = store('two');
+features.slice(0, 2).forEach((spec, i) => closedTask(two, spec, 20 - i * 5));
+
+const many = store('many');
+features.forEach((spec, i) => closedTask(many, spec, 40 - i * 5));
+closedTask(many, ['Evaluate queue libraries', 3, 0.9], 12, 'research', 'time-box research up front', ['python']);
+closedTask(many, ['Spike: streaming parser', 4, 1.6], 8, 'research', 'prototype before estimating', ['python']);
+const current = JSON.parse(many.emt('task', 'new', 'Bulk import of products', '--type', 'feature', '--json')).id;
+const file = join(many.dir, `${current}.yaml`);
 plan(file, 'feature', 6, ['typescript', 'node']);
-emt('estimate', 'save', file);
-emt('start', current, '--at', iso(Date.now() - 2 * 60 * 60 * 1000));
+many.emt('estimate', 'save', file);
+many.emt('start', current, '--at', iso(Date.now() - 2 * 60 * 60 * 1000));
 
-console.log(`ESTIMETRY_HOME=${home}`);
-console.log(`project: ${project}`);
-console.log(`in progress: ${current}`);
+for (const name of ['none', 'one', 'two', 'many']) {
+  console.log(`${name}: ESTIMETRY_HOME=${join(root, name, 'home')} HOME=${join(root, name, 'user')} project=${join(root, name, 'project')}`);
+}
+console.log(`in progress in many: ${current}`);
