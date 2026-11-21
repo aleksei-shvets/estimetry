@@ -18,6 +18,7 @@ import type { WorkspaceLocator } from './ports/workspace-locator.js';
 import { InitProject, type InitInput, type InitReport } from './project/init-project.js';
 import type { InstallDependencies } from './project/install-dependencies.js';
 import { ShowInitChoices, type InitChoices } from './project/show-init-choices.js';
+import { toolNotices } from './project/tool-notices.js';
 import { InstallCopy } from './project/install-copy.js';
 import { UpgradePlanner } from './project/upgrade-plan.js';
 import { ShowUpgradePlan, type UpgradePlanView } from './project/show-upgrade-plan.js';
@@ -126,6 +127,8 @@ export interface Estimetry {
     /** What `emt upgrade` would change in every registered working copy; writes nothing. */
     upgradePlan(): UpgradePlanView;
     upgrade(): UpgradeReport;
+    /** What the tools installed in this working copy still need from the user, such as a trust of their hooks. */
+    notices(): string[];
   };
   readonly tasks: {
     create(input: CreateTaskInput): TaskView;
@@ -237,6 +240,7 @@ function projectGroup(deps: EstimetryDependencies, core: CoreServices): Estimetr
     init: (input) => initProject.execute(input),
     upgradePlan: () => showUpgradePlan.execute(),
     upgrade: () => upgradeProjects.execute(),
+    notices: () => toolNotices(deps.install, deps.workspace.currentRoot()),
   };
 }
 

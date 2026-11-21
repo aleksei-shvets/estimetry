@@ -11,6 +11,7 @@ interface InitOptions {
   readonly share?: string;
   readonly trackCommits?: boolean;
   readonly sharedHooks?: boolean;
+  readonly trustHooks?: boolean;
   readonly force?: boolean;
   readonly interactive: boolean;
   readonly json?: boolean;
@@ -18,10 +19,7 @@ interface InitOptions {
 
 /** Shown in the questions so users see where estimetry is going; not registered until they work. */
 const COMING_SOON = {
-  tools: [
-    { value: 'codex', label: 'Codex' },
-    { value: 'cursor', label: 'Cursor' },
-  ],
+  tools: [{ value: 'cursor', label: 'Cursor' }],
   flows: [
     { value: 'spec-kit', label: 'GitHub Spec Kit' },
     { value: 'custom', label: 'Your own, from .estimetry/flow.yaml' },
@@ -40,13 +38,15 @@ export function registerInitCommand(program: Command, ctx: CliContext): void {
     .command('init')
     .helpGroup('Setup')
     .description('set up estimetry in this project: hooks, skills and commands of the AI tool, project config')
-    .option('--tools <ids>', 'AI tools, comma-separated (claude-code)')
+    .option('--tools <ids>', 'AI tools, comma-separated: claude-code, codex (default: installed, else found on this machine)')
     .option('--flow <id>', 'development process: openspec or none (default: detected)')
     .option('--share <mode>', `sharing with the team: ${SHARE_MODES.join(', ')}`)
     .option('--track-commits', 'install a git post-commit hook')
     .option('--no-track-commits', 'remove the git post-commit hook')
     .option('--shared-hooks', 'install for the whole team, into files the project commits')
     .option('--no-shared-hooks', 'install for yourself only (default)')
+    .option('--trust-hooks', 'trust the hooks in tools that ask for it (Codex) and let its task commands run outside their sandbox')
+    .option('--no-trust-hooks', 'trust nothing, take away the rule for the task commands (without either flag: kept as it is)')
     .option('--force', 'overwrite generated skills you have edited')
     .option('--no-interactive', 'do not ask; use flags and defaults')
     .option('--json', 'print JSON')
@@ -66,6 +66,7 @@ function fromFlags(options: InitOptions): InitInput {
     ...(options.share === undefined ? {} : { share: options.share }),
     ...(options.trackCommits === undefined ? {} : { trackCommits: options.trackCommits }),
     ...(options.sharedHooks === undefined ? {} : { shared: options.sharedHooks }),
+    ...(options.trustHooks === undefined ? {} : { trustHooks: options.trustHooks }),
     ...(options.force ? { force: true } : {}),
   };
 }
@@ -81,7 +82,10 @@ async function ask(ctx: CliContext, choices: InitChoices, options: InitOptions):
         'AI tools',
         [
           ...choices.tools.map((tool) => ({ value: tool.id, label: tool.title })),
-          ...COMING_SOON.tools.map((tool) => ({ ...tool, disabled: true })),
+          // A tool that is registered is never "coming soon", even if this list lags behind.
+          ...COMING_SOON.tools
+            .filter((soon) => !choices.tools.some((tool) => tool.id === soon.value))
+            .map((tool) => ({ ...tool, disabled: true })),
         ],
         defaults.tools,
       );
@@ -106,10 +110,19 @@ async function ask(ctx: CliContext, choices: InitChoices, options: InitOptions):
     if (input.trackCommits === undefined) {
       input.trackCommits = await prompts.confirm('Install a git post-commit hook to link commits to tasks?', defaults.trackCommits);
     }
+    const asking = choices.tools.filter((tool) => tool.asksTrust && (input.tools ?? defaults.tools).includes(tool.id));
+    if (input.trustHooks === undefined && asking.length > 0) {
+      const titles = asking.map((tool) => tool.title).join(', ');
+      input.trustHooks = await prompts.confirm(
+        `${titles} runs a hook only after you trust it, and the agent's commands in a sandbox. ` +
+          'Trust the estimetry hooks and let its task commands (emt start, extra, close…) run outside the sandbox?',
+        true,
+      );
+    }
     const shared = input.shared ?? defaults.shared;
     if (!shared && choices.unignoredPersonalFiles.length > 0) {
       input.excludePersonalFiles = await prompts.confirm(
-        `${choices.unignoredPersonalFiles.join(', ')} is not ignored by git. Add it to your global git excludes, as Claude Code does?`,
+        `${choices.unignoredPersonalFiles.join(', ')} is not ignored by git. Add it to your global git excludes?`,
         true,
       );
     }

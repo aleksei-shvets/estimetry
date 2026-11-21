@@ -21,6 +21,8 @@ export interface CopyChoices {
   readonly force: boolean;
   /** The user agreed to add personal files to the global git excludes; omitted — only warn. */
   readonly excludePersonalFiles?: boolean;
+  /** See `InstallContext.trust`: omitted — keep a trust given before. */
+  readonly trust?: boolean;
 }
 
 /** A file of the plan with what writing it would do. Paths inside the copy are relative to it, others absolute. */
@@ -59,7 +61,14 @@ export class InstallCopy {
   plan(choices: CopyChoices): CopyPlan {
     const { root } = choices;
     const { version, runner } = this.deps.installation;
-    const context = { projectRoot: root, files: this.deps.files, shared: choices.shared, force: choices.force, version };
+    const context = {
+      projectRoot: root,
+      files: this.deps.files,
+      shared: choices.shared,
+      force: choices.force,
+      version,
+      ...(choices.trust === undefined ? {} : { trust: choices.trust }),
+    };
     const plan = mergePlans([
       ...choices.tools.map((tool) => tool.plan(runner === undefined ? context : { ...context, runner })),
       this.deps.git.commitHook.plan(root, choices.trackCommits, runner),

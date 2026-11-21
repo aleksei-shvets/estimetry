@@ -4,9 +4,10 @@ import type { InstallPlan } from '../../../src/application/ports/file-change.js'
 import { isRemoval } from '../../../src/application/ports/file-change.js';
 import { InstallBlocked } from '../../../src/application/contracts/install-blocked.js';
 import { ClaudeCodeAdapter } from '../../../src/integrations/tools/claude-code/claude-code-adapter.js';
-import { withBlock, withoutBlock } from '../../../src/integrations/tools/claude-code/claude-md.js';
-import { ownership, renderSkill } from '../../../src/integrations/tools/claude-code/skill-file.js';
-import { COMMANDS } from '../../../src/integrations/tools/content/commands.js';
+import { withBlock, withoutBlock } from '../../../src/integrations/tools/shared/instructions-block.js';
+import { renderSkill } from '../../../src/integrations/tools/claude-code/skill-file.js';
+import { ownership } from '../../../src/integrations/tools/shared/generated-file.js';
+import { COMMANDS, ESTIMETRY_SKILL } from '../../../src/integrations/tools/content/commands.js';
 import { InMemoryProjectFiles } from '../../support/in-memory-files.js';
 
 const ROOT = '/work/app';
@@ -228,8 +229,18 @@ describe('CLAUDE.md', () => {
   });
 
   it('block helpers keep text around a block in the middle', () => {
-    const middle = `a\n\n${withBlock(undefined)}\nb\n`;
+    const middle = `a\n\n${withBlock(undefined, 'Body.')}\nb\n`;
     expect(withoutBlock(middle)).toBe('a\n\nb\n');
     expect(withoutBlock('no block\n')).toBe('no block\n');
+  });
+});
+
+describe('skills in the form of Claude Code', () => {
+  it('name other skills as slash commands and take $ARGUMENTS; no mark of the core is left', () => {
+    const texts = [ESTIMETRY_SKILL, ...COMMANDS].map((skill) => renderSkill(skill, '1.0.0'));
+    expect(texts.join('\n')).not.toContain('{{');
+    const close = renderSkill(COMMANDS.find((c) => c.id === 'emt-close')!, '1.0.0');
+    expect(close).toContain('emt close $ARGUMENTS --yes');
+    expect(close).toContain('`/emt-retro`');
   });
 });

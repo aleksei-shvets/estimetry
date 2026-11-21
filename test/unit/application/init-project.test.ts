@@ -90,6 +90,70 @@ describe('init', () => {
     expect(versions.read(ROOT)).toBe('1.2.3');
   });
 
+  it('installs by default the tools found on this machine, and every tool when none is found', () => {
+    const other = new FakeToolAdapter('other-tool');
+    other.present = () => false;
+    build({ tools: new ListRegistry([tool, other]) });
+    expect(app.project.choices().defaults.tools).toEqual(['fake-tool']);
+    expect(app.project.init({}).tools).toEqual(['fake-tool']);
+  });
+
+  it('a tool installed for the user, outside every copy, joins a personal copy but never turns a shared one shared', () => {
+    const codexLike = new FakeToolAdapter('user-tool');
+    codexLike.userSettings = '/home/u/.user-tool/hooks.json';
+    build({ tools: new ListRegistry([tool, codexLike]) });
+    app.project.init({ tools: ['user-tool'] });
+    expect(files.read('/home/u/.user-tool/hooks.json')).toBeDefined();
+    // A new copy with only the user's install of one tool: the tools found on the machine are the default, not it alone.
+    expect(app.project.choices().defaults.tools).toEqual(['fake-tool', 'user-tool']);
+    // Another project of the machine, set up for the team with the other tool only.
+    files.remove(`${ROOT}/.fake/settings.local.json`);
+    app.project.init({ tools: ['fake-tool'], shared: true });
+    expect(app.project.choices().defaults).toMatchObject({ tools: ['fake-tool'], shared: true });
+    const upgraded = app.project.upgradePlan().copies[0];
+    expect(upgraded?.shared).toBe(true);
+    expect(upgraded?.files.map((file) => file.path)).not.toContain('.user-tool/settings.json');
+    // A personal copy takes the user's install along: it is already there for it.
+    app.project.init({ tools: ['fake-tool'], shared: false });
+    expect(app.project.choices().defaults).toMatchObject({ tools: ['fake-tool', 'user-tool'], shared: false });
+  });
+
+  it('a copy turned shared does not take the user’s own install of a tool into the team’s repository', () => {
+    const codexLike = new FakeToolAdapter('user-tool');
+    codexLike.userSettings = '/home/u/.user-tool/hooks.json';
+    build({ tools: new ListRegistry([tool, codexLike]) });
+    app.project.init({ tools: ['fake-tool', 'user-tool'] });
+    expect(app.project.init({ shared: true }).tools).toEqual(['fake-tool']);
+    expect(files.read(`${ROOT}/.user-tool/settings.json`)).toBeUndefined();
+  });
+
+  it('passes the consent to trust the hooks to the tools, and none when the user gave no answer', () => {
+    tool.asksTrust = true;
+    expect(app.project.choices().tools).toEqual([{ id: 'fake-tool', title: 'Fake Tool', asksTrust: true }]);
+    app.project.init({ trustHooks: true });
+    expect(tool.trusted).toBe(true);
+    app.project.init({});
+    expect(tool.trusted).toBeUndefined(); // the tool keeps a trust given before
+  });
+
+  it('every tool is the default when none is installed or found', () => {
+    const other = new FakeToolAdapter('other-tool');
+    tool.present = () => false;
+    other.present = () => false;
+    build({ tools: new ListRegistry([tool, other]) });
+    expect(app.project.choices().defaults.tools).toEqual(['fake-tool', 'other-tool']);
+  });
+
+  it('passes on what an installed tool still needs from the user, and nothing for a tool not installed', () => {
+    const other = new FakeToolAdapter('other-tool');
+    tool.notice = 'trust the hooks in the tool';
+    other.notice = 'never shown: not installed';
+    build({ tools: new ListRegistry([tool, other]) });
+    expect(app.project.notices()).toEqual([]);
+    app.project.init({ tools: ['fake-tool'] });
+    expect(app.project.notices()).toEqual(['trust the hooks in the tool']);
+  });
+
   it('is idempotent', () => {
     app.project.init({});
     const second = app.project.init({});

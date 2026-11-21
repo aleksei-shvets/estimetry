@@ -19,6 +19,8 @@ export interface CliSandbox {
   /** HOME of the child processes: Claude Code's personal directory and git's global config live here, not in yours. */
   readonly userHome: string;
   readonly claudeDir: string;
+  /** `CODEX_HOME` of the sandbox: not created, so Codex is not found until a test makes it. */
+  readonly codexDir: string;
   readonly bin: string;
   /** Runs `emt <args>` in `cwd` against this sandbox's ESTIMETRY_HOME. */
   run(args: readonly string[], cwd: string, bin?: 'emt' | 'estimetry', env?: NodeJS.ProcessEnv): Promise<CliResult>;
@@ -43,12 +45,17 @@ export function cliSandbox(): CliSandbox {
   symlinkSync(MAIN, join(bin, 'estimetry'));
   const userHome = join(root, 'user');
   const claudeDir = join(userHome, '.claude');
+  const codexDir = join(userHome, '.codex');
   mkdirSync(userHome);
+  // A machine with Claude Code: `init` installs the tools it finds. Codex is found once a test creates its directory.
+  mkdirSync(claudeDir);
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ESTIMETRY_HOME: home,
     HOME: userHome,
     CLAUDE_CONFIG_DIR: claudeDir,
+    // Never the real ~/.codex, even when the developer sets CODEX_HOME.
+    CODEX_HOME: codexDir,
     XDG_CONFIG_HOME: join(userHome, '.config'),
     GIT_CONFIG_GLOBAL: join(userHome, '.gitconfig'),
     PATH: `${bin}${delimiter}${process.env['PATH'] ?? ''}`,
@@ -59,6 +66,7 @@ export function cliSandbox(): CliSandbox {
     home,
     userHome,
     claudeDir,
+    codexDir,
     bin,
     env,
     async run(args, cwd, name = 'emt', extraEnv = {}) {

@@ -7,7 +7,8 @@ import type { InstallDependencies } from './install-dependencies.js';
 /** What `init` would do by default, for the questions and for the non-interactive run. */
 export interface InitChoices {
   readonly projectRoot: string;
-  readonly tools: readonly { readonly id: string; readonly title: string }[];
+  /** `asksTrust`: the tool runs a hook only once the user trusts it, so `init` asks about `trustHooks`. */
+  readonly tools: readonly { readonly id: string; readonly title: string; readonly asksTrust: boolean }[];
   readonly flows: readonly { readonly id: string; readonly title: string }[];
   readonly defaults: {
     readonly tools: readonly string[];
@@ -33,7 +34,7 @@ export class ShowInitChoices {
     const tools = defaultTools(this.deps, root);
     return {
       projectRoot: root,
-      tools: this.deps.registries.tools.all().map(({ id, title }) => ({ id, title })),
+      tools: this.deps.registries.tools.all().map(({ id, title, asksTrust }) => ({ id, title, asksTrust })),
       flows: this.deps.registries.flows.all().map(({ id, title }) => ({ id, title })),
       defaults: {
         tools: tools.map((tool) => tool.id),

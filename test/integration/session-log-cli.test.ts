@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { cliSandbox, type CliSandbox } from '../support/cli.js';
 import { log, SECRET, text, writeLog } from '../support/claude-log.js';
+import { rollout, SECRET as CODEX_SECRET, writeRollout } from '../support/codex-log.js';
 
 let cli: CliSandbox;
 let repo: string;
@@ -128,4 +129,48 @@ describe('the log of a session', () => {
     expect(journal().filter((e) => e.type === 'log.session').length).toBeGreaterThan(0);
     expect(took).toBeLessThan(5_000);
   }, 60_000);
+});
+
+describe('the log of a Codex session', () => {
+  const CODEX = '01a162ca-f1f0-7da1-9125-c703441d95a4';
+
+  function codexHook(event: string, payload: Record<string, unknown> = {}) {
+    const result = spawnSync(process.execPath, [join(cli.bin, 'estimetry'), 'hook', 'codex', event], {
+      cwd: repo,
+      env: cli.env,
+      input: JSON.stringify({ session_id: CODEX, cwd: repo, model: 'gpt-x', hook_event_name: event, ...payload }),
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+  }
+
+  it('the session end imports the rollout: tokens without a cost, and the cost says by how many sessions it counts', async () => {
+    const path = writeRollout(cli.codexDir, CODEX, [
+      rollout.meta(CODEX, ago(30)),
+      rollout.started(ago(30), 't1'),
+      rollout.turnContext(ago(30), 't1', 'gpt-x'),
+      rollout.message(ago(25)),
+      rollout.usage(ago(25), 'resp-1', { input: 10_000, cached: 9_000, output: 700 }),
+      rollout.complete(ago(20), 't1'),
+    ]);
+    codexHook('SessionStart', { source: 'startup', transcript_path: path });
+    codexHook('UserPromptSubmit', { turn_id: 't1', transcript_path: path });
+    codexHook('Stop', { turn_id: 't1', transcript_path: path });
+    codexHook('SessionEnd', { reason: 'other', transcript_path: path });
+    const records = journal().filter((e) => e.type === 'log.session');
+    expect(records).toHaveLength(1);
+    expect(records[0]?.data).toMatchObject({ source: 'codex-log', session: CODEX, cost: [], costReported: false });
+    const after = await status();
+    expect(after.usage).toMatchObject({ costUSD: null, withLogs: 1, sessions: 2, tokens: { 'gpt-x': { output: 700 } } });
+    expect((await emt('status')).stdout).toMatch(/cost\s+not reported, from the logs of 1 of 2 sessions, cost from 0 of 2 sessions/);
+    expect(readFileSync(join(cli.home, 'events', 'T-1.jsonl'), 'utf8')).not.toContain(CODEX_SECRET);
+  });
+
+  it('the closing imports a Codex session found without a path', async () => {
+    writeRollout(cli.codexDir, CODEX, [rollout.meta(CODEX, ago(30)), rollout.started(ago(30), 't1'), rollout.complete(ago(20), 't1')], ago(30).slice(0, 10).split('-'));
+    codexHook('UserPromptSubmit', { turn_id: 't1', transcript_path: null });
+    expect((await emt('close', '--yes')).code).toBe(0);
+    expect(journal().filter((e) => e.type === 'log.session').map((e) => e.data['source'])).toEqual(['codex-log']);
+  });
 });

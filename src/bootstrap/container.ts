@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir, userInfo } from 'node:os';
 import { basename, dirname, join, sep } from 'node:path';
@@ -65,6 +65,17 @@ function claudeConfigDir(environment: Environment): string {
   return configured !== undefined && configured !== '' ? configured : join(environment.homeDir, '.claude');
 }
 
+/** Codex keeps the user's hooks and config in `$CODEX_HOME`, else `~/.codex`; its skills in `~/.agents/skills`. */
+export function codexDirs(environment: Environment): { home: string; userSkills: string } {
+  const configured = environment.env['CODEX_HOME'];
+  const home = configured !== undefined && configured !== '' ? configured : join(environment.homeDir, '.codex');
+  return {
+    // Codex keys the trust of a hook by the canonical path of its file: a symlinked CODEX_HOME must give the same key.
+    home: existsSync(home) ? realpathSync(home) : home,
+    userSkills: join(environment.homeDir, '.agents', 'skills'),
+  };
+}
+
 /** Composition root: the only place that knows which implementation backs which port. */
 export function createContainer(environment: Environment, options: ContainerOptions = {}): Container {
   const layout = StorageLayout.resolve(environment);
@@ -76,18 +87,22 @@ export function createContainer(environment: Environment, options: ContainerOpti
     app: () => (app ??= buildApp(layout, environment, errors)),
     hooks: async () => {
       const { buildHookReceiver } = await import('./hook-receiver.js');
-      const receiver = buildHookReceiver(layout, errors, options.startedAt ?? Date.now(), claudeConfigDir(environment));
+      const toolDirs = { claude: claudeConfigDir(environment), codex: codexDirs(environment).home };
+      const receiver = buildHookReceiver(layout, errors, options.startedAt ?? Date.now(), toolDirs);
       return { receive: (call) => receiver.execute(call) };
     },
   };
 }
 
 async function toolRegistry(environment: Environment) {
-  const [{ ToolAdapterRegistry }, { ClaudeCodeAdapter }] = await Promise.all([
+  const [{ ToolAdapterRegistry }, { ClaudeCodeAdapter }, { CodexAdapter }] = await Promise.all([
     import('../integrations/tools/registry.js'),
     import('../integrations/tools/claude-code/claude-code-adapter.js'),
+    import('../integrations/tools/codex/codex-adapter.js'),
   ]);
-  return new ToolAdapterRegistry().register(new ClaudeCodeAdapter(claudeConfigDir(environment)));
+  return new ToolAdapterRegistry()
+    .register(new ClaudeCodeAdapter(claudeConfigDir(environment)))
+    .register(new CodexAdapter(codexDirs(environment)));
 }
 
 async function installDependencies(
@@ -221,6 +236,7 @@ async function closingPorts(layout: StorageLayout, environment: Environment) {
     { FsGitHead },
     { SessionLogReaderRegistry },
     { ClaudeCodeLogs },
+    { CodexLogs },
     { YamlLogImportState },
   ] = await Promise.all([
     import('../infrastructure/persistence/yaml-card-store.js'),
@@ -230,6 +246,7 @@ async function closingPorts(layout: StorageLayout, environment: Environment) {
     import('../infrastructure/git/fs-git-head.js'),
     import('../integrations/tools/session-log-readers.js'),
     import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
+    import('../integrations/tools/codex/importer/codex-logs.js'),
     import('../infrastructure/persistence/yaml-log-import-state.js'),
   ]);
   return {
@@ -238,7 +255,9 @@ async function closingPorts(layout: StorageLayout, environment: Environment) {
     proposals: new FileCloseProposals(layout),
     codeMeasurer: new GitCodeMeasurer(),
     gitHead: new FsGitHead(),
-    logReaders: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(claudeConfigDir(environment))),
+    logReaders: new SessionLogReaderRegistry()
+      .register(new ClaudeCodeLogs(claudeConfigDir(environment)))
+      .register(new CodexLogs(codexDirs(environment).home)),
     logImportState: new YamlLogImportState(layout),
   };
 }

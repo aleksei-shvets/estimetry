@@ -113,7 +113,8 @@ export class ImportSessionLogs {
             from: offset,
             turns,
             agents,
-            cost: read.cost,
+            cost: read.cost ?? [],
+            costReported: read.cost !== undefined,
             skipped: read.skipped,
           });
           this.deps.state.write(request.session, task.id, { fingerprint: read.fingerprint, next: read.next });
@@ -140,7 +141,7 @@ export class ImportSessionLogs {
     session: SessionId,
     source: string,
     at: Timestamp,
-    content: { from: number; turns: LogTurn[]; agents: LogAgent[]; cost: LogSession['data']['cost']; skipped: number },
+    content: Pick<LogSession['data'], 'cost' | 'costReported' | 'skipped'> & { from: number; turns: LogTurn[]; agents: LogAgent[] },
   ): void {
     const items: ({ turn: LogTurn } | { agent: LogAgent })[] = [
       ...content.turns.flatMap((turn) => pieces(turn.tokens, [], (tokens) => ({ turn: { ...turn, tokens } }))),
@@ -176,6 +177,8 @@ export class ImportSessionLogs {
         turns: part.turns,
         agents: part.agents,
         cost: i === 0 ? content.cost : [],
+        // Written only when false: records of a tool with a cost stay as before, and old readers read them.
+        ...(content.costReported === false ? { costReported: false } : {}),
         skipped: i === 0 ? content.skipped : 0,
       };
       this.deps.journal.appendRecord(

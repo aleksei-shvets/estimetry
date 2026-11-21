@@ -24,7 +24,7 @@ if (args[0] === 'hook') {
     terminal,
     out,
     cwd: process.cwd(),
-    ...(process.env['CLAUDE_PROJECT_DIR'] === undefined ? {} : { projectDir: process.env['CLAUDE_PROJECT_DIR'] }),
+    environment: (name) => process.env[name],
   });
 } else {
   const [{ runCli }, { packageVersion }] = await Promise.all([import('../interface/cli/program.js'), import('./container.js')]);

@@ -77,6 +77,22 @@ describe('importing a session log', () => {
     expect([...(sessionLogs(records()).get('s1')?.cost.values() ?? [])].map((c) => c.totalUSD)).toEqual([3.5]);
   });
 
+  it('a log whose tool reports no cost is written with an empty cost and costReported: false', () => {
+    const { logs, records, run } = setup();
+    const { cost: _cost, ...withoutCost } = read([turn(0, '10:00', '10:05', 7)], 200);
+    logs.logs.set('s1', withoutCost);
+    run();
+    expect(records()[0]?.data).toMatchObject({ cost: [], costReported: false });
+    expect(sessionLogs(records()).get('s1')?.reportsCost).toBe(false);
+  });
+
+  it('a log with a cost writes no costReported: old records and new ones read the same', () => {
+    const { logs, records, run } = setup();
+    logs.logs.set('s1', read([turn(0, '10:00', '10:05')], 200));
+    run();
+    expect(records()[0]?.data).not.toHaveProperty('costReported');
+  });
+
   it('a lost import cache reads the log from the start, and the merged log stays the same', () => {
     const { logs, records, run, state } = setup();
     logs.logs.set('s1', read([turn(0, '10:00', '10:05', 7), turn(100, '10:10', '10:12', 9)], 200));

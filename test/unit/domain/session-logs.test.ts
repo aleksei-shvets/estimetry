@@ -117,6 +117,48 @@ describe('tokens and cost of a task', () => {
     expect(taskUsage({ logs: log(tokens, [[1, 4, true]]), spans })).toMatchObject({ costUSD: null });
   });
 
+  it('a session whose tool reports no cost adds its tokens, not its cost, and leaves the cost of others known', () => {
+    const spans = new Map([
+      ['s1', span('09:00', '12:00')],
+      ['s2', span('09:00', '12:00')],
+    ]);
+    const logs = sessionLogs([
+      record({ turns: [{ key: 0, tokens: [bucket('10:00', { output: 1_000_000 })] }], cost: [{ startTime: 1, totalUSD: 6, unknown: false }] }),
+      record({
+        session: 's2',
+        source: 'codex-log',
+        costReported: false,
+        turns: [{ key: 0, tokens: [bucket('10:00', { model: 'gpt-x', output: 2_000_000, cacheWrite: 300 })] }],
+      }),
+    ]);
+    expect(logs.get('s2')?.reportsCost).toBe(false);
+    const usage = taskUsage({ logs, spans });
+    expect(usage).toMatchObject({ costUSD: 6, sessions: 2, withLogs: 2, withCost: 1 });
+    expect(usage?.tokens.get('gpt-x')).toMatchObject({ output: 2_000_000, cacheWrite: 300 });
+  });
+
+  it('only sessions without cost give no cost, not zero', () => {
+    const logs = sessionLogs([record({ costReported: false, turns: [{ key: 0, tokens: [bucket('10:00', { output: 1 })] }] })]);
+    expect(taskUsage({ logs, spans: new Map([['s1', span('09:00', '12:00')]]) })).toMatchObject({ costUSD: null, withLogs: 1, withCost: 0 });
+  });
+
+  it('reads a record written before cacheWrite and costReported: no cache write, the cost reported', () => {
+    const old = record({ turns: [{ key: 0, tokens: [bucket('10:00', { output: 5 })] }], cost: [{ startTime: 1, totalUSD: 2, unknown: false }] });
+    expect(() => parseProgressRecord(old)).not.toThrow();
+    expect(sessionLogs([old]).get('s1')?.reportsCost).toBe(true);
+    const usage = taskUsage({ logs: sessionLogs([old]), spans: new Map([['s1', span('09:00', '12:00')]]) });
+    expect(usage?.tokens.get('m')?.cacheWrite).toBeUndefined();
+    expect(usage).toMatchObject({ costUSD: 2, withCost: 1 });
+  });
+
+  it('checks the new fields of a record', () => {
+    const valid = record({ costReported: false, turns: [{ key: 0, tokens: [bucket('10:00', { cacheWrite: 1 })] }] });
+    expect(() => parseProgressRecord(valid)).not.toThrow();
+    expect(() => parseProgressRecord({ ...valid, data: { ...valid.data, costReported: 'no' } })).toThrow(/costReported/);
+    const negative = record({ turns: [{ key: 0, tokens: [bucket('10:00', { cacheWrite: -1 })] }] });
+    expect(() => parseProgressRecord(negative)).toThrow(/cacheWrite/);
+  });
+
   it('counts sessions without a log, and gives nothing when none has one', () => {
     const logs = log([bucket('10:00', { output: 1 })], [[1, 1]]);
     const spans = new Map([

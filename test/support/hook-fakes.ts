@@ -29,9 +29,11 @@ export interface FakePayload {
 /** A tool whose payload already names the events, so use cases are tested without a real translation. */
 export class FakeHookAdapter implements HookAdapter {
   readonly kind = 'session';
-  readonly id = 'fake-tool';
+  readonly id: string = 'fake-tool';
   readonly aliases: readonly string[] = ['fake'];
   readonly hookEvents: readonly string[] = ['Start', 'Prompt', 'ToolDone', 'Stop', 'End'];
+  readonly projectDirVariable = 'FAKE_PROJECT_DIR';
+  readonly sessionEndBudgetMs = 1_234;
 
   translate(_event: string, payload: unknown): HookTranslation {
     const p = payload as FakePayload;
@@ -42,6 +44,10 @@ export class FakeHookAdapter implements HookAdapter {
       events: p.events ?? [],
       ...(p.transcript === undefined ? {} : { transcript: p.transcript }),
     };
+  }
+
+  skillRef(id: string): string {
+    return `/${id}`;
   }
 
   renderContext(event: string, text: string): string {

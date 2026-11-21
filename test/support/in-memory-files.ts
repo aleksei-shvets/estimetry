@@ -192,16 +192,40 @@ export class FakeToolAdapter implements ToolAdapter {
   readonly title = 'Fake Tool';
   readonly hookEvents: readonly string[] = ['Stop'];
   blocked: string | undefined;
+  /** Whether the tool is found on this machine; a test switches it off. */
+  present: () => boolean = () => true;
 
   constructor(readonly id = 'fake-tool') {}
 
+  /** Like Codex: the tool runs a hook only once the user trusts it; the last install's `trust` is kept here. */
+  asksTrust = false;
+  trusted: boolean | undefined;
+
+  /** Like Codex: a personal install lives with the user, outside every copy, and serves them all. */
+  userSettings: string | undefined;
+
   private settings(root: string, shared: boolean): string {
-    return `${root}/.fake/${shared ? 'settings.json' : 'settings.local.json'}`;
+    if (!shared && this.userSettings !== undefined) {
+      return this.userSettings;
+    }
+    // Each fake tool has its own settings, so two of them are installed apart.
+    const dir = this.id === 'fake-tool' ? '.fake' : `.${this.id}`;
+    return `${root}/${dir}/${shared ? 'settings.json' : 'settings.local.json'}`;
   }
+
+  /** What the tool still needs from the user once installed; a test sets it. */
+  notice: string | undefined;
 
   state(root: string, files: ProjectFiles): ToolState {
     const shared = files.read(this.settings(root, true)) !== undefined;
-    return { installed: shared || files.read(this.settings(root, false)) !== undefined, shared };
+    const installed = shared || files.read(this.settings(root, false)) !== undefined;
+    const machineWide = !shared && installed && this.userSettings !== undefined;
+    return {
+      installed,
+      shared,
+      ...(machineWide ? { machineWide: true } : {}),
+      ...(installed && this.notice !== undefined ? { notice: this.notice } : {}),
+    };
   }
 
   personalFiles(): readonly string[] {
@@ -212,6 +236,7 @@ export class FakeToolAdapter implements ToolAdapter {
     if (this.blocked !== undefined) {
       throw new InstallBlocked(this.blocked);
     }
+    this.trusted = context.trust;
     return {
       changes: [
         { path: this.settings(context.projectRoot, context.shared), content: `hooks ${context.version}\n` },

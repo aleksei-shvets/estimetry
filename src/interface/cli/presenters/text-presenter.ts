@@ -59,7 +59,7 @@ export const textPresenter: Presenter = {
     (parts === 1 ? '1 part' : `${parts} parts`) +
     (task.status === 'in-progress'
       ? ''
-      : `\nTime is not measured yet: start the task when work begins with \`emt start ${task.id}\` (or /emt-start); add --at "YYYY-MM-DD HH:MM" if it already began.`),
+      : `\nTime is not measured yet: start the task when work begins with \`emt start ${task.id}\` (or the skill emt-start); add --at "YYYY-MM-DD HH:MM" if it already began.`),
 
   revisionRepaired: (r) => `Wrote the plan snapshot of revision ${r.revision} of ${r.task.id}.`,
 
@@ -112,7 +112,7 @@ export const textPresenter: Presenter = {
   taskClosed: (result) =>
     `Closed ${result.task.id} "${result.task.title}"${result.outcome === 'completed' ? '' : ` (${result.outcome})`}: ` +
     `${factText(result.fact, result.estimateHours, result.estimateShare)}.\n` +
-    `Now record the retro with the user: emt retro --reason "<why>" --lesson "<one lesson>" (or /emt-retro).`,
+    `Now record the retro with the user: emt retro --reason "<why>" --lesson "<one lesson>" (or the skill emt-retro).`,
 
   taskReopened: ({ task }) => `Reopened ${task.id} "${task.title}"; it is in progress again.`,
 
@@ -125,7 +125,7 @@ export const textPresenter: Presenter = {
 
   renegotiated: ({ closed, spawned }) =>
     `Closed ${closed.task.id} as renegotiated: ${factText(closed.fact, closed.estimateHours, closed.estimateShare)}.\n` +
-    `Created ${spawned.id} "${spawned.title}" for the rest. Next: estimate it (/emt-estimate), start it, and attach sessions with \`emt attach ${spawned.id} --session <id>\`.`,
+    `Created ${spawned.id} "${spawned.title}" for the rest. Next: estimate it (skill emt-estimate), start it, and attach sessions with \`emt attach ${spawned.id} --session <id>\`.`,
 
   rebuildReport: (report) =>
     [

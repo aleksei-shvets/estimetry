@@ -16,6 +16,8 @@ export interface TokenBucketData {
   readonly cacheRead: number;
   readonly cacheWrite5m: number;
   readonly cacheWrite1h: number;
+  /** A cache write the tool does not split by lifetime (Codex). */
+  readonly cacheWrite?: number;
 }
 
 /**
@@ -52,7 +54,8 @@ export interface SessionLogRead {
   readonly turns: readonly LogTurnData[];
   /** Every subagent file of the session; the importer keeps those that changed. */
   readonly agents: readonly LogAgentData[];
-  readonly cost: readonly CostTotalData[];
+  /** Undefined when the tool reports no cost (Codex): the session then counts in tokens, not in cost. */
+  readonly cost?: readonly CostTotalData[];
   /** Lines that are not JSON or records of an unknown type. */
   readonly skipped: number;
   readonly fingerprint: SessionLogFingerprint;

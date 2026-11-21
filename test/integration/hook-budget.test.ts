@@ -99,10 +99,43 @@ describe('hook budgets on a large store', () => {
         return run('SessionEnd', { session_id: 'ending', reason: 'exit' });
       }),
     ) - node;
+    // Codex: the same hot path; its hooks of the user also run in every project outside estimetry.
+    const codex = (event: string, cwd: string, extra: Record<string, unknown> = {}) =>
+      timed(process.execPath, [join(cli.bin, 'estimetry'), 'hook', 'codex', event], {
+        cwd,
+        env,
+        input: JSON.stringify({ session_id: 'live', cwd, model: 'gpt-x', transcript_path: null, ...extra }),
+      });
+    const codexBackground = median(Array.from({ length: 10 }, () => codex('PostToolUse', repo, { tool_name: 'Bash', tool_use_id: 'c' }))) - node;
+    const elsewhere = cli.repo('not-registered');
+    const codexOutside = median(Array.from({ length: 10 }, () => codex('PostToolUse', elsewhere, { tool_name: 'Bash', tool_use_id: 'c' }))) - node;
+    // The end of a Codex session with a rollout of about 20 MB: Codex waits for SessionEnd at most 3 seconds.
+    const rolloutPath = join(cli.codexDir, 'sessions', '2026', '10', '27', 'rollout-2026-10-27T08-00-00-codex-end.jsonl');
+    mkdirSync(join(rolloutPath, '..'), { recursive: true });
+    const rolloutLines = [JSON.stringify({ timestamp: '2026-10-27T08:00:00.000Z', type: 'session_meta', payload: { id: 'codex-end', session_id: 'codex-end' } })];
+    for (let i = 0; i < 40_000; i++) {
+      const ts = new Date(base + i * 1_000).toISOString();
+      const turn = `t${Math.floor(i / 20)}`;
+      rolloutLines.push(
+        i % 20 === 0
+          ? JSON.stringify({ timestamp: ts, type: 'event_msg', payload: { type: 'task_started', turn_id: turn } })
+          : i % 20 === 19
+            ? JSON.stringify({ timestamp: ts, type: 'event_msg', payload: { type: 'task_complete', turn_id: turn } })
+            : JSON.stringify({ timestamp: ts, type: 'response_item', payload: { type: 'message', content: [{ type: 'output_text', text: 'x'.repeat(480) }] } }),
+      );
+    }
+    writeFileSync(rolloutPath, `${rolloutLines.join('\n')}\n`);
+    sessions.update(SessionId.parse('codex-end'), () => ({ session: SessionId.parse('codex-end'), project: ProjectId.parse('api'), root: repo, task: TaskId.parse('T-1'), tasks: [TaskId.parse('T-1')], since: Timestamp.parse('2026-10-27T08:00:00.000Z'), everBound: true }));
+    const codexEnd = codex('SessionEnd', repo, { session_id: 'codex-end', reason: 'other', transcript_path: rolloutPath });
+    expect(readFileSync(layout.taskJournal('T-1'), 'utf8')).toContain('"source":"codex-log"');
     console.log(
       `hook budget, ms beyond node start: background ${background.toFixed(0)}, prompt ${prompt.toFixed(0)}, ` +
-        `prompt with a proposal ${proposing.toFixed(0)}, session start ${start.toFixed(0)}, session end without a log ${end.toFixed(0)}`,
+        `prompt with a proposal ${proposing.toFixed(0)}, session start ${start.toFixed(0)}, session end without a log ${end.toFixed(0)}; ` +
+        `codex: background ${codexBackground.toFixed(0)}, outside a project ${codexOutside.toFixed(0)}, session end with a 20 MB rollout ${codexEnd.toFixed(0)} in all`,
     );
+    expect(codexBackground).toBeLessThan(300);
+    expect(codexOutside).toBeLessThan(300);
+    expect(codexEnd).toBeLessThan(3000);
     // Budgets are 150, 150, 150, 1000 and 150 ms; CI machines get twice as much.
     expect(background).toBeLessThan(300);
     expect(prompt).toBeLessThan(300);

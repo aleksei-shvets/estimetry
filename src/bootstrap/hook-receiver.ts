@@ -45,6 +45,7 @@ import { noneFlow } from '../integrations/flows/none/none-flow.js';
 import { openSpecFlow } from '../integrations/flows/openspec/openspec-flow.js';
 import { FlowRegistry } from '../integrations/flows/registry.js';
 import { claudeCodeHooks } from '../integrations/tools/claude-code/hook-translation.js';
+import { codexHooks } from '../integrations/tools/codex/hook-translation.js';
 import { gitHooks } from '../integrations/tools/git/git-hooks.js';
 import { HookAdapterRegistry } from '../integrations/tools/hook-adapters.js';
 import { SessionWindow } from '../application/task/session-window.js';
@@ -59,7 +60,15 @@ import { SessionWindow } from '../application/task/session-window.js';
  * Only what a hook needs. The author comes from config.yaml alone: detecting it
  * would run git, and init has written the profile already.
  */
-export function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, startedAt: number, claudeConfig: string): ReceiveHook {
+/** The user directories of the AI tools, where their session logs are. */
+export interface ToolDirs {
+  /** `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+  readonly claude: string;
+  /** `$CODEX_HOME`, else `~/.codex`. */
+  readonly codex: string;
+}
+
+export function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, startedAt: number, toolDirs: ToolDirs): ReceiveHook {
   const config = new YamlConfigStore(layout, () => {
     throw new Error(`no author profile in ${layout.configFile}; run estimetry init`);
   });
@@ -107,9 +116,9 @@ export function buildHookReceiver(layout: StorageLayout, errors: ErrorReporter, 
     ),
     new PromptContext(checkpoints, proposal),
     // Only the session end parses a log, and only it loads the reader.
-    new SessionEndImport(bindings, tasks, () => hookLogs({ layout, claudeConfig, journal, ids, config, errors })),
+    new SessionEndImport(bindings, tasks, () => hookLogs({ layout, toolDirs, journal, ids, config, errors })),
   );
-  const adapters = new HookAdapterRegistry().register(claudeCodeHooks).register(gitHooks);
+  const adapters = new HookAdapterRegistry().register(claudeCodeHooks).register(codexHooks).register(gitHooks);
   return new ReceiveHook(
     adapters,
     clock,
@@ -158,22 +167,23 @@ async function hookFacts(layout: StorageLayout, journal: EventJournal, settings:
 /** The importer of session logs for a session end. */
 async function hookLogs(c: {
   readonly layout: StorageLayout;
-  readonly claudeConfig: string;
+  readonly toolDirs: ToolDirs;
   readonly journal: EventJournal;
   readonly ids: IdGenerator;
   readonly config: AuthorProvider;
   readonly errors: ErrorReporter;
 }) {
-  const [{ ImportSessionLogs }, { SessionLogReaderRegistry }, { ClaudeCodeLogs }, { YamlLogImportState }, { SystemClock }] =
+  const [{ ImportSessionLogs }, { SessionLogReaderRegistry }, { ClaudeCodeLogs }, { CodexLogs }, { YamlLogImportState }, { SystemClock }] =
     await Promise.all([
       import('../application/task/import-session-logs.js'),
       import('../integrations/tools/session-log-readers.js'),
       import('../integrations/tools/claude-code/importer/claude-code-logs.js'),
+      import('../integrations/tools/codex/importer/codex-logs.js'),
       import('../infrastructure/persistence/yaml-log-import-state.js'),
       import('../infrastructure/system/system-clock.js'),
     ]);
   return new ImportSessionLogs({
-    readers: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(c.claudeConfig)),
+    readers: new SessionLogReaderRegistry().register(new ClaudeCodeLogs(c.toolDirs.claude)).register(new CodexLogs(c.toolDirs.codex)),
     state: new YamlLogImportState(c.layout),
     journal: c.journal,
     meta: new EventMetaSource(new SystemClock(), c.ids, c.config),

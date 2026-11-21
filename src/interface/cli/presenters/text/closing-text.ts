@@ -98,15 +98,19 @@ export function usageRows(usage: CardUsage | null): [string, string][] {
   if (usage === null) {
     return [];
   }
+  const withCost = usage.withCost ?? usage.withLogs;
+  const unknown = withCost === 0 ? 'not reported' : 'unknown';
   const cost =
-    usage.costUSD === null ? 'unknown' : `$${usage.costUSD.toFixed(2)}${usage.approximate ? ' (approximate: split by tokens)' : ''}`;
+    usage.costUSD === null ? unknown : `$${usage.costUSD.toFixed(2)}${usage.approximate ? ' (approximate: split by tokens)' : ''}`;
+  // A tool without a cost (Codex): the cost stands for fewer sessions than the tokens.
+  const costFrom = withCost < usage.withLogs ? `, cost from ${withCost} of ${usage.sessions} sessions` : '';
   const models = Object.entries(usage.tokens).map(([model, t]): [string, string] => {
-    const cacheWrite = tokenCount(t.cacheWrite5m + t.cacheWrite1h);
+    const cacheWrite = tokenCount(t.cacheWrite5m + t.cacheWrite1h + (t.cacheWrite ?? 0));
     const read = `in ${tokenCount(t.input)}, out ${tokenCount(t.output)}, cache read ${tokenCount(t.cacheRead)}`;
     return [`  ${model}`, `${read}, cache write ${cacheWrite}`];
   });
   return [
-    ['cost', `${cost}, from the logs of ${usage.withLogs} of ${usage.sessions} sessions`],
+    ['cost', `${cost}, from the logs of ${usage.withLogs} of ${usage.sessions} sessions${costFrom}`],
     ...(models.length === 0 ? [] : [['tokens', ''] as [string, string], ...models]),
   ];
 }

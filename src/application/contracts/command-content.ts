@@ -4,7 +4,7 @@
  * command-generation).
  */
 export interface CommandContent {
-  /** Also the name the user types: `emt-start` → `/emt-start`. */
+  /** Also the name of the skill the user calls: `emt-start` → `/emt-start` in Claude Code, `$emt-start` in Codex. */
   readonly id: string;
   readonly description: string;
   readonly argumentHint?: string;

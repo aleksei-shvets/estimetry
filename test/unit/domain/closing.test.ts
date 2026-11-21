@@ -256,6 +256,8 @@ describe('code volume', () => {
           'web/logo.svg',
           '.estimetry/config.yaml',
           '.claude/settings.local.json',
+          '.codex/hooks.json',
+          '.agents/skills/emt-start/SKILL.md',
         ].map((path) => [path, classify(path)]),
       ),
     ).toEqual({
@@ -277,6 +279,8 @@ describe('code volume', () => {
       'web/logo.svg': 'production',
       '.estimetry/config.yaml': 'generated',
       '.claude/settings.local.json': 'generated',
+      '.codex/hooks.json': 'generated',
+      '.agents/skills/emt-start/SKILL.md': 'generated',
     });
   });
 

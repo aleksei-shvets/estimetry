@@ -13,6 +13,12 @@ export interface InstallContext {
   readonly version: string;
   /** How hooks start this installation; omitted — `estimetry` from PATH. */
   readonly runner?: EstimetryRunner;
+  /**
+   * The user agreed that the tool runs the hooks and the task commands of estimetry without asking, where the tool
+   * asks for that (Codex trusts each hook and runs commands in a sandbox): true — record it, false — record nothing,
+   * omitted — keep a trust the user gave before (an upgrade).
+   */
+  readonly trust?: boolean;
 }
 
 /** What is installed now; `init` takes its defaults from here, not from saved choices. */
@@ -21,6 +27,13 @@ export interface ToolState {
   readonly shared: boolean;
   /** A settings file of the tool that cannot be read: whether the tool is installed is unknown. */
   readonly unreadable?: string;
+  /**
+   * The install is the user's, outside the copy, and serves every copy on the machine (Codex keeps personal hooks in
+   * `~/.codex`). It counts for a copy only where nothing is installed for the team: a shared copy never takes it on.
+   */
+  readonly machineWide?: boolean;
+  /** What the user still has to do in the tool for the hooks to run (trust them in Codex), shown by `emt status`. */
+  readonly notice?: string;
 }
 
 /** One AI tool: what `init` installs for it and which hook events it sends. */
@@ -32,6 +45,10 @@ export interface ToolAdapter {
   /** Events the installed hooks report; the hook receiver accepts only these. */
   readonly hookEvents: readonly string[];
   state(projectRoot: string, files: ProjectFiles): ToolState;
+  /** Whether the tool is found on this machine (its user directory exists): `init` installs found tools by default. */
+  present(files: ProjectFiles): boolean;
+  /** Whether the tool runs a hook of estimetry only after the user trusts it: then `init` asks about `trust`. */
+  readonly asksTrust: boolean;
   /**
    * Files inside the project that this tool writes for this user only (when the
    * install is not shared); they must stay out of git. Relative to the project root.

@@ -16,7 +16,9 @@ The hook budgets measure wall time, so `npm test` runs them after the other test
 
 The README comes in two languages, `README.md` and `README-ru.md`, each with a switch to the other. Change both in the same pull request, keeping their sections the same. The command reference at the end of `README.md` is generated from the CLI: after adding or changing a command or a flag, run `npm run docs:commands` and translate the same lines in `README-ru.md`. A test fails while `README.md` is behind or `README-ru.md` lacks a command or a flag; the translated descriptions are checked in review.
 
-Tests never touch your own data: they run on temporary `ESTIMETRY_HOME`, `HOME` and `CLAUDE_CONFIG_DIR`. Fixtures are synthetic; never commit real Claude Code logs.
+Tests never touch your own data: they run on temporary `ESTIMETRY_HOME`, `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Fixtures are synthetic; never commit real logs of Claude Code or Codex.
+
+To try a build of a branch as your own estimetry, install a packed copy: `npm pack --pack-destination /tmp && npm install -g /tmp/estimetry-<version>.tgz`. Do not use `npm install -g .` or `npm link`: they install a link to the working copy, so `init` and `emt upgrade` write the path of your checkout into the hooks of every project, and a branch switch or a half-done build changes what they run. Go back with `npm install -g estimetry@<version>`.
 
 ## Changes
 

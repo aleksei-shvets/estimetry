@@ -14,6 +14,8 @@ export interface TokenCounts {
   readonly cacheRead: number;
   readonly cacheWrite5m: number;
   readonly cacheWrite1h: number;
+  /** A cache write of a tool that does not split it by lifetime (Codex); absent in records written before it. */
+  readonly cacheWrite?: number;
 }
 
 /** Tokens of one model whose messages started in the five minutes from `at`. */
@@ -54,6 +56,11 @@ export interface LogSessionData {
   readonly turns: readonly LogTurn[];
   readonly agents: readonly LogAgent[];
   readonly cost: readonly CostTotal[];
+  /**
+   * False when the tool of the log reports no cost (Codex): the session counts in tokens, not in cost. Absent in
+   * records written before it, which all come from a tool that reports cost. Old readers see an empty `cost`.
+   */
+  readonly costReported?: boolean;
   readonly skipped: number;
 }
 
@@ -66,6 +73,8 @@ export interface SessionLog {
   readonly agents: ReadonlyMap<string, LogAgent>;
   /** By process start; the last total of each. */
   readonly cost: ReadonlyMap<number, CostTotal>;
+  /** Whether the tool reports the cost of the session: a session without it has tokens and no cost. */
+  readonly reportsCost: boolean;
 }
 
 /** A closing of the task: records written while it stayed closed do not count. */
@@ -96,14 +105,15 @@ export function sessionLogs(records: readonly LogSession[], closed: readonly Clo
     const id = `${record.data.session}\u0000${record.data.importId}`;
     imports.set(id, [...(imports.get(id) ?? []), record]);
   }
-  const merged = new Map<string, { turns: LogTurn[]; agents: Map<string, LogAgent>; cost: Map<number, CostTotal> }>();
+  const merged = new Map<string, { turns: LogTurn[]; agents: Map<string, LogAgent>; cost: Map<number, CostTotal>; reportsCost: boolean }>();
   for (const parts of imports.values()) {
     const first = parts[0];
     if (first === undefined || !complete(parts)) {
       continue; // a write cut short: the next import reads the same stretch again
     }
     const { session, from } = first.data;
-    const log = merged.get(session) ?? { turns: [], agents: new Map(), cost: new Map() };
+    const log = merged.get(session) ?? { turns: [], agents: new Map(), cost: new Map(), reportsCost: false };
+    log.reportsCost ||= first.data.costReported !== false;
     log.turns = [...log.turns.filter((turn) => turn.key < from), ...joinedTurns(parts.flatMap((part) => part.data.turns))];
     for (const agent of joinedAgents(parts.flatMap((part) => part.data.agents))) {
       log.agents.set(agent.agent, agent);

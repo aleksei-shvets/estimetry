@@ -1,15 +1,14 @@
 import type { SessionId } from '../../domain/measurement/session-id.js';
 import { isInProgress } from '../../domain/task/task-status.js';
 import { servedTasks, type SessionBindings } from '../ports/session-bindings.js';
+import type { HookAdapter } from '../contracts/hook-adapter.js';
 import type { TaskStatusReader } from '../ports/task-status-reader.js';
 import type { ImportSessionLogs } from '../task/import-session-logs.js';
 
-/** The session end imports the session's log in the hook itself, within this time (claude-code-hooks spec). */
-export const SESSION_END_IMPORT_BUDGET_MS = 5_000;
-
 /**
- * The log of an ended session goes into every task in progress it served.
- * Past the budget the import gives up; the closing of the task catches up.
+ * The log of an ended session goes into every task in progress it served, in the hook itself, within the budget
+ * of the tool (it waits for the session end hook only so long). Past it the import gives up; the closing of the task
+ * catches up.
  */
 export class SessionEndImport {
   constructor(
@@ -19,7 +18,7 @@ export class SessionEndImport {
     private readonly logs?: () => Promise<Pick<ImportSessionLogs, 'execute'>>,
   ) {}
 
-  async run(source: string, session: SessionId, transcript: string | undefined): Promise<void> {
+  async run(tool: Pick<HookAdapter, 'id' | 'sessionEndBudgetMs'>, session: SessionId, transcript: string | undefined): Promise<void> {
     if (this.logs === undefined) {
       return;
     }
@@ -35,10 +34,10 @@ export class SessionEndImport {
     const path = transcript ?? binding?.transcript;
     (await this.logs()).execute({
       session,
-      source,
+      source: tool.id,
       ...(path === undefined ? {} : { path }),
       tasks,
-      budgetMs: SESSION_END_IMPORT_BUDGET_MS,
+      budgetMs: tool.sessionEndBudgetMs,
     });
   }
 }

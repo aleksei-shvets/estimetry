@@ -71,6 +71,63 @@ describe('estimetry init', () => {
     expect(second.files.map((file) => file.status)).toEqual(second.files.map(() => 'unchanged'));
   });
 
+  it('sets up Codex: the hooks and skills of the user, nothing in the project, a reminder to trust the hooks', async () => {
+    const repo = gitRepo('codex-app');
+    const report = await init(repo, '--tools', 'codex');
+    expect(report.tools).toEqual(['codex']);
+    const hooks = JSON.parse(read(join(cli.codexDir, 'hooks.json'))) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
+    expect(Object.values(hooks.hooks).flat().flatMap((group) => group.hooks).filter((h) => h.command.includes('hook codex '))).toHaveLength(10);
+    expect(existsSync(join(cli.userHome, '.agents', 'skills', 'emt-start', 'SKILL.md'))).toBe(true);
+    expect(read(join(cli.userHome, '.agents', 'skills', 'emt-close', 'SKILL.md'))).toContain('`$emt-retro`');
+    expect(existsSync(join(repo, '.codex'))).toBe(false);
+    expect(existsSync(join(repo, '.claude', 'settings.local.json'))).toBe(false);
+    expect(report.warnings.join('\n')).toContain('open /hooks in Codex and trust the estimetry hooks');
+    const second = await init(repo, '--tools', 'codex');
+    // Not trusted yet: every run says how to trust them.
+    expect(second.warnings.join('\n')).toContain('estimetry init --tools codex --trust-hooks');
+    expect(second.files.every((file) => file.status === 'unchanged')).toBe(true);
+  });
+
+  it('trusts the Codex hooks and lets the task commands out of the sandbox only with --trust-hooks', async () => {
+    const repo = gitRepo('codex-trust');
+    const without = await init(repo, '--tools', 'codex');
+    expect(existsSync(join(cli.codexDir, 'config.toml'))).toBe(false);
+    expect(without.warnings.join('\n')).toContain('estimetry init --tools codex --trust-hooks');
+    const trusted = await init(repo, '--tools', 'codex', '--trust-hooks');
+    expect(read(join(cli.codexDir, 'config.toml')).match(/trusted_hash = "sha256:[0-9a-f]{64}"/g)).toHaveLength(10);
+    expect(read(join(cli.codexDir, 'rules', 'estimetry.rules'))).toContain('decision="allow"');
+    expect(trusted.warnings.join('\n')).not.toContain('--trust-hooks');
+    expect((await cli.run(['status'], repo)).stderr).not.toContain('no trust of the estimetry hooks');
+  });
+
+  it('the hook of Codex runs this installation without estimetry or node on PATH', async () => {
+    const repo = gitRepo('codex-no-path');
+    await init(repo, '--tools', 'codex');
+    const settings = JSON.parse(read(join(cli.codexDir, 'hooks.json'))) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
+    const command = settings.hooks['SessionStart']?.[0]?.hooks[0]?.command ?? '';
+    const env = { HOME: cli.userHome, PATH: '/usr/bin:/bin' };
+    const payload = JSON.stringify({ session_id: 's1', cwd: repo, source: 'startup', hook_event_name: 'SessionStart', model: 'gpt-x', transcript_path: null });
+    const result = spawnSync('/bin/sh', ['-c', command], { cwd: repo, env, encoding: 'utf8', input: payload });
+    expect(result.stdout).toContain('"additionalContext":"estimetry: before you name an effort or a deadline for a task, run $emt-estimate.');
+  });
+
+  it('installs both tools when both are on the machine, and Codex for the team with --shared-hooks', async () => {
+    mkdirSync(cli.codexDir);
+    const repo = gitRepo('both');
+    expect((await init(repo)).tools).toEqual(['claude-code', 'codex']);
+    // The user's own Codex does not go to the team by itself: only when named.
+    expect((await init(repo, '--shared-hooks')).tools).toEqual(['claude-code']);
+    expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(false);
+    const shared = await init(repo, '--shared-hooks', '--tools', 'claude-code,codex');
+    expect(read(join(repo, '.codex', 'hooks.json')).match(/"estimetry hook codex /g)).toHaveLength(10);
+    expect(existsSync(join(repo, '.agents', 'skills', 'emt-start', 'SKILL.md'))).toBe(true);
+    expect(read(join(repo, 'AGENTS.md'))).toContain('run `$emt-estimate`');
+    expect(read(join(repo, 'CLAUDE.md'))).toContain('run `/emt-estimate`');
+    // The hooks of the user serve every project: a shared install leaves them and says they run twice here.
+    expect(read(join(cli.codexDir, 'hooks.json'))).toContain('hook codex');
+    expect(shared.warnings.join('\n')).toMatch(/runs twice/);
+  });
+
   it('keeps the user’s own hooks and settings', async () => {
     const repo = gitRepo('api');
     mkdirSync(join(repo, '.claude'));

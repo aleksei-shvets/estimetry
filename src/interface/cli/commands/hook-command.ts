@@ -9,9 +9,9 @@ export interface HookRun {
   readonly errors: ErrorReporter;
   readonly terminal: CliContext['terminal'];
   readonly out: CliContext['out'];
-  /** Directory of the process and `CLAUDE_PROJECT_DIR`, if the tool set it. */
+  /** Directory and environment of the process. */
   readonly cwd: string;
-  readonly projectDir?: string;
+  readonly environment: (name: string) => string | undefined;
 }
 
 /**
@@ -31,7 +31,7 @@ export async function runHook(args: readonly string[], run: HookRun): Promise<nu
       event,
       payload,
       cwd: run.cwd,
-      ...(run.projectDir === undefined || run.projectDir === '' ? {} : { projectDir: run.projectDir }),
+      environment: run.environment,
     });
     if (output !== undefined) {
       run.out.print(output);

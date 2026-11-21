@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InvalidValue } from '../../../src/domain/shared/domain-error.js';
 import { CalendarDate } from '../../../src/domain/shared/calendar-date.js';
 import { countCheckboxes, openSpecArchived, openSpecPlan } from '../../../src/integrations/flows/openspec/openspec-plan.js';
-import { withHooks } from '../../../src/integrations/tools/claude-code/hook-settings.js';
+import { withHooks } from '../../../src/integrations/tools/shared/hook-settings.js';
 import { SYNCHRONOUS_HOOK_EVENTS, CLAUDE_CODE_HOOK_EVENTS } from '../../../src/integrations/tools/claude-code/hook-events.js';
 import { claudeCodeHooks } from '../../../src/integrations/tools/claude-code/hook-translation.js';
 import { InMemoryProjectFiles } from '../../support/in-memory-files.js';
@@ -113,9 +113,9 @@ describe('Claude Code hooks → activity events', () => {
 describe('installed hooks are asynchronous except those the agent waits for', () => {
   it('marks every hook async but SessionStart, UserPromptSubmit and SessionEnd, and upgrades old ones', () => {
     const command = (event: string) => `estimetry hook claude-code ${event}`;
-    const old = withHooks(undefined, { events: CLAUDE_CODE_HOOK_EVENTS, synchronous: CLAUDE_CODE_HOOK_EVENTS, command }, 'settings.json');
+    const old = withHooks(undefined, { ours: 'hook claude-code', events: CLAUDE_CODE_HOOK_EVENTS, synchronous: CLAUDE_CODE_HOOK_EVENTS, command }, 'settings.json');
     expect(old).not.toContain('"async"');
-    const settings = JSON.parse(withHooks(old, { events: CLAUDE_CODE_HOOK_EVENTS, synchronous: SYNCHRONOUS_HOOK_EVENTS, command }, 'settings.json')) as {
+    const settings = JSON.parse(withHooks(old, { ours: 'hook claude-code', events: CLAUDE_CODE_HOOK_EVENTS, synchronous: SYNCHRONOUS_HOOK_EVENTS, command }, 'settings.json')) as {
       hooks: Record<string, { hooks: { async?: boolean }[] }[]>;
     };
     const asyncEvents = Object.entries(settings.hooks).filter(([, groups]) => groups[0]?.hooks[0]?.async === true).map(([event]) => event);

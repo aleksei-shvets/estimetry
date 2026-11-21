@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SessionImportRequest } from '../../../src/application/task/import-session-logs.js';
 import { PendingProposal } from '../../../src/application/hooks/pending-proposal.js';
 import { RecentSessions } from '../../../src/application/hooks/recent-sessions.js';
-import { SESSION_END_IMPORT_BUDGET_MS, SessionEndImport } from '../../../src/application/hooks/session-end-import.js';
+import { SessionEndImport } from '../../../src/application/hooks/session-end-import.js';
 import type { SessionBinding } from '../../../src/application/ports/session-bindings.js';
 import type { TaskStatusReader, TaskSummary } from '../../../src/application/ports/task-status-reader.js';
 import { SessionId } from '../../../src/domain/measurement/session-id.js';
@@ -15,6 +15,9 @@ import { ProjectId } from '../../../src/domain/project/project-id.js';
 
 const at = (hhmm: string) => Timestamp.parse(`2026-10-27T${hhmm}:00.000Z`);
 const s1 = SessionId.parse('s1');
+
+/** The tool of the session, with the budget of its session end. */
+const CLAUDE = { id: 'claude-code', sessionEndBudgetMs: 5_000 };
 
 describe('a pending proposal to close a task', () => {
   function setup(plan: () => { done?: number; unfinished: readonly string[] } = () => ({ done: 80, unfinished: ['release'] })) {
@@ -82,7 +85,7 @@ describe('the import of the log at the end of a session', () => {
   it('imports into every task in progress the session served, with the path it knows and the budget', async () => {
     const binding: SessionBinding = { session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/work/api', task: TaskId.parse('T-2'), tasks: [TaskId.parse('T-1'), TaskId.parse('T-3')], transcript: '/logs/kept.jsonl' };
     const { imports, end } = setup(binding, [summary('T-1', 'in-progress', ['web']), summary('T-2', 'in-progress', []), summary('T-3', 'closed')]);
-    await end.run('claude-code', s1, undefined);
+    await end.run(CLAUDE, s1, undefined);
     expect(imports.map(plainImport)).toEqual([
       {
         session: 's1',
@@ -92,26 +95,26 @@ describe('the import of the log at the end of a session', () => {
           { id: 'T-1', project: 'web' },
           { id: 'T-2', project: 'api' },
         ],
-        budgetMs: SESSION_END_IMPORT_BUDGET_MS,
+        budgetMs: 5_000,
       },
     ]);
   });
 
   it('prefers the path of the hook to the kept one', async () => {
     const { imports, end } = setup({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/work/api', task: TaskId.parse('T-1'), transcript: '/logs/kept.jsonl' }, [summary('T-1', 'in-progress')]);
-    await end.run('claude-code', s1, '/logs/now.jsonl');
+    await end.run(CLAUDE, s1, '/logs/now.jsonl');
     expect(imports[0]?.path).toBe('/logs/now.jsonl');
   });
 
   it('does nothing without tasks in progress or without an importer', async () => {
     const closed = setup({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/work/api', task: TaskId.parse('T-1') }, [summary('T-1', 'closed')]);
-    await closed.end.run('claude-code', s1, undefined);
+    await closed.end.run(CLAUDE, s1, undefined);
     expect(closed.imports).toEqual([]);
     const unbound = setup(undefined, []);
-    await unbound.end.run('claude-code', s1, undefined);
+    await unbound.end.run(CLAUDE, s1, undefined);
     expect(unbound.imports).toEqual([]);
     const without = setup({ session: SessionId.parse('s1'), project: ProjectId.parse('api'), root: '/work/api', task: TaskId.parse('T-1') }, [summary('T-1', 'in-progress')], false);
-    await without.end.run('claude-code', s1, undefined);
+    await without.end.run(CLAUDE, s1, undefined);
     expect(without.imports).toEqual([]);
   });
 });

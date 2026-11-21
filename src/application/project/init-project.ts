@@ -23,6 +23,11 @@ export interface InitInput {
   readonly force?: boolean;
   /** The user agreed to add personal files to the global git excludes; omitted — only warn. */
   readonly excludePersonalFiles?: boolean;
+  /**
+   * The user agreed that the tools which ask for it run the hooks and task commands of estimetry without asking
+   * (Codex): true — trust them, false — leave them to the user; omitted — keep a trust given before.
+   */
+  readonly trustHooks?: boolean;
 }
 
 
@@ -55,7 +60,11 @@ export class InitProject {
    */
   execute(input: InitInput): InitReport {
     const root = this.workspace.currentRoot();
-    const tools = input.tools === undefined ? defaultTools(this.deps, root) : this.toolsById(input.tools);
+    // A shared install puts the files into the team's repository: an install of the user's own does not go there by itself.
+    const defaults = defaultTools(this.deps, root).filter(
+      (tool) => input.shared !== true || tool.state(root, this.deps.files).machineWide !== true,
+    );
+    const tools = input.tools === undefined ? defaults : this.toolsById(input.tools);
     const flow = this.flowById(input.flow ?? defaultFlow(this.deps, this.projectConfig, root));
     const share = this.shareMode(input.share ?? this.deps.sharing.mode() ?? 'none');
     const shared = input.shared ?? isSharedInstall(this.deps, root, tools);
@@ -86,6 +95,7 @@ export class InitProject {
       trackCommits,
       force: input.force ?? false,
       ...(input.excludePersonalFiles === undefined ? {} : { excludePersonalFiles: input.excludePersonalFiles }),
+      ...(input.trustHooks === undefined ? {} : { trust: input.trustHooks }),
     });
 
     const project = this.projects.update(this.currentProject.register(registration).id, (registered) => {

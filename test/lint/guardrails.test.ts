@@ -161,6 +161,35 @@ describe('architecture checks', () => {
     expect(await errors(`export interface CardFields { ${fields(9)} }\n`, 'src/application/task/x.ts')).toEqual([]);
   });
 
+  it('an adapter of one AI tool does not import another tool, only tools/shared and tools/content', async () => {
+    const fromCodex = (code: string) => messages(`${code}\nexport { x };\n`, 'src/integrations/tools/codex/codex-adapter.ts');
+    const other = await fromCodex("import { x } from '../claude-code/hook-settings.js';");
+    expect(other.map((m) => m.message).join('\n')).toContain('Tools boundary');
+    const nested = await messages("import { x } from '../../codex/hook-events.js';\nexport { x };\n", 'src/integrations/tools/claude-code/importer/x.ts');
+    expect(nested.map((m) => m.message).join('\n')).toContain('Tools boundary');
+    expect(await fromCodex("import { x } from '../shared/hook-settings.js';")).toEqual([]);
+    expect(await fromCodex("import { x } from '../content/commands.js';")).toEqual([]);
+    expect(await fromCodex("import { x } from './hook-events.js';")).toEqual([]);
+    // The other boundaries of integrations stay for a tool directory.
+    const flow = await fromCodex("import { x } from '../../flows/openspec/openspec-flow.js';");
+    expect(flow.map((m) => m.message).join('\n')).toContain('Integrations boundary');
+  });
+
+  it('a registry of tools imports no adapter: bootstrap registers them', async () => {
+    const found = await messages("import { x } from './codex/hook-translation.js';\nexport { x };\n", 'src/integrations/tools/hook-adapters.ts');
+    expect(found.map((m) => m.message).join('\n')).toContain('Tools boundary');
+  });
+
+  it('every tool directory is known to the tools boundary', async () => {
+    const { readdirSync } = await import('node:fs');
+    const dirs = readdirSync(join(ROOT, 'src/integrations/tools'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !['shared', 'content'].includes(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+    const known = ((await import(pathToFileURL(join(ROOT, 'eslint.config.js')).href)) as { TOOL_DIRS: string[] }).TOOL_DIRS;
+    expect([...known].sort()).toEqual(dirs);
+  });
+
   it('the whole of src passes with the list of debt', async () => {
     const results = await eslint(guardrails.DEBT).lintFiles(['src']);
     const errors = results.flatMap((r) => r.messages.map((m) => `${r.filePath}:${m.line} ${m.message}`));
