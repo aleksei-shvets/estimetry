@@ -1,13 +1,15 @@
 import { StackLabels } from '../../../src/domain/estimate/stack-labels.js';
 import { describe, expect, it } from 'vitest';
 import { applicableCoefficient } from '../../../src/domain/calibration/applicable-coefficient.js';
-import { calibrate, normalized, type AuthorCalibration } from '../../../src/domain/calibration/calibration.js';
+import { calibrate, type AuthorCalibration } from '../../../src/domain/calibration/calibration.js';
 import { CalibrationPolicy } from '../../../src/domain/calibration/calibration-policy.js';
 import type { Card } from '../../../src/domain/card/card.js';
 import { Estimate } from '../../../src/domain/estimate/estimate.js';
 import { EstimatePart } from '../../../src/domain/estimate/estimate-part.js';
 import { ThreePointEstimate } from '../../../src/domain/estimate/three-point-estimate.js';
 import { similarTasks } from '../../../src/domain/similarity/similarity.js';
+import { EstimateQuery } from '../../../src/domain/card/estimate-query.js';
+import { TaskType } from '../../../src/domain/task/task-type.js';
 import { syntheticCard } from '../../support/cards.js';
 
 const ME = 'dev@example.com';
@@ -89,11 +91,9 @@ describe('applicable coefficient', () => {
     query: { type?: string; stack?: string[]; revise?: boolean } = {},
     policy: CalibrationPolicy = CalibrationPolicy.DEFAULT,
   ) =>
-    applicableCoefficient(
-      normalized(cards).filter((card) => card.author === ME),
-      { ...(query.type === undefined ? {} : { type: query.type }), stack: StackLabels.of(query.stack ?? []), ...(query.revise ? { revise: true } : {}) },
-      policy,
-    );
+    applicableCoefficient(cards, { author: ME, estimate: estimateOf(query), ...(query.revise ? { revise: true } : {}) }, policy);
+  const estimateOf = (query: { type?: string; stack?: string[] }) =>
+    EstimateQuery.of({ ...(query.type === undefined ? {} : { type: TaskType.restore(query.type) }), stack: query.stack ?? [] });
 
   it('one task shrinks to 1 with the weight 1/3; the pessimistic stays at 1 while the estimates are high', () => {
     expect(coefficient(ratios(0.5))).toEqual({ value: 0.794, pessimistic: 1, slice: { kind: 'overall' }, n: 1, weight: 0.333 });
@@ -205,6 +205,21 @@ describe('applicable coefficient', () => {
         }
       }
     }
+  });
+
+  it('counts the cards of an alias and stack labels in another case as the author’s', () => {
+    const cards = [0.41, 0.13, 0.56].map((ratio, i) => syntheticCard({ id: `T-${i}`, author: 'old@example.com', stack: ['TypeScript'], ratio }));
+    const query = { author: ME, estimate: estimateOf({ type: 'feature', stack: ['typescript'] }) };
+    expect(applicableCoefficient(cards, query, CalibrationPolicy.DEFAULT)).toBeNull();
+    expect(applicableCoefficient(cards, { ...query, aliases: new Map([['old@example.com', ME]]) }, CalibrationPolicy.DEFAULT)).toEqual({
+      value: 0.586,
+      pessimistic: 0.874,
+      slice: { kind: 'type', key: 'feature' },
+      n: 3,
+      weight: 0.6,
+    });
+    const byStack = { author: ME, aliases: new Map([['old@example.com', ME]]), estimate: estimateOf({ stack: ['typescript'] }) };
+    expect(applicableCoefficient(cards, byStack, CalibrationPolicy.DEFAULT)?.slice).toEqual({ kind: 'stack', key: 'typescript' });
   });
 
   it('a revision takes the revised slice', () => {

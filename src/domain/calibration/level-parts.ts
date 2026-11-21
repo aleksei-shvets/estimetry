@@ -1,5 +1,5 @@
 import type { Card } from '../card/card.js';
-import type { StackLabels } from '../estimate/stack-labels.js';
+import type { EstimateQuery } from '../card/estimate-query.js';
 import type { CalibrationPolicy } from './calibration-policy.js';
 import type { RatioSample, RatioSampling } from './ratio-samples.js';
 
@@ -10,12 +10,6 @@ export interface LevelPart {
   readonly slice: CoefficientSlice;
   /** Ratios of the own tasks of the level. */
   readonly ratios: readonly number[];
-}
-
-/** What the levels are chosen by: the type and the stack of the estimate. */
-export interface LevelQuery {
-  readonly type?: string;
-  readonly stack: StackLabels;
 }
 
 interface Level {
@@ -32,7 +26,7 @@ interface Level {
  * no deeper level holds: every task counts once. Without a weight in the
  * overall slice there are no levels.
  */
-export function levelParts(sampling: RatioSampling, query: LevelQuery, policy: CalibrationPolicy): LevelPart[] {
+export function levelParts(sampling: RatioSampling, query: EstimateQuery, policy: CalibrationPolicy): LevelPart[] {
   const levels = levelsOf(sampling, query, policy);
   const deeper = new Set<Card>();
   const parts: LevelPart[] = [];
@@ -44,7 +38,7 @@ export function levelParts(sampling: RatioSampling, query: LevelQuery, policy: C
   return parts;
 }
 
-function levelsOf(sampling: RatioSampling, query: LevelQuery, policy: CalibrationPolicy): Level[] {
+function levelsOf(sampling: RatioSampling, query: EstimateQuery, policy: CalibrationPolicy): Level[] {
   const level = (slice: CoefficientSlice, keep: (card: Card) => boolean): Level[] => {
     const samples = sampling.samples.filter((sample) => keep(sample.card));
     return policy.weight(samples.length) > 0 ? [{ slice, samples }] : [];
@@ -57,7 +51,7 @@ function levelsOf(sampling: RatioSampling, query: LevelQuery, policy: Calibratio
     .flatMap((key) => level({ kind: 'stack', key }, (card) => card.task.stack.includes(key)))
     .sort((a, b) => b.samples.length - a.samples.length || keyOf(a.slice).localeCompare(keyOf(b.slice)))
     .slice(0, 1);
-  const type = query.type;
+  const type = query.type?.value;
   const byType = type === undefined ? [] : level({ kind: 'type', key: type }, (card) => sampling.typeOf(card) === type);
   return [...overall, ...technology, ...byType];
 }

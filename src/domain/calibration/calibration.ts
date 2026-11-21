@@ -26,7 +26,10 @@ export interface RatioStats {
   readonly n: number;
   readonly median: number | null;
   readonly mean: number | null;
-  /** The weight of the slice in its coefficient, n / (n + shrink); 0 below `minTasks` (§10). */
+  /**
+   * The weight of the whole slice, n / (n + shrink); 0 below `minTasks` (§10): a slice of weight 0 is no level of the
+   * coefficient. In the chain a level weighs only its own tasks (`CalibrationPolicy.partWeight`, see `levelParts`).
+   */
   readonly weight: number;
   readonly excluded: Readonly<Partial<Record<Exclusion, number>>>;
   readonly uncertain: number;
@@ -114,6 +117,11 @@ export function normalized(cards: readonly Card[], aliases: ReadonlyMap<string, 
     author: aliases.get(card.author) ?? card.author,
     task: { ...card.task, stack: stackLabels(card.task.stack) },
   }));
+}
+
+/** The cards of one author as calibration compares them (`normalized`): the cards of their aliases included. */
+export function authorCards(cards: readonly Card[], author: string, aliases?: ReadonlyMap<string, string>): Card[] {
+  return normalized(cards, aliases).filter((card) => card.author === author);
 }
 
 function forAuthor(cards: readonly Card[], byId: ReadonlyMap<string, Card>, policy: CalibrationPolicy): AuthorCalibration {

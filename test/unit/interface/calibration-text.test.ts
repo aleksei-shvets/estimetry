@@ -49,7 +49,9 @@ describe('emt calibrate text', () => {
       'Coefficient ×0.59 from 3 tasks (weight 60%), slice type feature; pessimistic ×0.87 (first estimates): ' +
         'multiply the optimistic and most likely hours of every part by ×0.59, the pessimistic hours by ×0.87.',
     );
-    expect(text).toMatch(/overall\s+3 tasks, median ×0\.41, mean ×0\.41, weight 60%/);
+    // The weight of a whole slice is not what its level weighs in the chain: only the coefficient line names a weight.
+    expect(text).toMatch(/overall\s+3 tasks, median ×0\.41, mean ×0\.41\n/);
+    expect(text.split('\n').slice(1).join('\n')).not.toContain('weight');
   });
 
   it('names the overall slice without a key', () => {
@@ -59,9 +61,10 @@ describe('emt calibrate text', () => {
 
   it('without a closed task, with every task left out, and below the threshold', () => {
     expect(firstLine(calibrationText(view({ overall: stats(0, 0), tasks: 0 })))).toBe('Without calibration: no closed task yet.');
-    expect(firstLine(calibrationText(view({ overall: stats(0, 0), tasks: 2 })))).toBe(
+    expect(firstLine(calibrationText(view({ overall: { ...stats(0, 0), excluded: { abandoned: 2 } }, tasks: 2 })))).toBe(
       'Without calibration: none of the closed tasks counts (see what is left out below).',
     );
+    expect(firstLine(calibrationText(view({ overall: stats(0, 0), tasks: 2 })))).toBe('Without calibration: none of the closed tasks has an estimate.');
     expect(firstLine(calibrationText(view({ overall: stats(0, 0), tasks: 2, query: { type: 'feature', stack: [], revise: true } })))).toBe(
       'Without calibration: no revised task counts yet.',
     );

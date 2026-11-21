@@ -130,6 +130,15 @@ describe('emt calibrate', () => {
     expect(view.coefficient?.slice).toEqual({ kind: 'type', key: 'feature' });
   });
 
+  it('the coefficient counts the cards of an alias and stack labels in another case, as the slices do', () => {
+    policy = CalibrationPolicy.DEFAULT;
+    put(...[0.41, 0.13, 0.56].map((ratio, i) => syntheticCard({ id: `T-${i + 1}`, author: 'old@example.com', stack: ['TypeScript'], ratio })));
+    aliases = ['old@example.com'];
+    const view = app.estimates.calibration({ stack: ['typescript'] });
+    expect(view.ratio.byStack['typescript']).toMatchObject({ n: 3 });
+    expect(view.coefficient).toMatchObject({ value: 0.586, slice: { kind: 'stack', key: 'typescript' }, n: 3 });
+  });
+
   it('without enough tasks there is no coefficient', () => {
     put(syntheticCard({ id: 'T-1' }), syntheticCard({ id: 'T-2' }));
     expect(app.estimates.calibration({ type: 'feature' })).toMatchObject({ coefficient: null, tasks: 2, ratio: { byType: { feature: { n: 2 } } } });

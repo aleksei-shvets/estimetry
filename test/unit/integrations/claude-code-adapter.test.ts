@@ -187,6 +187,7 @@ describe('Claude Code skills', () => {
       'the slice, the number of tasks and the weight',
       'below 50%',
       'no closed task yet',
+      'none of them has an estimate',
       'calibration.minTasks',
       'only the coefficient `emt calibrate` gives',
       'on top of the pessimistic hours already multiplied by `coefficient.pessimistic`',

@@ -1,6 +1,8 @@
 import type { Card } from '../card/card.js';
 import type { CalibrationPolicy } from './calibration-policy.js';
-import { levelParts, type CoefficientSlice, type LevelQuery } from './level-parts.js';
+import type { EstimateQuery } from '../card/estimate-query.js';
+import { authorCards } from './calibration.js';
+import { levelParts, type CoefficientSlice } from './level-parts.js';
 import { ratioSampling } from './ratio-samples.js';
 import { median, round } from './statistics.js';
 
@@ -22,9 +24,18 @@ export interface ApplicableCoefficient {
   readonly weight: number;
 }
 
+/** Whose coefficient, for what estimate: a new one, or a revision of a task in progress (`revise`). */
+export interface CoefficientQuery {
+  readonly author: string;
+  /** Earlier ids of the author: their cards are the author's. */
+  readonly aliases?: ReadonlyMap<string, string>;
+  readonly estimate: EstimateQuery;
+  readonly revise?: boolean;
+}
+
 /**
- * The coefficient an estimate may apply (calibration-query spec), from the
- * cards of one author. Going down the levels (`levelParts`), each part shrinks
+ * The coefficient an estimate may apply (calibration-query spec), from all the
+ * cards: the author's are taken as calibration takes them (`authorCards`). Going down the levels (`levelParts`), each part shrinks
  * towards the level above in logarithms by the weight of its own tasks; the
  * overall part towards 1, an empty part equals the level above. The deepest
  * level is applied: its part is its whole slice. A new estimate takes the main
@@ -32,10 +43,11 @@ export interface ApplicableCoefficient {
  */
 export function applicableCoefficient(
   cards: readonly Card[],
-  query: LevelQuery & { readonly revise?: boolean },
+  query: CoefficientQuery,
   policy: CalibrationPolicy,
 ): ApplicableCoefficient | null {
-  const parts = levelParts(ratioSampling(cards, query.revise === true), query, policy);
+  const own = authorCards(cards, query.author, query.aliases);
+  const parts = levelParts(ratioSampling(own, query.revise === true), query.estimate, policy);
   const applied = parts.at(-1);
   if (applied === undefined) {
     return null;

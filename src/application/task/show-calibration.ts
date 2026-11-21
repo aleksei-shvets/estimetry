@@ -1,7 +1,7 @@
 import { applicableCoefficient, type ApplicableCoefficient } from '../../domain/calibration/applicable-coefficient.js';
 import {
+  authorCards,
   calibrate,
-  normalized,
   type AuthorCalibration,
   type RatioSlices,
   type RatioStats,
@@ -75,7 +75,7 @@ export class ShowCalibration {
     const aliases = this.authors.toCurrent();
     const policy = this.settings.policy();
     // Only the author's section is shown: other authors' cards are not computed at all.
-    const own = normalized(cards, aliases).filter((card) => card.author === author);
+    const own = authorCards(cards, author, aliases);
     const mine = calibrate(own, { policy }).authors[author];
     const revise = input.revise === true;
     const type = query.type?.value;
@@ -91,7 +91,7 @@ export class ShowCalibration {
       coefficient:
         skipped.length > 0
           ? null
-          : applicableCoefficient(own, { ...(type === undefined ? {} : { type }), stack: query.stack, revise }, policy),
+          : applicableCoefficient(cards, { author, aliases, estimate: query, revise }, policy),
       minTasks: policy.minTasks,
       shrink: policy.shrink,
       tasks: mine?.tasks ?? 0,

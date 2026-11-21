@@ -101,6 +101,9 @@ describe('Estimate', () => {
     };
     expect(paths({ coefficient: 0.5, pessimisticCoefficient: 0 })).toEqual(['calibration.pessimistic']);
     expect(paths({ pessimisticCoefficient: 0.8 })).toEqual(['calibration.coefficient']);
+    // `emt calibrate` never gives a pessimistic coefficient below the coefficient: the two are swapped.
+    expect(paths({ coefficient: 0.9, pessimisticCoefficient: 0.5 })).toEqual(['calibration.pessimistic']);
+    expect(paths({ coefficient: 1.2, pessimisticCoefficient: 1.2 })).toEqual([]);
   });
 
   it('checks code volume ranges', () => {

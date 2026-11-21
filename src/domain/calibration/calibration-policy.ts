@@ -3,8 +3,9 @@ export const DEFAULT_SHRINK = 2;
 
 /**
  * How calibration weighs a slice (calibration spec): from `calibration.minTasks`
- * tasks a slice has the weight n / (n + k) with k = `calibration.shrink`, and a
- * coefficient is shrunk towards its parent level by it.
+ * tasks a slice has the weight n / (n + k) with k = `calibration.shrink` and is a
+ * level of the coefficient; each level is shrunk towards the one above by the
+ * weight of its own tasks (`partWeight`).
  */
 export class CalibrationPolicy {
   private constructor(

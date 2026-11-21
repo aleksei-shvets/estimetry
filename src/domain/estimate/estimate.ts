@@ -58,8 +58,12 @@ export class Estimate {
     if (input.coefficient === undefined ? input.pessimisticCoefficient !== undefined : !positive(input.coefficient)) {
       issues.push({ path: 'calibration.coefficient', message: 'expected a number greater than 0' });
     }
-    if (input.pessimisticCoefficient !== undefined && !positive(input.pessimisticCoefficient)) {
+    const pessimistic = input.pessimisticCoefficient;
+    if (pessimistic !== undefined && !positive(pessimistic)) {
       issues.push({ path: 'calibration.pessimistic', message: 'expected a number greater than 0' });
+    } else if (pessimistic !== undefined && input.coefficient !== undefined && pessimistic < input.coefficient) {
+      // `emt calibrate` never gives one below the other: the two are swapped.
+      issues.push({ path: 'calibration.pessimistic', message: 'expected no less than calibration.coefficient' });
     }
     if (input.parts.length === 0) {
       issues.push({ path: 'parts', message: 'the estimate needs at least one part' });

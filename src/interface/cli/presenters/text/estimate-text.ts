@@ -148,8 +148,12 @@ function coefficientLine(view: CalibrationView): string {
     return 'Without calibration: no closed task yet.';
   }
   if (overall.n === 0) {
-    return view.query.revise
-      ? 'Without calibration: no revised task counts yet.'
+    if (view.query.revise) {
+      return 'Without calibration: no revised task counts yet.';
+    }
+    // A card without an estimate is neither a sample nor left out: there is nothing below to point to.
+    return Object.keys(overall.excluded).length === 0
+      ? 'Without calibration: none of the closed tasks has an estimate.'
       : 'Without calibration: none of the closed tasks counts (see what is left out below).';
   }
   return `Without calibration: ${overall.n} of ${view.minTasks} tasks needed (calibration.minTasks).`;
@@ -189,9 +193,10 @@ function statsText(stats: RatioStats): string {
     return 'no tasks';
   }
   const excluded = Object.entries(stats.excluded).map(([reason, n]) => `${reason} ${n}`);
-  const weight = stats.weight > 0 ? `, weight ${percent(stats.weight)}` : ', too few to apply';
+  // The weight of a whole slice is not what its level weighs in the coefficient: only the coefficient line names one.
+  const tooFew = stats.weight > 0 ? '' : ', too few to apply';
   return (
-    `${stats.n} tasks, median ×${stats.median}, mean ×${stats.mean}${weight}` +
+    `${stats.n} tasks, median ×${stats.median}, mean ×${stats.mean}${tooFew}` +
     `${stats.revised > 0 ? `, ${stats.revised} revised` : ''}${stats.uncertain > 0 ? `, ${stats.uncertain} uncertain` : ''}` +
     `${excluded.length > 0 ? `; left out: ${excluded.join(', ')}` : ''}`
   );
