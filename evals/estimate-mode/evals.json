@@ -38,6 +38,7 @@
       "expectations": [
         "runs `emt similar` and `emt calibrate` with --type feature before naming any hours",
         "names the coefficient with its basis: about ×1.14 from 2 tasks, weight 50%",
+        "does not call the coefficient cautious or the experience too little: 50% is not below 50%",
         "every part's optimistic and likely hours are multiplied by about 1.14, and its pessimistic hours by about 1.86, not by 1.14",
         "the estimate file has calibrated: true, calibration.coefficient about 1.14 and calibration.pessimistic about 1.86",
         "does not run `emt estimate save` before the user approves"

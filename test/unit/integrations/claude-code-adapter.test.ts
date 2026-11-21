@@ -186,6 +186,7 @@ describe('Claude Code skills', () => {
       'calibration: { coefficient: 1.23, pessimistic: 1.64 }',
       'the slice, the number of tasks and the weight',
       'below 50%',
+      'at 50% or more, do not call it cautious',
       'no closed task yet',
       'none of them has an estimate',
       'calibration.minTasks',
