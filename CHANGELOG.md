@@ -4,6 +4,14 @@ All notable changes to estimetry. Versions follow [semantic versioning](https://
 
 ## Unreleased
 
+- **Calibration from the first closed task.** The coefficient an estimate applies is the median of fact over estimate shrunk towards 1 with the weight n / (n + k) (`calibration.shrink`, 2 by default), instead of nothing until a slice has 5 tasks. The slices form a chain — all your tasks, the technology of the query with the most tasks, the task type — each shrunk towards the one above by the tasks no deeper slice holds, so every task counts once; the deepest applies, and the overall slice now counts too. `emt calibrate` names the slice, the number of tasks and the weight.
+- **Pessimistic coefficient.** `c · e^(ln 2 / √n)`, at most 1 while your estimates run high: the agent multiplies the pessimistic hours by it and the optimistic and most likely hours by the coefficient. The estimate file takes it as `calibration.pessimistic`; the base calibration compares with is still likely over the coefficient.
+- **Without calibration** an estimate is now only when no task is closed yet, every closed task is left out, there are fewer tasks than your `calibration.minTasks`, or some cards come from a newer estimetry; `emt calibrate` says which.
+- New defaults: `calibration.minTasks: 1`, `calibration.shrink: 2`. A `minTasks` you set without `shrink` means `shrink: 0`; `minTasks: 5` alone gives the coefficient of earlier versions wherever they gave one, and the median of all your tasks where neither the type nor a technology has 5.
+- `calibration.json` has schema 3: `weight` instead of `applicable` in every slice, and `shrink`. It is rewritten by the next closing or `emt rebuild`.
+- `emt calibrate --json` has `schemaVersion: 2`: `coefficient` is `{ value, pessimistic, slice: { kind, key? }, n, weight }`, slices carry `weight` instead of `applicable`, and `shrink` sits beside `minTasks`.
+- Run `emt upgrade` once: the skills are written again.
+
 ## 0.2.0 — 2026-11-21
 
 - **Codex.** `estimetry init --tools codex`, or picking Codex in `init`, sets up the hooks of Codex (in `~/.codex/hooks.json`, or `.codex/hooks.json` of the project with `--shared-hooks`) and the `emt-…` skills (in `~/.agents/skills`, or `.agents/skills`), called as `$emt-…`. Sessions of Codex are measured like those of Claude Code, and both tools may serve one task. Codex runs a hook only once you trust it, and the agent's commands in a sandbox: in a terminal `init` asks whether to trust the estimetry hooks and to let the task commands (`emt start`, `extra`, `close`…) out of the sandbox, and records both with yes or `--trust-hooks` (`~/.codex/config.toml`, `~/.codex/rules/estimetry.rules`). `emt upgrade` trusts again the hooks it changes when you trusted them before; `emt status` warns while they are not trusted. Requires Codex 0.145 or newer.
