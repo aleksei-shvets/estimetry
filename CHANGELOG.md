@@ -4,10 +4,13 @@ All notable changes to estimetry. Versions follow [semantic versioning](https://
 
 ## Unreleased
 
+## 0.2.0 — 2026-11-21
+
 - **Codex.** `estimetry init --tools codex`, or picking Codex in `init`, sets up the hooks of Codex (in `~/.codex/hooks.json`, or `.codex/hooks.json` of the project with `--shared-hooks`) and the `emt-…` skills (in `~/.agents/skills`, or `.agents/skills`), called as `$emt-…`. Sessions of Codex are measured like those of Claude Code, and both tools may serve one task. Codex runs a hook only once you trust it, and the agent's commands in a sandbox: in a terminal `init` asks whether to trust the estimetry hooks and to let the task commands (`emt start`, `extra`, `close`…) out of the sandbox, and records both with yes or `--trust-hooks` (`~/.codex/config.toml`, `~/.codex/rules/estimetry.rules`). `emt upgrade` trusts again the hooks it changes when you trusted them before; `emt status` warns while they are not trusted. Requires Codex 0.145 or newer.
 - The rollouts of Codex sessions are imported at the session end and before a task closes: turns, subagents and tokens by model. Codex records no cost, so its sessions count in tokens only, and the cost of a task says by how many sessions it is counted (`cost from 1 of 2 sessions`, or `not reported`). Cards get `usage.withCost`.
 - `init` without `--tools` now sets up the tools found on this machine (`~/.claude`, `~/.codex`) when none is installed in the project yet, instead of every tool.
 - The texts outside an agent name the skills without the slash of Claude Code (`skill emt-retro`); the context the hooks give an agent names them as its tool calls them.
+- The journal: `log.session` records may carry `costReported: false` and a `cacheWrite` count; records of 0.1 read as before, and 0.1 reads the new ones, though it counts a Codex session as costing nothing.
 - Run `emt upgrade` once: the skills are written again.
 
 ## 0.1.2 — 2026-11-12
