@@ -322,23 +322,41 @@ Every slice has a weight, n / (n + k), next to its median and mean (see [Estimat
     "you@example.com": {
       "tasks": 4,
       "ratio": {
-        "overall": { "n": 4, "median": 0.325, "mean": 0.334, "weight": 0.667 },
-        "byType": { "feature": { "n": 3, "median": 0.409, "mean": 0.366, "weight": 0.6 } }
+        "overall": { "n": 4, "median": 0.5, "mean": 0.55, "weight": 0.667 },
+        "byType": { "feature": { "n": 3, "median": 0.6, "mean": 0.62, "weight": 0.6 } }
       }
     }
   }
 }
 ```
 
-Both numbers are set in `config.yaml`:
+**Settings.** Two settings in `~/.local/share/estimetry/config.yaml` (under `ESTIMETRY_HOME` if you set it) decide how soon calibration starts and how strongly it acts:
 
 ```yaml
 calibration:
-  minTasks: 1   # a slice counts from this many tasks
-  shrink: 2     # k in n / (n + k); 0 applies the median as it is
+  minTasks: 1   # a slice counts from this many closed tasks; below it in all your tasks, no coefficient
+  shrink: 2     # k in n / (n + k): larger is more cautious, 0 applies the median as it is
 ```
 
-Setting `minTasks` without `shrink` means `shrink: 0`. `minTasks: 5` alone gives the coefficient of earlier versions wherever they gave one, with one difference: when neither the type nor a technology has 5 tasks, the median of all your tasks applies, where earlier versions gave none. `calibration.json` of an earlier schema is rewritten by the next closing or `emt rebuild`.
+Setting `minTasks` without `shrink` means `shrink: 0`: a threshold you chose yourself keeps the coefficient it gave.
+
+**What to expect.** Say every closed task took half of its estimate (fact over estimate 0.5), all of one type and technology. The coefficient and the pessimistic coefficient after 1, 3, 5 and 10 closed tasks (— is without calibration):
+
+| Settings | 1 task | 3 tasks | 5 tasks | 10 tasks |
+|---|---|---|---|---|
+| default: `minTasks: 1`, `shrink: 2` | ×0.79 / ×1.00 | ×0.66 / ×0.98 | ×0.61 / ×0.83 | ×0.56 / ×0.70 |
+| faster: `shrink: 1` | ×0.71 / ×1.00 | ×0.59 / ×0.89 | ×0.56 / ×0.77 | ×0.53 / ×0.66 |
+| more cautious: `shrink: 5` | ×0.89 / ×1.00 | ×0.77 / ×1.00 | ×0.71 / ×0.96 | ×0.63 / ×0.78 |
+| later start: `minTasks: 3`, `shrink: 2` | — | ×0.66 / ×0.98 | ×0.61 / ×0.83 | ×0.56 / ×0.70 |
+| as in 0.2: `minTasks: 5` | — | — | ×0.50 / ×0.68 | ×0.50 / ×0.62 |
+| the median as it is: `shrink: 0` | ×0.50 / ×1.00 | ×0.50 / ×0.75 | ×0.50 / ×0.68 | ×0.50 / ×0.62 |
+
+- The coefficient moves from 1 towards your median as tasks close; `shrink` sets how fast. The pessimistic coefficient stays at 1 while there is little experience and comes down to the coefficient with it.
+- When your estimates run low, nothing caps the pessimistic coefficient: with fact over estimate 1.5 the default gives ×1.14 / ×2.29 after one task and ×1.40 / ×1.75 after ten.
+- With tasks of several types and technologies the coefficient comes from the chain of slices: the tasks of the type weigh by their number, your other tasks fill in the rest of the weight, and what is still missing stays at 1.
+- `minTasks: 5` gives the coefficient of earlier versions wherever they gave one, with two differences. When neither the type nor a technology has 5 tasks, the median of all your tasks applies, where earlier versions gave none. The pessimistic hours are multiplied by the pessimistic coefficient, not by the coefficient, so they keep a reserve earlier versions did not give.
+
+**Changing them.** Edit `config.yaml` and run `emt calibrate --type <type> --stack <a,b>`: it computes from your cards at once and names the coefficient, the slice, the number of tasks and the weight. Estimates already saved keep their coefficient. `calibration.json` follows at the next closing or with `emt rebuild`, which also rewrites a `calibration.json` of an earlier schema.
 
 Tasks in parallel mode count with their sequential equivalent. Abandoned tasks and tasks with manual time only are left out.
 

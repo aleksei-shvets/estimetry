@@ -42,6 +42,17 @@ describe('binaries', () => {
     expect((await cli.run(['--help'], api, 'estimetry')).stdout).toContain('Run "estimetry <command> --help"');
   });
 
+  it('names the settings of calibration and where config.yaml lives', async () => {
+    const calibrate = await cli.run(['calibrate', '--help'], api);
+    expect(calibrate.code).toBe(0);
+    for (const line of ['Settings (config.yaml', 'calibration.minTasks', 'calibration.shrink', 'default 1', 'default 2', 'means shrink: 0']) {
+      expect(calibrate.stdout).toContain(line);
+    }
+    const root = await cli.run(['--help'], api);
+    expect(root.stdout).toContain('config.yaml');
+    expect(root.stdout).toContain('emt help calibrate');
+  });
+
   it('shows the help of groups and nested commands', async () => {
     const group = await cli.run(['task', '--help'], api);
     expect(group.stdout).toMatch(/task list[\s\S]*--closed/);
