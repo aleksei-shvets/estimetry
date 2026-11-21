@@ -35,11 +35,12 @@ export interface CoefficientQuery {
 
 /**
  * The coefficient an estimate may apply (calibration-query spec), from all the
- * cards: the author's are taken as calibration takes them (`authorCards`). Going down the levels (`levelParts`), each part shrinks
- * towards the level above in logarithms by the weight of its own tasks; the
- * overall part towards 1, an empty part equals the level above. The deepest
- * level is applied: its part is its whole slice. A new estimate takes the main
- * ratio; a revision of a task in progress, `revised`.
+ * cards: the author's are taken as calibration takes them (`authorCards`).
+ * Going down the levels (`levelParts`), each part shrinks towards the level
+ * above in logarithms by the weight of its own tasks; the overall part towards
+ * 1, an empty part equals the level above. The deepest level is applied: its
+ * part is its whole slice. A new estimate takes the main ratio; a revision of
+ * a task in progress, `revised`.
  */
 export function applicableCoefficient(
   cards: readonly Card[],
