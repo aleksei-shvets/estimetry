@@ -176,6 +176,33 @@ describe('Claude Code skills', () => {
     expect(files.read(skill(HOME, 'estimetry'))).toContain('Never name an effort or a deadline for a task before `/emt-estimate` is done');
   });
 
+  it('the estimate command applies both coefficients and names why there is none', () => {
+    install();
+    const text = files.read(skill(HOME, 'emt-estimate')) ?? '';
+    for (const needle of [
+      'optimistic and most likely hours of every part by `coefficient.value`',
+      'pessimistic hours by `coefficient.pessimistic`',
+      'calibration: { coefficient: <value>, pessimistic: <pessimistic> }',
+      'calibration: { coefficient: 1.23, pessimistic: 1.64 }',
+      'the slice, the number of tasks and the weight',
+      'below 50%',
+      'at 50% or more, do not call it cautious',
+      'no closed task yet',
+      'none of them has an estimate',
+      'calibration.minTasks',
+      'only the coefficient `emt calibrate` gives',
+      'on top of the pessimistic hours already multiplied by `coefficient.pessimistic`',
+      'not a reserve for extra work',
+    ]) {
+      expect(text).toContain(needle);
+    }
+    // The overall slice is a coefficient like any other now.
+    expect(text).not.toContain('overall slice');
+    const estimetry = files.read(skill(HOME, 'estimetry')) ?? '';
+    expect(estimetry).toContain('the optimistic and most likely hours of every part by its value, the pessimistic hours by its pessimistic value');
+    expect(estimetry).not.toContain('multiply the hours of every part by it');
+  });
+
   it('a shared install puts them into the project; a personal one takes them out again', () => {
     install({ shared: true });
     expect(files.read(skill(`${ROOT}/.claude`, 'emt-start'))).toBeDefined();

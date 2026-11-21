@@ -18,7 +18,7 @@ estimetry compares estimates with the actual effort of AI-agent development and 
 Never name an effort or a deadline for a task before \`{{skill:emt-estimate}}\` is done, even when asked casually. The estimate rests on the user's own past tasks, not on a general sense of how long things take:
 - agree with the user on the task type and the technologies the task really touches;
 - \`emt similar\` shows closed tasks like it, \`emt calibrate\` the user's coefficients and the one the estimate may apply;
-- with a coefficient, multiply the hours of every part by it; without one, say plainly that the estimate is without calibration;
+- with a coefficient, multiply the optimistic and most likely hours of every part by its value, the pessimistic hours by its pessimistic value; without one, say plainly that the estimate is without calibration and why;
 - give the estimate by parts of the plan, each with optimistic, most likely and pessimistic hours, and save it only after the user approves it.
 
 ## Measuring
@@ -68,12 +68,14 @@ export const COMMANDS: readonly CommandContent[] = [
 3. **Parts.** Split the work into parts of the plan with hours as optimistic ≤ most likely ≤ pessimistic. Include manual testing and review when the work needs them. Add up a preliminary most likely total.
    With a development flow (OpenSpec), link every part to its change: \`group\` is the name of the change. When the change does not exist yet, agree its kebab-case name with the user now, put it into \`group\`, and create the change under exactly that name later — otherwise progress, completion of changes and the fact by parts cannot follow the estimate. Several changes give several groups.
 4. **Similar tasks.** \`emt similar --type <type> --stack <a,b> --hours <preliminary total> --json\`. Compare the parts with the facts of the similar tasks, their extra work and lessons; adjust the parts. Name the tasks you rely on — they go into \`basedOn\`. If there are none, say so.
-5. **Calibration.** \`emt calibrate --type <type> --stack <a,b> --json\`.
-   - If \`coefficient\` is not null, multiply the optimistic, most likely and pessimistic hours of every part by \`coefficient.value\` and write \`calibrated: true\` and \`calibration: { coefficient: <value> }\`. Say which slice it comes from and how many tasks.
-   - If \`coefficient\` is null, say plainly that the estimate is **without calibration** and why (too few closed tasks), and write \`calibrated: false\`. Never apply the overall slice or a coefficient of your own.
+5. **Calibration.** \`emt calibrate --type <type> --stack <a,b> --json\`. Apply only the coefficient \`emt calibrate\` gives, never one of your own.
+   - If \`coefficient\` is not null, multiply the optimistic and most likely hours of every part by \`coefficient.value\` and the pessimistic hours by \`coefficient.pessimistic\`, and write \`calibrated: true\` and \`calibration: { coefficient: <value>, pessimistic: <pessimistic> }\`. Name the slice, the number of tasks and the weight, for example "×0.59 from 3 feature tasks, weight 60%". With a weight below 50% (one task at the default \`shrink\`), say that there is little experience yet and the coefficient is cautious; at 50% or more, do not call it cautious.
+   - If \`coefficient\` is null, say plainly that the estimate is **without calibration** and why, as \`emt calibrate\` without \`--json\` words it: no closed task yet, fewer closed tasks than the user set in \`calibration.minTasks\`, every closed task left out or none of them has an estimate, or cards it could not read (estimetry needs an update). Write \`calibrated: false\`.
+   - A revision (\`--revise\`) follows the same rules with the coefficient of estimates made during work.
 6. **Reserve.** Put a reserve only into the pessimistic hours, never into the most likely hours or a part of its own, and name its source in \`rationale\`:
    - with calibration, only for missed scope (\`missedScope\`): extra work absorbed by tasks is already in the coefficient;
    - without calibration, for extra work (\`extras\`, absorbed) and missed scope.
+   The reserve goes on top of the pessimistic hours already multiplied by \`coefficient.pessimistic\`: that coefficient covers how little the ratio is known yet, it is not a reserve for extra work.
    Cross-check with lines per hour (\`linesPerHour\`, \`codeVolume\`) only as a self-check: if it disagrees strongly, say so and explain, but do not recompute the estimate from lines.
 7. **Approval.** Show the estimate as a table: parts, hours, what it rests on (similar tasks, coefficient or "without calibration", reserve). Wait for the user to approve or change it.
 8. **Save.** Write the approved estimate to a YAML file outside the repository, for example in a temporary directory, and save it: \`emt estimate save <file>\` (for a task in progress: \`emt estimate revise <file> ...\`, see the estimetry skill). If it reports errors, fix every listed field and save again.
@@ -84,14 +86,14 @@ export const COMMANDS: readonly CommandContent[] = [
    stack: [typescript, node]
    basedOn: [T-12, T-17]
    calibrated: true
-   calibration: { coefficient: 1.3 }
+   calibration: { coefficient: 1.23, pessimistic: 1.64 }
    rationale: Why the numbers are what they are, what they rest on, where the reserve is.
    parts:
      - name: implementation
        kind: implementation        # analysis, implementation, auto-tests, manual-testing, review, docs, other
        who: agents                 # agents, user or both
        group: export-invoices-pdf  # the change of the part, with a development flow
-       hours: { optimistic: 2.6, likely: 3.9, pessimistic: 6.5 }
+       hours: { optimistic: 2.46, likely: 3.69, pessimistic: 6.56 }
    \`\`\`
 
 9. Tell the user that time is not measured until the task starts, and offer to start it now with \`{{skill:emt-start}}\` (\`emt start\`; \`--at "YYYY-MM-DD HH:MM"\` if work already began).

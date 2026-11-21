@@ -74,7 +74,7 @@ class EstimateParser {
       this.issue('calibrated', 'expected true or false');
     }
     const codeVolume = this.codeVolume(value['codeVolume']);
-    const coefficient = this.coefficient(value['calibration']);
+    const calibration = this.calibration(value['calibration']);
     if (this.issues.length > 0 || parts.some((part) => part === undefined)) {
       return undefined;
     }
@@ -87,26 +87,34 @@ class EstimateParser {
         ...(rationale === undefined ? {} : { rationale }),
         ...(codeVolume === undefined ? {} : { codeVolume }),
         calibrated: calibrated === true,
-        ...(coefficient === undefined ? {} : { coefficient }),
+        ...calibration,
       }),
     );
   }
 
-  private coefficient(value: unknown): number | undefined {
+  private calibration(value: unknown): { coefficient?: number; pessimisticCoefficient?: number } {
     if (value === undefined) {
-      return undefined;
+      return {};
     }
     if (!isObject(value)) {
       this.issue('calibration', 'expected a mapping with `coefficient`');
-      return undefined;
+      return {};
     }
-    this.unknownFields(value, ['coefficient'], 'calibration.');
-    const coefficient = value['coefficient'];
-    if (typeof coefficient !== 'number' || !(coefficient > 0)) {
-      this.issue('calibration.coefficient', 'expected a number greater than 0');
-      return undefined;
-    }
-    return coefficient;
+    this.unknownFields(value, ['coefficient', 'pessimistic'], 'calibration.');
+    const positive = (field: string): number | undefined => {
+      const number = value[field];
+      if (typeof number !== 'number' || !(number > 0)) {
+        this.issue(`calibration.${field}`, 'expected a number greater than 0');
+        return undefined;
+      }
+      return number;
+    };
+    const coefficient = positive('coefficient');
+    const pessimistic = value['pessimistic'] === undefined ? undefined : positive('pessimistic');
+    return {
+      ...(coefficient === undefined ? {} : { coefficient }),
+      ...(pessimistic === undefined ? {} : { pessimisticCoefficient: pessimistic }),
+    };
   }
 
   private part(value: unknown, path: string): EstimatePart | undefined {

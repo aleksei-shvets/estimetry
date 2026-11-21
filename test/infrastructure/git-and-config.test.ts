@@ -1,3 +1,4 @@
+import { CalibrationPolicy } from '../../src/domain/calibration/calibration-policy.js';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -87,5 +88,19 @@ describe('YamlConfigStore', () => {
 
     writeYamlAtomic(layout.configFile, { author: { id: 'x' }, taskTypes: ['Spike', 'feature'] });
     expect(store.allowed()).toEqual(['feature', 'integration', 'bugfix', 'refactor', 'infra', 'migration', 'research', 'spike']);
+  });
+
+  it('reads the calibration policy: defaults, a chosen threshold without shrink, values of a wrong kind as not given', () => {
+    const layout = new StorageLayout(join(tempDir(), 'home'));
+    const store = new YamlConfigStore(layout, () => 'x');
+    expect(store.policy()).toEqual(CalibrationPolicy.DEFAULT);
+    writeYamlAtomic(layout.configFile, { author: { id: 'x' }, calibration: { minTasks: 5 } });
+    expect(store.policy()).toMatchObject({ minTasks: 5, shrink: 0 });
+    writeYamlAtomic(layout.configFile, { author: { id: 'x' }, calibration: { minTasks: 5, shrink: 1.5 } });
+    expect(store.policy()).toMatchObject({ minTasks: 5, shrink: 1.5 });
+    writeYamlAtomic(layout.configFile, { author: { id: 'x' }, calibration: { minTasks: 'five', shrink: '2' } });
+    expect(store.policy()).toEqual(CalibrationPolicy.DEFAULT);
+    writeYamlAtomic(layout.configFile, { author: { id: 'x' }, calibration: 'strict' });
+    expect(store.policy()).toEqual(CalibrationPolicy.DEFAULT);
   });
 });

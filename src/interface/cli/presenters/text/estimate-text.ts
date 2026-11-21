@@ -82,7 +82,7 @@ function queried<T>(slices: {
 
 export function calibrationText(view: CalibrationView): string {
   const slices = queried(view.ratio);
-  const lines: string[] = [coefficientLine(view, slices)];
+  const lines: string[] = [coefficientLine(view)];
   lines.push('', 'Fact over the first estimate:');
   const ratioRows: [string, string][] = [
     ['overall', statsText(view.ratio.overall)],
@@ -122,14 +122,18 @@ export function calibrationText(view: CalibrationView): string {
   return lines.join('\n');
 }
 
-/** The coefficient to apply, or why there is none. */
-function coefficientLine(view: CalibrationView, slices: readonly (readonly [string, RatioStats])[]): string {
+/** The coefficient to apply with what it rests on, or why there is none. */
+function coefficientLine(view: CalibrationView): string {
   const coefficient = view.coefficient;
-  const what = view.query.revise ? 'estimates made during work' : 'first estimates';
   if (coefficient !== null) {
+    const what = view.query.revise ? 'estimates made during work' : 'first estimates';
+    const slice = coefficient.slice.kind === 'overall' ? 'overall' : `${coefficient.slice.kind} ${coefficient.slice.key}`;
+    const value = times(coefficient.value);
+    const pessimistic = times(coefficient.pessimistic);
     return (
-      `Coefficient ×${coefficient.value} (${coefficient.slice.kind} ${coefficient.slice.key}, ${coefficient.n} tasks, ${what}): ` +
-      'multiply the optimistic, most likely and pessimistic hours of every part.'
+      `Coefficient ${value} from ${coefficient.n} ${coefficient.n === 1 ? 'task' : 'tasks'} (weight ${percent(coefficient.weight)}), ` +
+      `slice ${slice}; pessimistic ${pessimistic} (${what}): ` +
+      `multiply the optimistic and most likely hours of every part by ${value}, the pessimistic hours by ${pessimistic}.`
     );
   }
   if (view.skipped.length > 0) {
@@ -139,14 +143,25 @@ function coefficientLine(view: CalibrationView, slices: readonly (readonly [stri
       'so no coefficient is given — update estimetry.'
     );
   }
-  const counts = (view.query.revise ? queried(view.revised) : slices).map(([name, stats]) => `${name} ${stats.n} of ${view.minTasks}`);
   const overall = view.query.revise ? view.revised.overall : view.ratio.overall;
-  return (
-    (counts.length === 0
-      ? 'Without calibration: give --type or --stack; only slices by type or technology are applied.'
-      : `Without calibration: ${counts.join(', ')} tasks needed.`) +
-    (overall.median === null ? '' : ` Overall ×${overall.median} (${overall.n} tasks) is for reference only.`)
-  );
+  if (view.tasks === 0) {
+    return 'Without calibration: no closed task yet.';
+  }
+  if (overall.n === 0) {
+    if (view.query.revise) {
+      return 'Without calibration: no revised task counts yet.';
+    }
+    // A card without an estimate is neither a sample nor left out: there is nothing below to point to.
+    return Object.keys(overall.excluded).length === 0
+      ? 'Without calibration: none of the closed tasks has an estimate.'
+      : 'Without calibration: none of the closed tasks counts (see what is left out below).';
+  }
+  return `Without calibration: ${overall.n} of ${view.minTasks} tasks needed (calibration.minTasks).`;
+}
+
+/** A coefficient in text: two decimals are enough to read; `--json` keeps three. */
+function times(value: number): string {
+  return `×${Math.round(value * 100) / 100}`;
 }
 
 /** Revisions by category and `spent`, and extra work by category: shares of the base. */
@@ -178,8 +193,10 @@ function statsText(stats: RatioStats): string {
     return 'no tasks';
   }
   const excluded = Object.entries(stats.excluded).map(([reason, n]) => `${reason} ${n}`);
+  // The weight of a whole slice is not what its level weighs in the coefficient: only the coefficient line names one.
+  const tooFew = stats.weight > 0 ? '' : ', too few to apply';
   return (
-    `${stats.n} tasks, median ×${stats.median}, mean ×${stats.mean}${stats.applicable ? '' : ', too few to apply'}` +
+    `${stats.n} tasks, median ×${stats.median}, mean ×${stats.mean}${tooFew}` +
     `${stats.revised > 0 ? `, ${stats.revised} revised` : ''}${stats.uncertain > 0 ? `, ${stats.uncertain} uncertain` : ''}` +
     `${excluded.length > 0 ? `; left out: ${excluded.join(', ')}` : ''}`
   );
@@ -205,7 +222,7 @@ export function estimateText(estimate: EstimateData): string {
   const context = [
     estimate.type,
     estimate.stack === undefined ? undefined : estimate.stack.join(', '),
-    estimate.calibrated ? `calibrated ×${estimate.calibration?.coefficient ?? '?'}` : 'without calibration',
+    estimate.calibrated ? calibratedText(estimate.calibration) : 'without calibration',
     estimate.basedOn === undefined ? undefined : `based on ${estimate.basedOn.join(', ')}`,
   ].filter((part): part is string => part !== undefined);
   return table([
@@ -216,4 +233,9 @@ export function estimateText(estimate: EstimateData): string {
       return [`  ${part.id}`, `${part.hours.optimistic} / ${part.hours.likely} / ${part.hours.pessimistic} h, ${part.kind}${who}${group}`];
     }),
   ]);
+}
+
+function calibratedText(calibration: EstimateData['calibration']): string {
+  const pessimistic = calibration?.pessimistic === undefined ? '' : `, pessimistic ×${calibration.pessimistic}`;
+  return `calibrated ×${calibration?.coefficient ?? '?'}${pessimistic}`;
 }

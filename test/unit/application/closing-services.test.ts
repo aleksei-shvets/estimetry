@@ -60,7 +60,7 @@ describe('the steps after the closing', () => {
     recalculate: () => {
       calls.push('recalculate');
       if (fail === 'recalculate') throw new Error('locked');
-      return { schemaVersion: 2, minTasks: 5, authors: {} };
+      return { schemaVersion: 3, minTasks: 5, shrink: 0, authors: {} };
     },
   });
 

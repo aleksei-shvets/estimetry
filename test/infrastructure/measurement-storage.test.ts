@@ -1,3 +1,4 @@
+import { parseTaskEvent } from '../../src/infrastructure/persistence/records.js';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -116,6 +117,22 @@ describe('YamlEstimateReader', () => {
     expect(estimate.toData().calibration).toEqual({ coefficient: 1.3 });
     expect(estimate.baseLikely).toBe(10);
     expect(issues(reader(`${base}calibration: { coefficient: 0 }\n`)).map((i) => i.path)).toEqual(['calibration.coefficient']);
+  });
+
+  it('reads the pessimistic coefficient and refuses one that is not a positive number', () => {
+    const base = 'schemaVersion: 1\ncalibrated: true\nparts:\n  - { name: a, hours: { optimistic: 1, likely: 13, pessimistic: 20 } }\n';
+    const estimate = reader(`${base}calibration: { coefficient: 1.3, pessimistic: 2 }\n`)();
+    expect(estimate.toData().calibration).toEqual({ coefficient: 1.3, pessimistic: 2 });
+    expect(estimate.baseLikely).toBe(10);
+    expect(issues(reader(`${base}calibration: { coefficient: 1.3, pessimistic: 0 }\n`)).map((i) => i.path)).toEqual(['calibration.pessimistic']);
+    expect(issues(reader(`${base}calibration: { coefficient: 1.3, pessimistic: high }\n`)).map((i) => i.path)).toEqual(['calibration.pessimistic']);
+  });
+
+  it('a journal record of an estimate with the pessimistic coefficient is read back', () => {
+    const estimate = { schemaVersion: 1, calibrated: true, calibration: { coefficient: 0.5, pessimistic: 0.8 }, parts: [{ id: 'a', name: 'a', kind: 'implementation', hours: { optimistic: 1, likely: 2, pessimistic: 3 } }] };
+    const record = (data: unknown) => ({ schemaVersion: 1, id: 'e1', ts: '2026-11-01T10:00:00.000Z', type: 'task.estimated', author: 'dev@example.com', task: 'T-1', data });
+    expect(parseTaskEvent(record({ estimate }))?.data).toEqual({ estimate });
+    expect(parseTaskEvent(record({ estimate: { ...estimate, calibration: { coefficient: 0.5, pessimistic: 'x' } } }))).toBeUndefined();
   });
 
   it('reads a valid file with totals', () => {

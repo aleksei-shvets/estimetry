@@ -219,6 +219,13 @@ describe('Codex skills', () => {
     expect(ownership(close)).toBe('ours');
   });
 
+  it('the estimate skill carries the same calibration protocol as for Claude Code', () => {
+    const estimate = renderSkill(COMMANDS.find((c) => c.id === 'emt-estimate')!, '1.0.0');
+    expect(estimate).toContain('pessimistic hours by `coefficient.pessimistic`');
+    expect(estimate).toContain('calibration: { coefficient: <value>, pessimistic: <pessimistic> }');
+    expect(estimate).not.toContain('overall slice');
+  });
+
   it('a skill the user edited stays without --force', () => {
     install();
     const path = `${USER_SKILLS}/emt-start/SKILL.md`;

@@ -58,16 +58,24 @@ describe('emt calibrate', () => {
     cards(...six());
     const text = await emt('calibrate', '--type', 'feature', '--stack', 'typescript');
     expect(text.code).toBe(0);
-    expect(text.stdout).toMatch(/^Coefficient ×1\.25 \(type feature, 6 tasks, first estimates\)/);
+    expect(text.stdout).toMatch(/^Coefficient ×1\.18 from 6 tasks \(weight 75%\), slice type feature; pessimistic ×1\.57 \(first estimates\)/);
     const json = await emt('calibrate', '--type', 'feature', '--stack', 'typescript', '--json');
     expect(JSON.parse(json.stdout)).toMatchSnapshot();
     expect(existsSync(join(cli.home, 'calibration.json'))).toBe(false);
   });
 
-  it('says without calibration on a small sample and with --revise when nothing was revised', async () => {
+  it('without closed tasks, below a threshold chosen in config.yaml, and with --revise when nothing was revised', async () => {
+    expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Without calibration: no closed task yet\./);
     cards(...six().slice(0, 2));
-    expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Without calibration: type feature 2 of 5 tasks needed\. Overall ×1\.05 \(2 tasks\) is for reference only\./);
+    expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Coefficient ×1\.02 from 2 tasks \(weight 50%\), slice type feature;/);
+    writeFileSync(
+      join(cli.home, 'config.yaml'),
+      stringify({ schemaVersion: 1, author: { id: 'dev@example.com' }, calibration: { minTasks: 5 } }),
+    );
+    expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Without calibration: 2 of 5 tasks needed \(calibration\.minTasks\)\./);
     cards(...six());
+    const strict = JSON.parse((await emt('calibrate', '--type', 'feature', '--json')).stdout) as { coefficient: unknown; shrink: number };
+    expect(strict).toMatchObject({ shrink: 0, coefficient: { value: 1.25, slice: { kind: 'type', key: 'feature' }, n: 6, weight: 1 } });
     const revise = JSON.parse((await emt('calibrate', '--type', 'feature', '--revise', '--json')).stdout) as { coefficient: unknown };
     expect(revise.coefficient).toBeNull();
   });

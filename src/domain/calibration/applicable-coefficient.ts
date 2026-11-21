@@ -1,39 +1,74 @@
-import type { StackLabels } from '../estimate/stack-labels.js';
-import type { AuthorCalibration, RatioStats } from './calibration.js';
+import type { Card } from '../card/card.js';
+import type { CalibrationPolicy } from './calibration-policy.js';
+import type { EstimateQuery } from '../card/estimate-query.js';
+import { authorCards } from './calibration.js';
+import { levelParts, type CoefficientSlice } from './level-parts.js';
+import { ratioSampling } from './ratio-samples.js';
+import { median, round } from './statistics.js';
+
+export type { CoefficientSlice } from './level-parts.js';
+
+/** The spread of the ratio in logarithms the pessimistic coefficient reserves for: a factor of 2 at one task. */
+const SIGMA = Math.log(2);
 
 export interface ApplicableCoefficient {
-  /** The median of the slice: what the hours of every part are multiplied by. */
+  /** What the optimistic and most likely hours of every part are multiplied by. */
   readonly value: number;
-  readonly slice: { readonly kind: 'type' | 'stack'; readonly key: string };
+  /** What the pessimistic hours are multiplied by: a reserve while the tasks are few. */
+  readonly pessimistic: number;
+  /** The deepest level with tasks: the one the coefficient comes from. */
+  readonly slice: CoefficientSlice;
+  /** Tasks of that level. */
   readonly n: number;
+  /** The weight of its own median against the level above. */
+  readonly weight: number;
+}
+
+/** Whose coefficient, for what estimate: a new one, or a revision of a task in progress (`revise`). */
+export interface CoefficientQuery {
+  readonly author: string;
+  /** Earlier ids of the author: their cards are the author's. */
+  readonly aliases?: ReadonlyMap<string, string>;
+  readonly estimate: EstimateQuery;
+  readonly revise?: boolean;
 }
 
 /**
- * The coefficient an estimate may apply (calibration-query spec): the first
- * slice with enough tasks — by type, then by the technology with the most
- * tasks. The overall slice mixes every type and stack, so it is never applied.
- * A new estimate takes the main ratio; a revision of a task in progress, `revised`.
+ * The coefficient an estimate may apply (calibration-query spec), from all the
+ * cards: the author's are taken as calibration takes them (`authorCards`).
+ * Going down the levels (`levelParts`), each part shrinks towards the level
+ * above in logarithms by the weight of its own tasks; the overall part towards
+ * 1, an empty part equals the level above. The deepest level is applied: its
+ * part is its whole slice. A new estimate takes the main ratio; a revision of
+ * a task in progress, `revised`.
  */
 export function applicableCoefficient(
-  author: AuthorCalibration | undefined,
-  query: { readonly type?: string; readonly stack: StackLabels; readonly revise?: boolean },
+  cards: readonly Card[],
+  query: CoefficientQuery,
+  policy: CalibrationPolicy,
 ): ApplicableCoefficient | null {
-  if (author === undefined) {
+  const own = authorCards(cards, query.author, query.aliases);
+  const parts = levelParts(ratioSampling(own, query.revise === true), query.estimate, policy);
+  const applied = parts.at(-1);
+  if (applied === undefined) {
     return null;
   }
-  const slices = query.revise ? author.revised : author.ratio;
-  const usable = (stats: RatioStats | undefined): stats is RatioStats & { median: number } =>
-    stats?.applicable === true && stats.median !== null;
-  const byType = query.type === undefined ? undefined : slices.byType[query.type];
-  if (query.type !== undefined && usable(byType)) {
-    return { value: byType.median, slice: { kind: 'type', key: query.type }, n: byType.n };
+  let logarithm = 0;
+  for (const part of parts) {
+    const middle = median(part.ratios);
+    if (middle !== null) {
+      const weight = policy.partWeight(part.ratios.length);
+      logarithm = weight * Math.log(middle) + (1 - weight) * logarithm;
+    }
   }
-  const stacks = query.stack.values
-    .flatMap((key) => {
-      const stats = slices.byStack[key];
-      return usable(stats) ? [{ key, stats }] : [];
-    })
-    .sort((a, b) => b.stats.n - a.stats.n || a.key.localeCompare(b.key));
-  const best = stacks[0];
-  return best === undefined ? null : { value: best.stats.median, slice: { kind: 'stack', key: best.key }, n: best.stats.n };
+  const n = applied.ratios.length;
+  const value = Math.exp(logarithm);
+  const upper = value * Math.exp(SIGMA / Math.sqrt(n));
+  return {
+    value: round(value),
+    pessimistic: round(value < 1 ? Math.min(1, upper) : upper),
+    slice: applied.slice,
+    n,
+    weight: round(policy.partWeight(n)),
+  };
 }

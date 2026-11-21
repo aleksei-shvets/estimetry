@@ -33,7 +33,7 @@ To update later: `npm install -g estimetry@latest`, then `emt upgrade` once (see
 
 The skills are the same in both tools: Claude Code calls them as `/emt-…`, Codex as `$emt-…` (`$emt-estimate`, `$emt-start`). This README names them the Claude Code way.
 
-Every closed task makes the next estimate more grounded: `emt similar` finds past tasks like the new one, and `emt calibrate` gives your own coefficient once there are enough of them.
+Every closed task makes the next estimate more grounded: `emt similar` finds past tasks like the new one, and `emt calibrate` gives your own coefficient from the first closed task, more confident with every next one.
 
 ## Help
 
@@ -134,8 +134,10 @@ emt calibrate --type feature --revise     # for a revision of a task in progress
 ```
 
 - **Similarity** weighs the shared technologies (half), the type of the first estimate and, with `--hours`, the size. Each task shows what its similarity is made of. Without `--stack`, the stack of the project counts.
-- **The coefficient** is the median of fact over estimate of the first slice with enough closed tasks: by type, then by technology. The overall slice mixes every kind of work and is shown for reference only. With fewer tasks than `calibration.minTasks` (5 by default) the estimate is **without calibration**, and the agent says so.
-- **A calibrated estimate** multiplies all three numbers of every part by the coefficient and records it (`calibrated: true`, `calibration.coefficient`), so the next coefficient is computed from the estimate before it. A reserve goes only into the pessimistic hours: extra work you absorbed is already in the coefficient.
+- **The coefficient** comes from the first closed task. It is the median of fact over estimate, shrunk towards 1 with the weight n / (n + k), `k` being `calibration.shrink` (2 by default): one task weighs ⅓, two ½, six ¾. The slices form a chain: all your tasks, the technology of the query with the most tasks, the task type. Each is shrunk towards the one above by the tasks no deeper slice holds, so every task counts once, and the deepest one applies. `emt calibrate` names the slice, the number of tasks and the weight; below 50% the agent tells you the coefficient is still cautious.
+- **The pessimistic coefficient**, `c · e^(ln 2 / √n)`, keeps a reserve while the tasks are few; while your estimates run high (`c < 1`) it is at most 1.
+- **Without calibration** the estimate is only when no task is closed yet, every closed task is left out or has no estimate, there are fewer than your `calibration.minTasks`, or some cards come from a newer estimetry. `emt calibrate` says which, and the agent tells you.
+- **A calibrated estimate** multiplies the optimistic and most likely hours of every part by the coefficient and the pessimistic hours by the pessimistic coefficient, and records both (`calibrated: true`, `calibration.coefficient`, `calibration.pessimistic`), so the next coefficient is computed from the estimate before it. A reserve goes only into the pessimistic hours, on top of that: extra work you absorbed is already in the coefficient.
 - **Nothing is written** by `emt similar` and `emt calibrate`; `calibration.json` is updated by closings and `emt rebuild`.
 - **A changed email.** Calibration is personal, by `author.id` in `config.yaml`. List earlier ids so that their cards stay yours:
 
@@ -309,12 +311,52 @@ Names, descriptions and the retro sit in a separate `text` section of the card, 
 - how well the code volume was forecast;
 - which kinds of parts run over.
 
-A coefficient based on fewer than 5 tasks is shown but not applied. Set the minimum in `config.yaml`:
+Every slice has a weight, n / (n + k), next to its median and mean (see [Estimating a task](#estimating-a-task) for how the coefficient is built from them):
+
+```json
+{
+  "schemaVersion": 3,
+  "minTasks": 1,
+  "shrink": 2,
+  "authors": {
+    "you@example.com": {
+      "tasks": 4,
+      "ratio": {
+        "overall": { "n": 4, "median": 0.5, "mean": 0.55, "weight": 0.667 },
+        "byType": { "feature": { "n": 3, "median": 0.6, "mean": 0.62, "weight": 0.6 } }
+      }
+    }
+  }
+}
+```
+
+**Settings.** Two settings in `~/.local/share/estimetry/config.yaml` (under `ESTIMETRY_HOME` if you set it) decide how soon calibration starts and how strongly it acts:
 
 ```yaml
 calibration:
-  minTasks: 5
+  minTasks: 1   # a slice counts from this many closed tasks; below it in all your tasks, no coefficient
+  shrink: 2     # k in n / (n + k): larger is more cautious, 0 applies the median as it is
 ```
+
+Setting `minTasks` without `shrink` means `shrink: 0`: a threshold you chose yourself keeps the coefficient it gave.
+
+**What to expect.** Say every closed task took half of its estimate (fact over estimate 0.5), all of one type and technology. The coefficient and the pessimistic coefficient after 1, 3, 5 and 10 closed tasks (— is without calibration):
+
+| Settings | 1 task | 3 tasks | 5 tasks | 10 tasks |
+|---|---|---|---|---|
+| default: `minTasks: 1`, `shrink: 2` | ×0.79 / ×1.00 | ×0.66 / ×0.98 | ×0.61 / ×0.83 | ×0.56 / ×0.70 |
+| faster: `shrink: 1` | ×0.71 / ×1.00 | ×0.59 / ×0.89 | ×0.56 / ×0.77 | ×0.53 / ×0.66 |
+| more cautious: `shrink: 5` | ×0.89 / ×1.00 | ×0.77 / ×1.00 | ×0.71 / ×0.96 | ×0.63 / ×0.78 |
+| later start: `minTasks: 3`, `shrink: 2` | — | ×0.66 / ×0.98 | ×0.61 / ×0.83 | ×0.56 / ×0.70 |
+| as in 0.2: `minTasks: 5` | — | — | ×0.50 / ×0.68 | ×0.50 / ×0.62 |
+| the median as it is: `shrink: 0` | ×0.50 / ×1.00 | ×0.50 / ×0.75 | ×0.50 / ×0.68 | ×0.50 / ×0.62 |
+
+- The coefficient moves from 1 towards your median as tasks close; `shrink` sets how fast. The pessimistic coefficient stays at 1 while there is little experience and comes down to the coefficient with it.
+- When your estimates run low, nothing caps the pessimistic coefficient: with fact over estimate 1.5 the default gives ×1.14 / ×2.29 after one task and ×1.40 / ×1.75 after ten.
+- With tasks of several types and technologies the coefficient comes from the chain of slices: the tasks of the type weigh by their number, your other tasks fill in the rest of the weight, and what is still missing stays at 1.
+- `minTasks: 5` gives the coefficient of earlier versions wherever they gave one, with two differences. When neither the type nor a technology has 5 tasks, the median of all your tasks applies, where earlier versions gave none. The pessimistic hours are multiplied by the pessimistic coefficient, not by the coefficient, so they keep a reserve earlier versions did not give.
+
+**Changing them.** Edit `config.yaml` and run `emt calibrate --type <type> --stack <a,b>`: it computes from your cards at once and names the coefficient, the slice, the number of tasks and the weight. Estimates already saved keep their coefficient. `calibration.json` follows at the next closing or with `emt rebuild`, which also rewrites a `calibration.json` of an earlier schema.
 
 Tasks in parallel mode count with their sequential equivalent. Abandoned tasks and tasks with manual time only are left out.
 
