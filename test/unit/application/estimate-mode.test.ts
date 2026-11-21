@@ -122,11 +122,11 @@ describe('emt calibrate', () => {
     expect(app.estimates.calibration({ type: 'feature' })).toMatchObject({ coefficient: null, skipped: ['T-9'] });
   });
 
-  it('with the default policy the coefficient comes from the first task', () => {
+  it('with the default policy the coefficient comes from the first task, counted once in all its levels', () => {
     policy = CalibrationPolicy.DEFAULT;
     put(syntheticCard({ id: 'T-1', ratio: 0.5 }));
     const view = app.estimates.calibration({ type: 'feature', stack: [] });
-    expect(view).toMatchObject({ minTasks: 1, shrink: 2, coefficient: { value: 0.68, pessimistic: 1, n: 1, weight: 0.333 } });
+    expect(view).toMatchObject({ minTasks: 1, shrink: 2, coefficient: { value: 0.794, pessimistic: 1, n: 1, weight: 0.333 } });
     expect(view.coefficient?.slice).toEqual({ kind: 'type', key: 'feature' });
   });
 

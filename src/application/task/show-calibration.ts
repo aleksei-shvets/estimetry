@@ -91,7 +91,7 @@ export class ShowCalibration {
       coefficient:
         skipped.length > 0
           ? null
-          : applicableCoefficient(mine, { ...(type === undefined ? {} : { type }), stack: query.stack, revise }, policy),
+          : applicableCoefficient(own, { ...(type === undefined ? {} : { type }), stack: query.stack, revise }, policy),
       minTasks: policy.minTasks,
       shrink: policy.shrink,
       tasks: mine?.tasks ?? 0,

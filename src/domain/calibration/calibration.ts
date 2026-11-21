@@ -1,6 +1,7 @@
 import type { Card } from '../card/card.js';
 import { stackLabels } from '../estimate/stack-labels.js';
-import { exclusion, ratioOf, revisedExclusion, revisedRatioOf, type Exclusion } from './task-ratio.js';
+import type { Exclusion } from './task-ratio.js';
+import { ratioSampling, type RatioSample, type RatioSampling } from './ratio-samples.js';
 import { EXTRA_CATEGORIES, type ExtraAccounting, type ExtraCategory } from '../measurement/extra.js';
 import {
   isRevised,
@@ -88,11 +89,6 @@ export interface Calibration {
   readonly authors: Readonly<Record<string, AuthorCalibration>>;
 }
 
-interface Sample {
-  readonly card: Card;
-  readonly ratio: number;
-}
-
 /** Calibration from the cards of closed tasks, by author (design §10, calibration spec). */
 export function calibrate(
   all: readonly Card[],
@@ -122,17 +118,16 @@ export function normalized(cards: readonly Card[], aliases: ReadonlyMap<string, 
 
 function forAuthor(cards: readonly Card[], byId: ReadonlyMap<string, Card>, policy: CalibrationPolicy): AuthorCalibration {
   const estimated = cards.filter((card) => card.estimate !== null);
-  const main = sampled(estimated, exclusion, ratioOf);
-  const revisedCards = estimated.filter(isRevised);
-  const later = sampled(revisedCards, revisedExclusion, revisedRatioOf);
+  const main = ratioSampling(cards, false);
+  const later = ratioSampling(cards, true);
   const kept = main.samples.map((sample) => sample.card);
   // Rolled back work leaves lines that say nothing about the volume of the task.
   const volumeCards = kept.filter((card) => !hasExclude(card) && !(card.convertedFrom === 1 && card.revised));
   const volumeExcluded = kept.length - volumeCards.length;
   return {
     tasks: cards.length,
-    ratio: slices(main, (card) => card.estimate?.type, (samples, reasons) => ratioStats(samples, reasons, policy)),
-    revised: slices(later, (card) => card.currentEstimate?.type, (samples, reasons) => ({
+    ratio: slices(main, (samples, reasons) => ratioStats(samples, reasons, policy)),
+    revised: slices(later, (samples, reasons) => ({
       ...ratioStats(samples, reasons, policy, (card) => card.fact.counted.uncertaintyShare),
       countedAtShare: median(
         samples.flatMap(({ card }) => {
@@ -158,39 +153,10 @@ function hasExclude(card: Card): boolean {
   return card.revisions.some((revision) => revision.spent === 'exclude');
 }
 
-interface Sampled {
-  readonly samples: readonly Sample[];
-  readonly excluded: readonly { readonly card: Card; readonly reason: Exclusion }[];
-}
-
-function sampled(
-  cards: readonly Card[],
-  exclude: (card: Card) => Exclusion | undefined,
-  ratio: (card: Card) => number | undefined,
-): Sampled {
-  const samples: Sample[] = [];
-  const excluded: { card: Card; reason: Exclusion }[] = [];
-  for (const card of cards) {
-    const reason = exclude(card);
-    if (reason !== undefined) {
-      excluded.push({ card, reason });
-      continue;
-    }
-    const value = ratio(card);
-    if (value === undefined) {
-      excluded.push({ card, reason: 'renegotiated-without-groups' });
-    } else {
-      samples.push({ card, ratio: value });
-    }
-  }
-  return { samples, excluded };
-}
-
 /** Overall, by type and by each technology of the stack. */
 function slices<T>(
-  sampled: Sampled,
-  typeOf: (card: Card) => string | undefined,
-  stats: (samples: readonly Sample[], reasons: readonly Exclusion[]) => T,
+  sampled: RatioSampling,
+  stats: (samples: readonly RatioSample[], reasons: readonly Exclusion[]) => T,
 ): { overall: T; byType: Record<string, T>; byStack: Record<string, T> } {
   const all = [...sampled.samples.map((s) => s.card), ...sampled.excluded.map((e) => e.card)];
   const slice = (keep: (card: Card) => boolean): T =>
@@ -198,6 +164,7 @@ function slices<T>(
       sampled.samples.filter((sample) => keep(sample.card)),
       sampled.excluded.filter((item) => keep(item.card)).map((item) => item.reason),
     );
+  const typeOf = sampled.typeOf;
   const types = [...new Set(all.flatMap((card) => typeOf(card) ?? []))].sort();
   const stacks = [...new Set(all.flatMap((card) => card.task.stack))].sort();
   return {
@@ -244,7 +211,7 @@ function revisionStats(cards: readonly Card[]): AuthorCalibration['revisions'] {
 }
 
 function ratioStats(
-  samples: readonly Sample[],
+  samples: readonly RatioSample[],
   reasons: readonly Exclusion[],
   policy: CalibrationPolicy,
   uncertaintyOf: (card: Card) => number | null = (card) => card.fact.uncertaintyShare,

@@ -58,7 +58,7 @@ describe('emt calibrate', () => {
     cards(...six());
     const text = await emt('calibrate', '--type', 'feature', '--stack', 'typescript');
     expect(text.code).toBe(0);
-    expect(text.stdout).toMatch(/^Coefficient ×1\.25 from 6 tasks \(weight 75%\), slice type feature; pessimistic ×1\.65 \(first estimates\)/);
+    expect(text.stdout).toMatch(/^Coefficient ×1\.18 from 6 tasks \(weight 75%\), slice type feature; pessimistic ×1\.57 \(first estimates\)/);
     const json = await emt('calibrate', '--type', 'feature', '--stack', 'typescript', '--json');
     expect(JSON.parse(json.stdout)).toMatchSnapshot();
     expect(existsSync(join(cli.home, 'calibration.json'))).toBe(false);
@@ -67,7 +67,7 @@ describe('emt calibrate', () => {
   it('without closed tasks, below a threshold chosen in config.yaml, and with --revise when nothing was revised', async () => {
     expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Without calibration: no closed task yet\./);
     cards(...six().slice(0, 2));
-    expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Coefficient ×1\.04 from 2 tasks \(weight 50%\), slice type feature;/);
+    expect((await emt('calibrate', '--type', 'feature')).stdout).toMatch(/^Coefficient ×1\.02 from 2 tasks \(weight 50%\), slice type feature;/);
     writeFileSync(
       join(cli.home, 'config.yaml'),
       stringify({ schemaVersion: 1, author: { id: 'dev@example.com' }, calibration: { minTasks: 5 } }),

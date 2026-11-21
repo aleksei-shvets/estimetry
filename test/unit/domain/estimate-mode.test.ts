@@ -1,7 +1,7 @@
 import { StackLabels } from '../../../src/domain/estimate/stack-labels.js';
 import { describe, expect, it } from 'vitest';
 import { applicableCoefficient } from '../../../src/domain/calibration/applicable-coefficient.js';
-import { calibrate, type AuthorCalibration } from '../../../src/domain/calibration/calibration.js';
+import { calibrate, normalized, type AuthorCalibration } from '../../../src/domain/calibration/calibration.js';
 import { CalibrationPolicy } from '../../../src/domain/calibration/calibration-policy.js';
 import type { Card } from '../../../src/domain/card/card.js';
 import { Estimate } from '../../../src/domain/estimate/estimate.js';
@@ -90,7 +90,7 @@ describe('applicable coefficient', () => {
     policy: CalibrationPolicy = CalibrationPolicy.DEFAULT,
   ) =>
     applicableCoefficient(
-      calibrate(cards, { policy }).authors[ME],
+      normalized(cards).filter((card) => card.author === ME),
       { ...(query.type === undefined ? {} : { type: query.type }), stack: StackLabels.of(query.stack ?? []), ...(query.revise ? { revise: true } : {}) },
       policy,
     );
@@ -114,32 +114,60 @@ describe('applicable coefficient', () => {
 
   it('no task, no coefficient', () => {
     expect(coefficient([])).toBeNull();
-    expect(applicableCoefficient(undefined, { stack: StackLabels.of([]) }, CalibrationPolicy.DEFAULT)).toBeNull();
+    expect(coefficient([syntheticCard({ id: 'T-1', author: 'someone@example.com' })])).toBeNull();
   });
 
-  it('the type shrinks towards the overall level when the stack has nothing', () => {
-    expect(coefficient(ratios(0.41, 0.13, 0.56), { type: 'feature' })).toEqual({
-      value: 0.473,
-      pessimistic: 0.706,
+  it('a task counts once however many levels hold it: the same as one level of n / (n + k)', () => {
+    const one = [syntheticCard({ id: 'T-1', type: 'feature', stack: ['typescript'], ratio: 0.5 })];
+    const three = [0.41, 0.13, 0.56].map((ratio, i) => syntheticCard({ id: `T-${i}`, type: 'feature', stack: ['typescript'], ratio }));
+    for (const query of [{}, { stack: ['typescript'] }, { type: 'feature' }, { type: 'feature', stack: ['typescript'] }]) {
+      expect(coefficient(one, query)).toMatchObject({ value: 0.794, pessimistic: 1, n: 1, weight: 0.333 });
+      expect(coefficient(three, query)).toMatchObject({ value: 0.586, pessimistic: 0.874, n: 3, weight: 0.6 });
+    }
+    expect(coefficient(three, { type: 'feature', stack: ['typescript'] })?.slice).toEqual({ kind: 'type', key: 'feature' });
+    expect(coefficient(three.slice(0, 2), { type: 'feature', stack: ['typescript'] })).toMatchObject({ value: 0.52, pessimistic: 0.848, n: 2 });
+  });
+
+  it('tasks are split between the levels: the deepest takes all of its own, each level above only the rest', () => {
+    const cards = [
+      syntheticCard({ id: 'T-1', type: 'feature', stack: ['javascript', 'typescript'], base: 100, ratio: 0.409 }),
+      syntheticCard({ id: 'T-2', type: 'feature', stack: ['typescript'], ratio: 0.13 }),
+      syntheticCard({ id: 'T-3', type: 'feature', stack: ['typescript'], ratio: 0.56 }),
+      syntheticCard({ id: 'T-4', type: 'integration', stack: ['typescript'], ratio: 0.24 }),
+    ];
+    expect(coefficient(cards, { type: 'feature', stack: ['typescript'] })).toEqual({
+      value: 0.483,
+      pessimistic: 0.721,
       slice: { kind: 'type', key: 'feature' },
       n: 3,
       weight: 0.6,
     });
+    expect(coefficient(cards, { type: 'integration', stack: ['typescript'] })).toEqual({
+      value: 0.435,
+      pessimistic: 0.869,
+      slice: { kind: 'type', key: 'integration' },
+      n: 1,
+      weight: 0.333,
+    });
+    const byStack = { value: 0.473, pessimistic: 0.669, slice: { kind: 'stack', key: 'typescript' }, n: 4, weight: 0.667 };
+    expect(coefficient(cards, { stack: ['typescript'] })).toEqual(byStack);
+    expect(coefficient(cards, { type: 'bugfix', stack: ['typescript'] })).toEqual(byStack);
+    expect(coefficient(cards, { type: 'feature', stack: ['typescript'] }, STRICT)).toBeNull();
   });
 
-  it('levels shrink in a chain: overall to 1, technology to overall, type to technology', () => {
+  it('levels in a chain: overall to 1, technology to overall, type to technology, each by its own tasks', () => {
     const cards = [...sample(2, { stack: ['typescript'], ratio: 0.5 }), ...sample(2, { type: 'bugfix', stack: ['go'], ratio: 2 })];
     expect(coefficient(cards)).toMatchObject({ value: 1.16, slice: { kind: 'overall' }, n: 4 });
-    expect(coefficient(cards, { stack: ['typescript'] })).toMatchObject({ value: 0.762, slice: { kind: 'stack', key: 'typescript' }, n: 2 });
+    expect(coefficient(cards, { stack: ['typescript'] })).toMatchObject({ value: 0.841, slice: { kind: 'stack', key: 'typescript' }, n: 2 });
     expect(coefficient(cards, { type: 'feature', stack: ['typescript'] })).toEqual({
-      value: 0.617,
+      value: 0.841,
       pessimistic: 1,
       slice: { kind: 'type', key: 'feature' },
       n: 2,
       weight: 0.5,
     });
-    expect(coefficient(cards, { type: 'feature' })).toMatchObject({ value: 0.762, slice: { kind: 'type', key: 'feature' } });
-    expect(coefficient(cards, { type: 'research', stack: ['go'] })).toMatchObject({ slice: { kind: 'stack', key: 'go' }, n: 2 });
+    expect(coefficient(cards, { type: 'feature' })).toMatchObject({ value: 0.841, slice: { kind: 'type', key: 'feature' } });
+    expect(coefficient(cards, { type: 'research', stack: ['go'] })).toMatchObject({ value: 1.189, slice: { kind: 'stack', key: 'go' }, n: 2 });
   });
 
   it('strict mode: the type first, then the technology with the most tasks, alphabetically on a tie', () => {

@@ -19,12 +19,12 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
   },
   "coefficient": {
     "n": 6,
-    "pessimistic": 1.653,
+    "pessimistic": 1.569,
     "slice": {
       "key": "feature",
       "kind": "type",
     },
-    "value": 1.246,
+    "value": 1.182,
     "weight": 0.75,
   },
   "extras": {

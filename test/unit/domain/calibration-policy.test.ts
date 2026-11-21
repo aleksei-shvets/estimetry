@@ -26,4 +26,10 @@ describe('calibration policy', () => {
     expect([4, 5, 12].map((n) => strict.weight(n))).toEqual([0, 1, 1]);
     expect(CalibrationPolicy.fromConfig({ minTasks: 3, shrink: 1 }).weight(2)).toBe(0);
   });
+
+  it('the weight of the own tasks of a level ignores the threshold, and is 0 without tasks even with k = 0', () => {
+    const strict = CalibrationPolicy.fromConfig({ minTasks: 5 });
+    expect([0, 1, 4].map((n) => strict.partWeight(n))).toEqual([0, 1, 1]);
+    expect([0, 1, 2].map((n) => CalibrationPolicy.DEFAULT.partWeight(n))).toEqual([0, 1 / 3, 0.5]);
+  });
 });

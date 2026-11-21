@@ -27,6 +27,14 @@ export class CalibrationPolicy {
 
   /** The weight of the observations of a slice of n tasks: 0 below `minTasks`. */
   weight(n: number): number {
-    return n < this.minTasks ? 0 : n / (n + this.shrink);
+    return n < this.minTasks ? 0 : this.partWeight(n);
+  }
+
+  /**
+   * The weight of the own tasks of a level in the chain, n / (n + k), without
+   * the threshold: `minTasks` is checked on the whole slice. 0 without tasks.
+   */
+  partWeight(n: number): number {
+    return n === 0 ? 0 : n / (n + this.shrink);
   }
 }
