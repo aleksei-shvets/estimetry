@@ -4,6 +4,8 @@ All notable changes to estimetry. Versions follow [semantic versioning](https://
 
 ## Unreleased
 
+## 0.3.0 — 2026-11-22
+
 - **Calibration from the first closed task.** The coefficient an estimate applies is the median of fact over estimate shrunk towards 1 with the weight n / (n + k) (`calibration.shrink`, 2 by default), instead of nothing until a slice has 5 tasks. The slices form a chain — all your tasks, the technology of the query with the most tasks, the task type — each shrunk towards the one above by the tasks no deeper slice holds, so every task counts once; the deepest applies, and the overall slice now counts too. `emt calibrate` names the slice, the number of tasks and the weight.
 - **Pessimistic coefficient.** `c · e^(ln 2 / √n)`, at most 1 while your estimates run high: the agent multiplies the pessimistic hours by it and the optimistic and most likely hours by the coefficient. The estimate file takes it as `calibration.pessimistic`; the base calibration compares with is still likely over the coefficient.
 - **Without calibration** an estimate is now only when no task is closed yet, every closed task is left out or has no estimate, there are fewer tasks than your `calibration.minTasks`, or some cards come from a newer estimetry; `emt calibrate` says which.
