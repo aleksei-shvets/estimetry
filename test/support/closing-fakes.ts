@@ -1,3 +1,4 @@
+import { CalibrationPolicy } from '../../src/domain/calibration/calibration-policy.js';
 import type { SessionLogRead, SessionLogReader, SessionLogRequest, SessionLogResult } from '../../src/application/contracts/session-logs.js';
 import type { SessionLogFingerprint } from '../../src/application/ports/log-import-state.js';
 import type { LogImportEntry, LogImportState } from '../../src/application/ports/log-import-state.js';
@@ -185,7 +186,7 @@ function defaults() {
   return {
     cards: new InMemoryCardStore(),
     calibration: new InMemoryCalibrationStore(),
-    settings: { minTasks: () => 5, authorAliases: (): readonly string[] => [] },
+    settings: { policy: () => CalibrationPolicy.fromConfig({ minTasks: 5 }), authorAliases: (): readonly string[] => [] },
     proposals: new InMemoryCloseProposals(),
     code: git,
     head: git,

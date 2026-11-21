@@ -1,3 +1,4 @@
+import { CalibrationPolicy } from '../../../src/domain/calibration/calibration-policy.js';
 import { InMemoryInstallVersions } from '../../support/in-memory-files.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createEstimetry, type Estimetry } from '../../../src/application/estimetry.js';
@@ -27,13 +28,16 @@ const ROOT = '/work/api';
 let closing: ReturnType<typeof fakeClosing>;
 let projects: InMemoryProjectRepository;
 let aliases: string[];
+let policy: CalibrationPolicy;
+const STRICT = CalibrationPolicy.fromConfig({ minTasks: 5 });
 let app: Estimetry;
 
 beforeEach(() => {
   const files = new InMemoryProjectFiles();
   const tasks = new InMemoryTaskRepository();
   aliases = [];
-  closing = fakeClosing({ settings: { minTasks: () => 5, authorAliases: () => aliases } });
+  policy = STRICT;
+  closing = fakeClosing({ settings: { policy: () => policy, authorAliases: () => aliases } });
   projects = new InMemoryProjectRepository();
   app = createEstimetry({
     tasks,
@@ -96,10 +100,10 @@ describe('emt calibrate', () => {
   it('gives the applicable coefficient with the slices of the query, and an empty slice for an unknown label', () => {
     put(...six());
     const view = app.estimates.calibration({ type: 'feature', stack: ['flutter', 'bloc'] });
-    expect(view.coefficient).toEqual({ value: 1.3, slice: { kind: 'type', key: 'feature' }, n: 6 });
-    expect(view.ratio.byStack['bloc']).toMatchObject({ n: 0, applicable: false });
-    expect(view.ratio.byType['feature']?.n).toBe(6);
-    expect(view).toMatchObject({ schemaVersion: 1, minTasks: 5, tasks: 6 });
+    expect(view.coefficient).toEqual({ value: 1.3, pessimistic: 1.725, slice: { kind: 'type', key: 'feature' }, n: 6, weight: 1 });
+    expect(view.ratio.byStack['bloc']).toMatchObject({ n: 0, weight: 0 });
+    expect(view.ratio.byType['feature']).toMatchObject({ n: 6, weight: 1 });
+    expect(view).toMatchObject({ schemaVersion: 2, minTasks: 5, shrink: 0, tasks: 6 });
   });
 
   it('writes nothing: neither calibration.json nor a card of schema 1', () => {
@@ -116,6 +120,14 @@ describe('emt calibrate', () => {
     put(...six());
     closing.cards.others.set('T-9', { schema: 'newer', task: TaskId.parse('T-9'), version: 4 });
     expect(app.estimates.calibration({ type: 'feature' })).toMatchObject({ coefficient: null, skipped: ['T-9'] });
+  });
+
+  it('with the default policy the coefficient comes from the first task', () => {
+    policy = CalibrationPolicy.DEFAULT;
+    put(syntheticCard({ id: 'T-1', ratio: 0.5 }));
+    const view = app.estimates.calibration({ type: 'feature', stack: [] });
+    expect(view).toMatchObject({ minTasks: 1, shrink: 2, coefficient: { value: 0.68, pessimistic: 1, n: 1, weight: 0.333 } });
+    expect(view.coefficient?.slice).toEqual({ kind: 'type', key: 'feature' });
   });
 
   it('without enough tasks there is no coefficient', () => {

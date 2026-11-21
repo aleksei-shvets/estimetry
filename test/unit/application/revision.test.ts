@@ -242,7 +242,7 @@ describe('revising the estimate', () => {
       fact: { totalMinutes: 70, counted: { totalMinutes: 20 } },
       revisions: [{ spent: 'exclude', lostMinutes: 50, countedAtMinutes: 20 }],
     });
-    expect(closing.calibration.current?.schemaVersion).toBe(2);
+    expect(closing.calibration.current?.schemaVersion).toBe(3);
   });
 
   it('in parallel mode the work of the window is measured as the sequential equivalent, like the main ratio', () => {

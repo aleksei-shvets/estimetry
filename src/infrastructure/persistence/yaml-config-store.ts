@@ -1,7 +1,7 @@
 import type { AuthorProvider } from '../../application/ports/author-provider.js';
 import type { CalibrationSettings } from '../../application/ports/calibration-settings.js';
 import type { MeasurementSettings } from '../../application/ports/measurement-settings.js';
-import { DEFAULT_MIN_TASKS } from '../../domain/calibration/calibration.js';
+import { CalibrationPolicy } from '../../domain/calibration/calibration-policy.js';
 import { isShareMode, type ShareMode, type SharingPreference } from '../../application/ports/sharing-preference.js';
 import type { TaskTypeCatalog } from '../../application/ports/task-type-catalog.js';
 import { IdlePolicy } from '../../domain/measurement/idle-policy.js';
@@ -70,12 +70,12 @@ export class YamlConfigStore implements AuthorProvider, TaskTypeCatalog, Measure
     };
   }
 
-  /** `calibration.minTasks`: a whole number ≥ 1, 5 by default; anything else gives the default. */
-  minTasks(): number {
+  /** `calibration.minTasks` and `calibration.shrink`; a value that is not a number counts as not given. */
+  policy(): CalibrationPolicy {
     const calibration = this.read()['calibration'];
-    const value =
-      typeof calibration === 'object' && calibration !== null ? (calibration as Record<string, unknown>)['minTasks'] : undefined;
-    return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : DEFAULT_MIN_TASKS;
+    const settings = typeof calibration === 'object' && calibration !== null ? (calibration as Record<string, unknown>) : {};
+    const number = (value: unknown): number | undefined => (typeof value === 'number' ? value : undefined);
+    return CalibrationPolicy.fromConfig({ minTasks: number(settings['minTasks']), shrink: number(settings['shrink']) });
   }
 
   /** `author.aliases`: strings other than the author's own id; anything but a list counts as none. */

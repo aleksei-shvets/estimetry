@@ -1,3 +1,4 @@
+import { CalibrationPolicy } from '../../../src/domain/calibration/calibration-policy.js';
 import { describe, expect, it } from 'vitest';
 import { buildCard } from '../../../src/domain/card/build-card.js';
 import type { Card } from '../../../src/domain/card/card.js';
@@ -432,11 +433,16 @@ describe('card', () => {
 });
 
 describe('calibration', () => {
-  it('takes the median by type and applies it from five tasks', () => {
+  it('takes the median by type and weighs a slice by its tasks', () => {
     const cards = [1.0, 1.1, 1.2, 1.3, 3.0].map((r) => closedCard({ likely: 10, minutes: r * 600 }));
-    const author = calibrate(cards).authors['dev@example.com'];
-    expect(author?.ratio.byType['feature']).toMatchObject({ n: 5, median: 1.2, applicable: true });
-    expect(calibrate(cards.slice(0, 3)).authors['dev@example.com']?.ratio.overall.applicable).toBe(false);
+    const calibration = calibrate(cards);
+    expect(calibration).toMatchObject({ schemaVersion: 3, minTasks: 1, shrink: 2 });
+    expect(calibration.authors['dev@example.com']?.ratio.byType['feature']).toMatchObject({ n: 5, median: 1.2, weight: 0.714 });
+    expect(calibrate(cards.slice(0, 1)).authors['dev@example.com']?.ratio.overall.weight).toBe(0.333);
+    const strict = calibrate(cards.slice(0, 3), { policy: CalibrationPolicy.fromConfig({ minTasks: 5 }) });
+    expect(strict).toMatchObject({ minTasks: 5, shrink: 0 });
+    expect(strict.authors['dev@example.com']?.ratio.overall.weight).toBe(0);
+    expect(strict.authors['dev@example.com']?.revised.overall.weight).toBe(0);
     expect(median([1.0, 1.2, 1.4, 2.0])).toBe(1.3);
   });
 

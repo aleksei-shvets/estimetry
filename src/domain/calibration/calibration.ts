@@ -12,12 +12,12 @@ import {
   type VolumeStats,
 } from './code-and-parts.js';
 import { median, round } from './statistics.js';
+import { CalibrationPolicy } from './calibration-policy.js';
 
 export type { Exclusion } from './task-ratio.js';
 
-/** 2: the sections of revised tasks and revisions (estimate-revision-cards); readers check the version. */
-export const CALIBRATION_SCHEMA_VERSION = 2;
-export const DEFAULT_MIN_TASKS = 5;
+/** 3: the weight of a slice instead of `applicable`, and `shrink` (dynamic-calibration); readers check the version. */
+export const CALIBRATION_SCHEMA_VERSION = 3;
 const UNCERTAINTY_LIMIT = 0.05;
 
 /** One slice of the ratio fact / estimate. */
@@ -25,8 +25,8 @@ export interface RatioStats {
   readonly n: number;
   readonly median: number | null;
   readonly mean: number | null;
-  /** Enough tasks to apply the coefficient (§10). */
-  readonly applicable: boolean;
+  /** The weight of the slice in its coefficient, n / (n + shrink); 0 below `minTasks` (§10). */
+  readonly weight: number;
   readonly excluded: Readonly<Partial<Record<Exclusion, number>>>;
   readonly uncertain: number;
   readonly backgroundAgents: number;
@@ -84,6 +84,7 @@ export interface AuthorCalibration {
 export interface Calibration {
   readonly schemaVersion: number;
   readonly minTasks: number;
+  readonly shrink: number;
   readonly authors: Readonly<Record<string, AuthorCalibration>>;
 }
 
@@ -95,16 +96,16 @@ interface Sample {
 /** Calibration from the cards of closed tasks, by author (design §10, calibration spec). */
 export function calibrate(
   all: readonly Card[],
-  options: { readonly minTasks?: number; readonly aliases?: ReadonlyMap<string, string> } = {},
+  options: { readonly policy?: CalibrationPolicy; readonly aliases?: ReadonlyMap<string, string> } = {},
 ): Calibration {
-  const minTasks = options.minTasks ?? DEFAULT_MIN_TASKS;
+  const policy = options.policy ?? CalibrationPolicy.DEFAULT;
   const cards = normalized(all, options.aliases);
   const authors: Record<string, AuthorCalibration> = {};
   const byId = new Map(cards.map((card) => [card.task.id, card]));
   for (const author of [...new Set(cards.map((card) => card.author))].sort()) {
-    authors[author] = forAuthor(cards.filter((card) => card.author === author), byId, minTasks);
+    authors[author] = forAuthor(cards.filter((card) => card.author === author), byId, policy);
   }
-  return { schemaVersion: CALIBRATION_SCHEMA_VERSION, minTasks, authors };
+  return { schemaVersion: CALIBRATION_SCHEMA_VERSION, minTasks: policy.minTasks, shrink: policy.shrink, authors };
 }
 
 /**
@@ -119,7 +120,7 @@ export function normalized(cards: readonly Card[], aliases: ReadonlyMap<string, 
   }));
 }
 
-function forAuthor(cards: readonly Card[], byId: ReadonlyMap<string, Card>, minTasks: number): AuthorCalibration {
+function forAuthor(cards: readonly Card[], byId: ReadonlyMap<string, Card>, policy: CalibrationPolicy): AuthorCalibration {
   const estimated = cards.filter((card) => card.estimate !== null);
   const main = sampled(estimated, exclusion, ratioOf);
   const revisedCards = estimated.filter(isRevised);
@@ -130,9 +131,9 @@ function forAuthor(cards: readonly Card[], byId: ReadonlyMap<string, Card>, minT
   const volumeExcluded = kept.length - volumeCards.length;
   return {
     tasks: cards.length,
-    ratio: slices(main, (card) => card.estimate?.type, (samples, reasons) => ratioStats(samples, reasons, minTasks)),
+    ratio: slices(main, (card) => card.estimate?.type, (samples, reasons) => ratioStats(samples, reasons, policy)),
     revised: slices(later, (card) => card.currentEstimate?.type, (samples, reasons) => ({
-      ...ratioStats(samples, reasons, minTasks, (card) => card.fact.counted.uncertaintyShare),
+      ...ratioStats(samples, reasons, policy, (card) => card.fact.counted.uncertaintyShare),
       countedAtShare: median(
         samples.flatMap(({ card }) => {
           const at = card.revisions.at(-1)?.countedAtMinutes;
@@ -245,7 +246,7 @@ function revisionStats(cards: readonly Card[]): AuthorCalibration['revisions'] {
 function ratioStats(
   samples: readonly Sample[],
   reasons: readonly Exclusion[],
-  minTasks: number,
+  policy: CalibrationPolicy,
   uncertaintyOf: (card: Card) => number | null = (card) => card.fact.uncertaintyShare,
 ): RatioStats {
   const ratios = samples.map((sample) => sample.ratio);
@@ -257,7 +258,7 @@ function ratioStats(
     n: ratios.length,
     median: median(ratios),
     mean: ratios.length === 0 ? null : round(ratios.reduce((a, b) => a + b, 0) / ratios.length),
-    applicable: ratios.length >= minTasks,
+    weight: round(policy.weight(ratios.length)),
     excluded,
     uncertain: samples.filter((sample) => (uncertaintyOf(sample.card) ?? 0) > UNCERTAINTY_LIMIT).length,
     backgroundAgents: samples.filter((sample) => sample.card.backgroundAgents).length,

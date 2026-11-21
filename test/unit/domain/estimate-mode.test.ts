@@ -1,7 +1,9 @@
 import { StackLabels } from '../../../src/domain/estimate/stack-labels.js';
 import { describe, expect, it } from 'vitest';
 import { applicableCoefficient } from '../../../src/domain/calibration/applicable-coefficient.js';
-import { calibrate } from '../../../src/domain/calibration/calibration.js';
+import { calibrate, type AuthorCalibration } from '../../../src/domain/calibration/calibration.js';
+import { CalibrationPolicy } from '../../../src/domain/calibration/calibration-policy.js';
+import type { Card } from '../../../src/domain/card/card.js';
 import { Estimate } from '../../../src/domain/estimate/estimate.js';
 import { EstimatePart } from '../../../src/domain/estimate/estimate-part.js';
 import { ThreePointEstimate } from '../../../src/domain/estimate/three-point-estimate.js';
@@ -78,31 +80,103 @@ describe('similar tasks', () => {
 });
 
 describe('applicable coefficient', () => {
+  const STRICT = CalibrationPolicy.fromConfig({ minTasks: 5 });
   const sample = (n: number, spec: { type?: string; stack: string[]; ratio: number }) =>
     Array.from({ length: n }, (_, i) => syntheticCard({ id: `T-${spec.type ?? 'f'}-${spec.stack.join('')}-${i}`, type: spec.type ?? 'feature', stack: spec.stack, ratio: spec.ratio }));
-  const authorOf = (cards: ReturnType<typeof sample>) => calibrate(cards, { minTasks: 5 }).authors[ME];
+  const ratios = (...values: number[]) => values.map((ratio, i) => syntheticCard({ id: `T-${i}`, ratio }));
+  const coefficient = (
+    cards: readonly Card[],
+    query: { type?: string; stack?: string[]; revise?: boolean } = {},
+    policy: CalibrationPolicy = CalibrationPolicy.DEFAULT,
+  ) =>
+    applicableCoefficient(
+      calibrate(cards, { policy }).authors[ME],
+      { ...(query.type === undefined ? {} : { type: query.type }), stack: StackLabels.of(query.stack ?? []), ...(query.revise ? { revise: true } : {}) },
+      policy,
+    );
 
-  it('takes the slice by type first', () => {
-    const author = authorOf([...sample(6, { stack: ['flutter'], ratio: 1.3 }), ...sample(3, { type: 'research', stack: ['flutter'], ratio: 0.8 })]);
-    expect(applicableCoefficient(author, { type: 'feature', stack: StackLabels.of(['flutter']) })).toEqual({ value: 1.3, slice: { kind: 'type', key: 'feature' }, n: 6 });
+  it('one task shrinks to 1 with the weight 1/3; the pessimistic stays at 1 while the estimates are high', () => {
+    expect(coefficient(ratios(0.5))).toEqual({ value: 0.794, pessimistic: 1, slice: { kind: 'overall' }, n: 1, weight: 0.333 });
   });
 
-  it('a small type falls back to the technology with the most tasks, alphabetically on a tie', () => {
-    const author = authorOf([
+  it('with more tasks the coefficient moves to the median and the pessimistic one below 1', () => {
+    expect(coefficient(ratios(0.41, 0.13))).toEqual({ value: 0.52, pessimistic: 0.848, slice: { kind: 'overall' }, n: 2, weight: 0.5 });
+    expect(coefficient(ratios(0.41, 0.13, 0.56))).toEqual({ value: 0.586, pessimistic: 0.874, slice: { kind: 'overall' }, n: 3, weight: 0.6 });
+  });
+
+  it('low estimates: the pessimistic coefficient grows without a limit', () => {
+    expect(coefficient(ratios(2))).toMatchObject({ value: 1.26, pessimistic: 2.52 });
+  });
+
+  it('without shrinking the coefficient is the median', () => {
+    expect(coefficient(ratios(0.41, 0.13, 0.56), {}, CalibrationPolicy.fromConfig({ shrink: 0 }))).toMatchObject({ value: 0.41, weight: 1 });
+  });
+
+  it('no task, no coefficient', () => {
+    expect(coefficient([])).toBeNull();
+    expect(applicableCoefficient(undefined, { stack: StackLabels.of([]) }, CalibrationPolicy.DEFAULT)).toBeNull();
+  });
+
+  it('the type shrinks towards the overall level when the stack has nothing', () => {
+    expect(coefficient(ratios(0.41, 0.13, 0.56), { type: 'feature' })).toEqual({
+      value: 0.473,
+      pessimistic: 0.706,
+      slice: { kind: 'type', key: 'feature' },
+      n: 3,
+      weight: 0.6,
+    });
+  });
+
+  it('levels shrink in a chain: overall to 1, technology to overall, type to technology', () => {
+    const cards = [...sample(2, { stack: ['typescript'], ratio: 0.5 }), ...sample(2, { type: 'bugfix', stack: ['go'], ratio: 2 })];
+    expect(coefficient(cards)).toMatchObject({ value: 1.16, slice: { kind: 'overall' }, n: 4 });
+    expect(coefficient(cards, { stack: ['typescript'] })).toMatchObject({ value: 0.762, slice: { kind: 'stack', key: 'typescript' }, n: 2 });
+    expect(coefficient(cards, { type: 'feature', stack: ['typescript'] })).toEqual({
+      value: 0.617,
+      pessimistic: 1,
+      slice: { kind: 'type', key: 'feature' },
+      n: 2,
+      weight: 0.5,
+    });
+    expect(coefficient(cards, { type: 'feature' })).toMatchObject({ value: 0.762, slice: { kind: 'type', key: 'feature' } });
+    expect(coefficient(cards, { type: 'research', stack: ['go'] })).toMatchObject({ slice: { kind: 'stack', key: 'go' }, n: 2 });
+  });
+
+  it('strict mode: the type first, then the technology with the most tasks, alphabetically on a tie', () => {
+    const typed = [...sample(6, { stack: ['flutter'], ratio: 1.3 }), ...sample(3, { type: 'research', stack: ['flutter'], ratio: 0.8 })];
+    expect(coefficient(typed, { type: 'feature', stack: ['flutter'] }, STRICT)).toMatchObject({ value: 1.3, slice: { kind: 'type', key: 'feature' }, n: 6, weight: 1 });
+    const small = [
       ...sample(3, { stack: ['flutter', 'bloc'], ratio: 1.2 }),
       ...sample(4, { type: 'research', stack: ['flutter'], ratio: 1.2 }),
       ...sample(2, { type: 'bugfix', stack: ['bloc'], ratio: 1.4 }),
-    ]);
-    expect(applicableCoefficient(author, { type: 'feature', stack: StackLabels.of(['flutter', 'bloc']) })).toEqual({ value: 1.2, slice: { kind: 'stack', key: 'flutter' }, n: 7 });
-    const tie = authorOf([...sample(2, { type: 'research', stack: ['go'], ratio: 1 }), ...sample(6, { type: 'bugfix', stack: ['flutter', 'bloc'], ratio: 1.1 })]);
-    expect(applicableCoefficient(tie, { type: 'research', stack: StackLabels.of(['flutter', 'bloc']) })?.slice).toEqual({ kind: 'stack', key: 'bloc' });
+    ];
+    expect(coefficient(small, { type: 'feature', stack: ['flutter', 'bloc'] }, STRICT)).toMatchObject({ value: 1.2, slice: { kind: 'stack', key: 'flutter' }, n: 7 });
+    const tie = [...sample(2, { type: 'research', stack: ['go'], ratio: 1 }), ...sample(6, { type: 'bugfix', stack: ['flutter', 'bloc'], ratio: 1.1 })];
+    expect(coefficient(tie, { type: 'research', stack: ['flutter', 'bloc'] }, STRICT)?.slice).toEqual({ kind: 'stack', key: 'bloc' });
   });
 
-  it('never applies the overall slice', () => {
-    const author = authorOf([...sample(10, { stack: ['go'], ratio: 1.2 }), ...sample(2, { type: 'research', stack: ['go'], ratio: 1 })]);
-    expect(author?.ratio.overall.n).toBe(12);
-    expect(applicableCoefficient(author, { type: 'research', stack: StackLabels.of([]) })).toBeNull();
-    expect(applicableCoefficient(undefined, { type: 'research', stack: StackLabels.of([]) })).toBeNull();
+  it('strict mode applies the overall slice when the type and the technologies are small, and nothing below the threshold', () => {
+    const cards = [...sample(10, { stack: ['go'], ratio: 1.2 }), ...sample(2, { type: 'research', stack: ['go'], ratio: 1 })];
+    expect(coefficient(cards, { type: 'research' }, STRICT)).toMatchObject({ value: 1.2, slice: { kind: 'overall' }, n: 12 });
+    expect(coefficient(cards.slice(0, 4), { type: 'feature', stack: ['go'] }, STRICT)).toBeNull();
+  });
+
+  it('strict mode gives the coefficient of the former rule wherever that rule gave one', () => {
+    const types = ['feature', 'bugfix'];
+    const stacks = [['go'], ['flutter'], ['go', 'flutter']];
+    for (let seed = 1; seed <= 40; seed += 1) {
+      const cards = Array.from({ length: 4 + (seed % 9) }, (_, i) =>
+        syntheticCard({ id: `T-${i}`, type: types[(seed * (i + 1)) % 2] ?? 'feature', stack: stacks[(seed + i) % 3] ?? ['go'], ratio: 0.5 + ((seed * 7 + i * 3) % 10) / 10 }),
+      );
+      const author = calibrate(cards, { policy: STRICT }).authors[ME];
+      for (const type of types) {
+        const former = formerCoefficient(author, type, ['go', 'flutter']);
+        const current = coefficient(cards, { type, stack: ['go', 'flutter'] }, STRICT);
+        if (former !== null) {
+          expect(current?.value).toBe(former);
+        }
+      }
+    }
   });
 
   it('a revision takes the revised slice', () => {
@@ -116,11 +190,26 @@ describe('applicable coefficient', () => {
           currentEstimate: { optimisticHours: 12.727, likelyHours: 12.727, pessimisticHours: 12.727, baseLikelyHours: 12.727, calibrated: false, type: 'feature' },
         },
       });
-    const author = calibrate([...Array.from({ length: 5 }, (_, i) => revised(i)), syntheticCard({ id: 'T-x', ratio: 1.4 })], { minTasks: 5 }).authors[ME];
-    expect(applicableCoefficient(author, { type: 'feature', stack: StackLabels.of([]) })?.value).toBe(1.4);
-    expect(applicableCoefficient(author, { type: 'feature', stack: StackLabels.of([]), revise: true })).toEqual({ value: 1.1, slice: { kind: 'type', key: 'feature' }, n: 5 });
+    const cards = [...Array.from({ length: 5 }, (_, i) => revised(i)), syntheticCard({ id: 'T-x', ratio: 1.4 })];
+    expect(coefficient(cards, { type: 'feature' }, STRICT)?.value).toBe(1.4);
+    expect(coefficient(cards, { type: 'feature', revise: true }, STRICT)).toMatchObject({ value: 1.1, slice: { kind: 'type', key: 'feature' }, n: 5 });
   });
 });
+
+/** The rule before dynamic calibration: the median of the first slice with n ≥ 5, by type, then by technology. */
+function formerCoefficient(author: AuthorCalibration | undefined, type: string, stack: readonly string[]): number | null {
+  const byType = author?.ratio.byType[type];
+  if (byType !== undefined && byType.n >= 5) {
+    return byType.median;
+  }
+  const best = stack
+    .flatMap((key) => {
+      const stats = author?.ratio.byStack[key];
+      return stats !== undefined && stats.n >= 5 ? [{ key, stats }] : [];
+    })
+    .sort((a, b) => b.stats.n - a.stats.n || a.key.localeCompare(b.key))[0];
+  return best === undefined ? null : best.stats.median;
+}
 
 describe('calibration with aliases and stack labels', () => {
   it('cards of an alias go to the author; labels in another case to one slice', () => {

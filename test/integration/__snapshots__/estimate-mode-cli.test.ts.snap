@@ -19,11 +19,13 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
   },
   "coefficient": {
     "n": 6,
+    "pessimistic": 1.653,
     "slice": {
       "key": "feature",
       "kind": "type",
     },
-    "value": 1.25,
+    "value": 1.246,
+    "weight": 0.75,
   },
   "extras": {
     "environment": {
@@ -76,7 +78,7 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
     },
   },
   "linesPerHour": {},
-  "minTasks": 5,
+  "minTasks": 1,
   "missedScope": null,
   "otherAuthors": 0,
   "parts": {},
@@ -90,7 +92,6 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
   "ratio": {
     "byStack": {
       "typescript": {
-        "applicable": true,
         "backgroundAgents": 0,
         "excluded": {},
         "mean": 1.25,
@@ -98,11 +99,11 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
         "n": 6,
         "revised": 0,
         "uncertain": 0,
+        "weight": 0.75,
       },
     },
     "byType": {
       "feature": {
-        "applicable": true,
         "backgroundAgents": 0,
         "excluded": {},
         "mean": 1.25,
@@ -110,10 +111,10 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
         "n": 6,
         "revised": 0,
         "uncertain": 0,
+        "weight": 0.75,
       },
     },
     "overall": {
-      "applicable": true,
       "backgroundAgents": 0,
       "excluded": {},
       "mean": 1.25,
@@ -121,12 +122,12 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
       "n": 6,
       "revised": 0,
       "uncertain": 0,
+      "weight": 0.75,
     },
   },
   "revised": {
     "byStack": {
       "typescript": {
-        "applicable": false,
         "backgroundAgents": 0,
         "countedAtShare": null,
         "excluded": {},
@@ -135,11 +136,11 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
         "n": 0,
         "revised": 0,
         "uncertain": 0,
+        "weight": 0,
       },
     },
     "byType": {
       "feature": {
-        "applicable": false,
         "backgroundAgents": 0,
         "countedAtShare": null,
         "excluded": {},
@@ -148,10 +149,10 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
         "n": 0,
         "revised": 0,
         "uncertain": 0,
+        "weight": 0,
       },
     },
     "overall": {
-      "applicable": false,
       "backgroundAgents": 0,
       "countedAtShare": null,
       "excluded": {},
@@ -160,10 +161,12 @@ exports[`emt calibrate > names the coefficient of the type and prints a stable J
       "n": 0,
       "revised": 0,
       "uncertain": 0,
+      "weight": 0,
     },
   },
   "revisions": {},
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "shrink": 2,
   "skipped": [],
   "tasks": 6,
 }

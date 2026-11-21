@@ -63,7 +63,7 @@ export class TaskCards {
       // A card that cannot be read even by its fields is left out, as a broken file is.
       return calibrate(
         cards.filter((card): card is Card => card !== undefined),
-        { minTasks: this.settings.minTasks(), aliases: this.aliases.toCurrent() },
+        { policy: this.settings.policy(), aliases: this.aliases.toCurrent() },
       );
     });
   }

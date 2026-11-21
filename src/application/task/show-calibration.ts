@@ -15,7 +15,8 @@ import { estimateQuery, type EstimateQueryInput } from './estimate-query.js';
 import type { AuthorAliases } from './author-aliases.js';
 import type { TaskCards } from './task-cards.js';
 
-export const CALIBRATION_VIEW_SCHEMA_VERSION = 1;
+/** 2: the coefficient with its pessimistic value and weight, the weight of a slice instead of `applicable` (dynamic-calibration). */
+export const CALIBRATION_VIEW_SCHEMA_VERSION = 2;
 
 export interface CalibrationInput extends EstimateQueryInput {
   /** For a revision of a task in progress: the coefficient comes from the `revised` slice. */
@@ -28,6 +29,7 @@ export interface CalibrationView {
   /** What the hours of every part may be multiplied by; null — without calibration. */
   readonly coefficient: ApplicableCoefficient | null;
   readonly minTasks: number;
+  readonly shrink: number;
   /** Closed tasks of the author, with its aliases. */
   readonly tasks: number;
   readonly ratio: RatioSlices;
@@ -46,7 +48,7 @@ const NO_TASKS: RatioStats = {
   n: 0,
   median: null,
   mean: null,
-  applicable: false,
+  weight: 0,
   excluded: {},
   uncertain: 0,
   backgroundAgents: 0,
@@ -71,10 +73,10 @@ export class ShowCalibration {
     const { cards, skipped } = this.cards.allCards();
     const author = this.authors.current();
     const aliases = this.authors.toCurrent();
-    const minTasks = this.settings.minTasks();
+    const policy = this.settings.policy();
     // Only the author's section is shown: other authors' cards are not computed at all.
     const own = normalized(cards, aliases).filter((card) => card.author === author);
-    const mine = calibrate(own, { minTasks }).authors[author];
+    const mine = calibrate(own, { policy }).authors[author];
     const revise = input.revise === true;
     const type = query.type?.value;
     const pick = <T extends RatioStats>(slices: RatioSlices<T> | undefined, empty: T): RatioSlices<T> => ({
@@ -87,8 +89,11 @@ export class ShowCalibration {
       query: { type: type ?? null, stack: [...query.stack.values], revise },
       // A calibration from an incomplete set of cards could give a wrong coefficient.
       coefficient:
-        skipped.length > 0 ? null : applicableCoefficient(mine, { ...(type === undefined ? {} : { type }), stack: query.stack, revise }),
-      minTasks,
+        skipped.length > 0
+          ? null
+          : applicableCoefficient(mine, { ...(type === undefined ? {} : { type }), stack: query.stack, revise }, policy),
+      minTasks: policy.minTasks,
+      shrink: policy.shrink,
       tasks: mine?.tasks ?? 0,
       ratio: pick(mine?.ratio, NO_TASKS),
       revised: pick(mine?.revised, { ...NO_TASKS, countedAtShare: null }),
