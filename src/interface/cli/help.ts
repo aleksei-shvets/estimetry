@@ -129,8 +129,8 @@ export function formatHelp(command: Command, helper: Help): string {
   if (root) {
     out.push('Options:', ...helper.visibleOptions(command).map((option) => row(`  ${optionTerm(option)}`, optionText(option))));
     out.push(`  Most commands print JSON with --json.`);
-    out.push(`  Settings: config.yaml in ~/.local/share/estimetry, or in $ESTIMETRY_HOME;`);
-    out.push(`  those of calibration: "${name} help calibrate".`, '');
+    out.push(`  Settings: config.yaml in $ESTIMETRY_HOME, else $XDG_DATA_HOME/estimetry,`);
+    out.push(`  else ~/.local/share/estimetry; those of calibration: "${name} help calibrate".`, '');
     out.push('Examples:', ...EXAMPLES.map((example) => `  ${example.split(' && ').map((part) => `${name} ${part}`).join(' && ')}`), '');
     out.push(`Run "${name} <command> --help" for details, e.g. "${name} help task new".`);
   }

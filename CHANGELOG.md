@@ -4,6 +4,11 @@ All notable changes to estimetry. Versions follow [semantic versioning](https://
 
 ## Unreleased
 
+## 0.3.1 — 2026-11-22
+
+- `emt calibrate` names the calibration settings in force on its second line, and says when they are the defaults: `Settings: calibration.minTasks 1, calibration.shrink 2 (the defaults); see emt help calibrate.` The first line and `--json` stay as they were.
+- `emt --help` and `emt help calibrate` name the data directory as estimetry finds it: `$ESTIMETRY_HOME`, else `$XDG_DATA_HOME/estimetry`, else `~/.local/share/estimetry`; the help of calibrate takes the defaults from the calibration itself.
+
 ## 0.3.0 — 2026-11-22
 
 - **Calibration from the first closed task.** The coefficient an estimate applies is the median of fact over estimate shrunk towards 1 with the weight n / (n + k) (`calibration.shrink`, 2 by default), instead of nothing until a slice has 5 tasks. The slices form a chain — all your tasks, the technology of the query with the most tasks, the task type — each shrunk towards the one above by the tasks no deeper slice holds, so every task counts once; the deepest applies, and the overall slice now counts too. `emt calibrate` names the slice, the number of tasks and the weight.

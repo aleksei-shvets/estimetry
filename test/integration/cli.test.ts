@@ -45,12 +45,16 @@ describe('binaries', () => {
   it('names the settings of calibration and where config.yaml lives', async () => {
     const calibrate = await cli.run(['calibrate', '--help'], api);
     expect(calibrate.code).toBe(0);
-    for (const line of ['Settings (config.yaml', 'calibration.minTasks', 'calibration.shrink', 'default 1', 'default 2', 'means shrink: 0']) {
+    for (const line of ['Settings, in config.yaml', 'calibration.minTasks', 'calibration.shrink', 'default 1', 'default 2', 'means shrink: 0']) {
       expect(calibrate.stdout).toContain(line);
     }
     const root = await cli.run(['--help'], api);
     expect(root.stdout).toContain('config.yaml');
     expect(root.stdout).toContain('emt help calibrate');
+    // The data directory as StorageLayout resolves it: XDG_DATA_HOME comes before the home directory.
+    for (const help of [calibrate.stdout, root.stdout]) {
+      expect(help).toMatch(/\$ESTIMETRY_HOME, else\s+\$XDG_DATA_HOME\/estimetry,\s+else ~\/\.local\/share\/estimetry/);
+    }
   });
 
   it('shows the help of groups and nested commands', async () => {

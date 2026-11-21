@@ -1,14 +1,22 @@
 import type { Command } from 'commander';
+import { CalibrationPolicy } from '../../../domain/calibration/calibration-policy.js';
 import { presenterFor, type CliContext } from '../cli-context.js';
 import { parseLabels } from '../parse-input.js';
 
-/** The settings `emt calibrate` follows: help names them, the README shows what to expect from each. */
+const { minTasks, shrink } = CalibrationPolicy.DEFAULT;
+
+/**
+ * The settings `emt calibrate` follows: help names them with the defaults of
+ * the policy, the README shows what to expect from each. The data directory is
+ * resolved as `StorageLayout.resolve` does.
+ */
 const SETTINGS_HELP = `
-Settings (config.yaml in ~/.local/share/estimetry, or in $ESTIMETRY_HOME):
+Settings, in config.yaml of the data directory ($ESTIMETRY_HOME, else
+$XDG_DATA_HOME/estimetry, else ~/.local/share/estimetry):
   calibration.minTasks  a slice counts from this many closed tasks; with fewer
-                        in all your tasks there is no coefficient (default 1)
+                        in all your tasks there is no coefficient (default ${minTasks})
   calibration.shrink    k in the weight n / (n + k) of a slice: larger is more
-                        cautious, 0 applies the median as it is (default 2)
+                        cautious, 0 applies the median as it is (default ${shrink})
   minTasks set without shrink means shrink: 0; minTasks: 5 alone gives the
   coefficients of 0.2. Change them and run calibrate again: it recomputes from
   your cards at once. The README shows what to expect from each setting.`;
